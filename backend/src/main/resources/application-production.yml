@@ -1,0 +1,12 @@
+spring:
+  config:
+    activate:
+      on-profile: production
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+  # Production is ready for Flyway once PHASE 01 installs the migration.
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}

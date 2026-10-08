@@ -1,0 +1,62 @@
+spring:
+  application:
+    name: dental-clinic-backend
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:development}
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/dental_clinic}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:30000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT_MS:5000}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  # Flyway is the only schema owner. Set FLYWAY_ENABLED=false only for
+  # explicit diagnostics where migrations must not run.
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    validate-on-migrate: true
+
+  jackson:
+    time-zone: ${CLINIC_TIMEZONE:Asia/Ho_Chi_Minh}
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+clinic:
+  timezone: ${CLINIC_TIMEZONE:Asia/Ho_Chi_Minh}
+  appointment:
+    slot-duration-minutes: ${SLOT_DURATION_MINUTES:60}
+    booking-min-advance-minutes: ${BOOKING_MIN_ADVANCE_MINUTES:180}
+    cancellation-cutoff-minutes: ${CANCELLATION_CUTOFF_MINUTES:90}
+    reschedule-cutoff-minutes: ${RESCHEDULE_CUTOFF_MINUTES:90}
+    no-show-grace-minutes: ${NO_SHOW_GRACE_MINUTES:15}
+    delay-warning-minutes: ${DELAY_WARNING_MINUTES:30}
+
+security:
+  jwt:
+    # Required Base64-encoded secret containing at least 256 bits.
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER:dental-clinic-backend}
+    access-token-expiration-minutes: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES:60}
+
+logging:
+  level:
+    root: INFO
+    com.dentalclinic: ${APP_LOG_LEVEL:INFO}

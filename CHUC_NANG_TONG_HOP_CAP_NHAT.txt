@@ -1,0 +1,2165 @@
+ĐẶC TẢ CHỨC NĂNG TỔNG HỢP
+ĐỀ TÀI: HỆ THỐNG QUẢN LÝ PHÒNG KHÁM NHA KHOA TÍCH HỢP AI CHATBOT
+
+================================================================================
+1. TỔNG QUAN
+================================================================================
+
+Hệ thống phục vụ 3 nhóm người dùng chính:
+
+1. PATIENT - Bệnh nhân
+   - Đăng ký, đăng nhập.
+   - Quản lý hồ sơ cá nhân.
+   - Xem bác sĩ, dịch vụ.
+   - Tự đặt lịch khám.
+   - Đổi/hủy lịch trong thời gian cho phép.
+   - Xem lịch sử khám và kết quả khám.
+   - Sử dụng AI Chatbot để tư vấn triệu chứng và tìm bác sĩ phù hợp.
+   - Xem lại và tiếp tục các phiên chat trước.
+
+2. DOCTOR - Bác sĩ
+   - Xem lịch làm việc và lịch bệnh nhân đã đặt.
+   - Quản lý lịch làm việc của mình theo quy định hệ thống.
+   - Check-in bệnh nhân khi bệnh nhân đã đến.
+   - Bắt đầu khám.
+   - Nhập kết quả khám.
+   - Hoàn thành buổi khám.
+   - Đề xuất và đặt lịch tái khám cho bệnh nhân.
+   - Đánh dấu bệnh nhân không đến khám khi đủ điều kiện.
+
+3. ADMIN - Quản trị viên
+   - Quản lý tài khoản.
+   - Quản lý bác sĩ.
+   - Quản lý dịch vụ nha khoa.
+   - Quản lý và theo dõi dữ liệu hệ thống.
+   - Can thiệp vào các trường hợp ngoại lệ khi cần.
+   - Không cần xác nhận từng lịch hẹn do bệnh nhân đặt.
+
+================================================================================
+2. CHỨC NĂNG
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1. XÁC THỰC & PHÂN QUYỀN
+--------------------------------------------------------------------------------
+
+- Đăng ký tài khoản bằng email.
+- Khi bệnh nhân đăng ký thành công, hệ thống tự động tạo hồ sơ bệnh nhân.
+- Đăng nhập bằng email và mật khẩu.
+- Mật khẩu được băm bằng BCrypt trước khi lưu vào cơ sở dữ liệu.
+- Phân quyền theo 3 vai trò:
+  + ADMIN.
+  + DOCTOR.
+  + PATIENT.
+- Middleware/Spring Security kiểm tra quyền truy cập API theo vai trò.
+- Tài khoản bác sĩ do Admin tạo, không cho người dùng tự đăng ký rồi chọn role DOCTOR.
+- Google OAuth chỉ là chức năng mở rộng, không phải chức năng ưu tiên của đồ án.
+
+--------------------------------------------------------------------------------
+2.2. QUẢN LÝ LỊCH HẸN - CHỨC NĂNG CỐT LÕI
+--------------------------------------------------------------------------------
+
+2.2.1. Luồng đặt lịch
+
+Bệnh nhân tự đặt lịch theo luồng:
+
+Dịch vụ
+    ↓
+Bác sĩ
+    ↓
+Ngày
+    ↓
+Giờ còn trống
+    ↓
+Đặt lịch thành công
+
+- Bệnh nhân chọn dịch vụ cần khám.
+- Hệ thống chỉ hiển thị các bác sĩ có thực hiện dịch vụ đã chọn.
+- Bệnh nhân chọn bác sĩ.
+- Bệnh nhân chọn ngày khám.
+- Hệ thống kiểm tra lịch làm việc của bác sĩ.
+- Hệ thống lấy các slot chưa có người đặt.
+- Bệnh nhân chọn một slot còn trống.
+- Backend kiểm tra lại slot một lần nữa trước khi tạo lịch.
+- Nếu slot còn trống thì tạo Appointment ngay với trạng thái BOOKED.
+- Không cần bác sĩ hoặc Admin xác nhận lịch.
+- Nếu slot vừa bị người khác đặt trước thì từ chối và yêu cầu bệnh nhân chọn slot khác.
+
+Ví dụ:
+
+Dịch vụ: Nhổ răng khôn
+Bác sĩ: Nguyễn Văn A
+Ngày: 15/10/2026
+Giờ: 09:00
+Trạng thái sau khi đặt: BOOKED
+
+2.2.1.1. Điều kiện thời gian khi bệnh nhân đặt lịch
+
+Mục tiêu:
+- Không cho bệnh nhân đặt lịch quá sát giờ khám.
+- Cho phép bệnh nhân vẫn có thể đặt lịch trong cùng ngày nếu còn đủ thời gian chuẩn bị.
+- Đơn giản hóa quy tắc, không cần tách riêng "buổi sáng đặt buổi chiều" hay "buổi chiều đặt ngày hôm sau".
+
+Quy tắc chính:
+
+1. Bệnh nhân phải đặt lịch trước giờ bắt đầu khám ít nhất 3 giờ.
+
+Có thể cấu hình:
+
+booking_min_advance_minutes = 180
+clinic_timezone = Asia/Ho_Chi_Minh
+
+Điều kiện Backend:
+
+appointment_start_time - current_time >= 180 phút
+
+hoặc:
+
+appointment_start_time >= current_time + 3 giờ
+
+2. Quy tắc này áp dụng cho cả lịch trong ngày và lịch ở những ngày tiếp theo.
+
+3. Không có quy định bắt buộc:
+- Buổi sáng chỉ được đặt buổi chiều.
+- Buổi chiều bắt buộc phải đặt ngày hôm sau.
+
+Chỉ cần slot thỏa mãn:
+- Còn trống.
+- Thuộc lịch làm việc của bác sĩ.
+- Cách thời điểm đặt ít nhất 3 giờ.
+
+Ví dụ lịch làm việc của bác sĩ:
+
+Buổi sáng: 07:00 - 12:00
+Buổi chiều: 13:00 - 18:00
+
+Các slot cố định 1 giờ:
+
+07:00 - 08:00
+08:00 - 09:00
+09:00 - 10:00
+10:00 - 11:00
+11:00 - 12:00
+
+13:00 - 14:00
+14:00 - 15:00
+15:00 - 16:00
+16:00 - 17:00
+17:00 - 18:00
+
+Ví dụ 1:
+
+Thời điểm bệnh nhân đặt: 10:00.
+Slot 13:00 cùng ngày:
+
+13:00 - 10:00 = 3 giờ
+
+Kết quả:
+- Được phép đặt nếu bác sĩ làm việc và slot 13:00 còn trống.
+
+Ví dụ 2:
+
+Thời điểm bệnh nhân đặt: 10:01.
+Slot 13:00 cùng ngày:
+
+13:00 - 10:01 = 2 giờ 59 phút
+
+Kết quả:
+- Không được phép đặt slot 13:00.
+- Slot 14:00 có thể được đặt nếu còn trống.
+
+Ví dụ 3:
+
+Thời điểm bệnh nhân đặt: 14:00.
+Slot 17:00 cùng ngày:
+
+17:00 - 14:00 = 3 giờ
+
+Kết quả:
+- Được phép đặt nếu slot 17:00 còn trống.
+
+Ví dụ 4:
+
+Thời điểm bệnh nhân đặt: 16:00.
+
+Thời điểm sớm nhất theo điều kiện 3 giờ là 19:00.
+
+Nhưng bác sĩ chỉ làm việc đến 18:00.
+
+Kết quả:
+- Ngày hiện tại không còn slot nào hợp lệ.
+- Hệ thống hiển thị slot còn trống của ngày làm việc tiếp theo của bác sĩ.
+
+Ví dụ 5:
+
+Thời điểm bệnh nhân đặt: 14:01.
+Slot 17:00:
+
+17:00 - 14:01 = 2 giờ 59 phút
+
+Kết quả:
+- Không được đặt.
+- Nếu không còn slot nào khác trong ngày đáp ứng đủ 3 giờ thì chuyển sang ngày làm việc tiếp theo.
+
+Luồng kiểm tra khi đặt lịch:
+
+Bệnh nhân chọn dịch vụ
+        ↓
+Chọn bác sĩ
+        ↓
+Chọn ngày
+        ↓
+Backend lấy lịch làm việc của bác sĩ
+        ↓
+Sinh các slot cố định 60 phút
+        ↓
+Loại các slot đã có Appointment
+        ↓
+Loại các slot cách thời điểm hiện tại dưới 3 giờ
+        ↓
+Hiển thị slot hợp lệ
+        ↓
+Bệnh nhân chọn slot
+        ↓
+Backend kiểm tra lại:
+- thời gian đặt trước >= 3 giờ,
+- lịch làm việc,
+- slot còn trống,
+- trạng thái bác sĩ,
+- ràng buộc chống trùng
+        ↓
+Transaction
+        ↓
+Tạo Appointment = BOOKED
+
+Frontend:
+- Chỉ hiển thị hoặc cho phép chọn các slot hợp lệ.
+- Nếu ngày hiện tại không còn slot đủ điều kiện 3 giờ thì chuyển sang gợi ý ngày làm việc tiếp theo.
+- Có thể hiển thị thông báo:
+  "Lịch khám phải được đặt trước ít nhất 3 giờ."
+
+Backend:
+- Bắt buộc kiểm tra lại điều kiện 3 giờ.
+- Không được chỉ dựa vào Frontend.
+- Sử dụng thời gian server theo múi giờ phòng khám.
+
+Thông báo gợi ý:
+
+Nếu slot không đủ thời gian đặt trước:
+"Bạn cần đặt lịch trước giờ khám ít nhất 3 giờ. Vui lòng chọn khung giờ khác."
+
+Nếu ngày hiện tại không còn slot hợp lệ:
+"Hôm nay không còn khung giờ đáp ứng điều kiện đặt trước 3 giờ. Vui lòng chọn ngày làm việc tiếp theo."
+
+Nếu slot vừa bị người khác đặt:
+"Khung giờ vừa được người khác đặt. Vui lòng chọn khung giờ khác."
+
+2.2.2. Trạng thái lịch hẹn
+
+Luồng chính:
+
+BOOKED
+    ↓
+CHECKED_IN
+    ↓
+IN_PROGRESS
+    ↓
+COMPLETED
+
+Các trạng thái ngoại lệ:
+
+- CANCELLED: lịch đã bị hủy.
+- NO_SHOW: bệnh nhân có lịch nhưng không đến khám.
+
+Việc đổi lịch không bắt buộc phải dùng RESCHEDULED làm trạng thái hiện tại.
+Khuyến nghị:
+- Cập nhật ngày/giờ mới trên Appointment hiện tại.
+- Lưu lịch sử đổi lịch riêng để truy vết.
+- Sau khi đổi lịch thành công, Appointment vẫn ở trạng thái BOOKED.
+
+Ý nghĩa:
+
+BOOKED:
+- Bệnh nhân đã đặt lịch thành công.
+- Slot đã được giữ và không còn hiển thị cho người khác.
+
+CHECKED_IN:
+- Bệnh nhân đã đến phòng khám.
+- Bác sĩ/nhân viên xác nhận bệnh nhân đã có mặt.
+
+IN_PROGRESS:
+- Bác sĩ đã bắt đầu khám.
+
+COMPLETED:
+- Buổi khám đã hoàn thành.
+- Bác sĩ đã nhập kết quả khám cần thiết.
+
+CANCELLED:
+- Lịch đã bị hủy hợp lệ.
+
+NO_SHOW:
+- Bệnh nhân có lịch nhưng không đến sau thời gian chờ cho phép.
+
+2.2.3. Check-in bệnh nhân
+
+Bác sĩ không xác nhận việc "có chấp nhận lịch hay không".
+
+Bác sĩ chỉ xác nhận tình trạng thực tế của bệnh nhân tại thời điểm khám:
+
+Ví dụ màn hình bác sĩ:
+
+14:00 - Nguyễn Văn A
+Dịch vụ: Nhổ răng khôn
+Trạng thái: BOOKED
+
+[ Bệnh nhân đã đến ]
+[ Không đến khám ]
+
+Khi bệnh nhân đến:
+BOOKED → CHECKED_IN
+
+Khi bác sĩ bắt đầu khám:
+CHECKED_IN → IN_PROGRESS
+
+Khi khám xong:
+IN_PROGRESS → COMPLETED
+
+2.2.4. Quy định hủy lịch
+
+Không cho bệnh nhân hủy lịch quá sát giờ khám.
+
+Cấu hình:
+
+cancellation_cutoff_minutes = 90
+
+Tức là bệnh nhân chỉ được tự hủy khi còn ít nhất 1 giờ 30 phút trước giờ hẹn hiện tại.
+
+Điều kiện:
+
+appointment_time - current_time >= 90 phút
+
+Ví dụ lịch khám: 14:00.
+
+- 12:00 → được hủy.
+- 12:29 → được hủy.
+- 12:30 → đúng 1 giờ 30 phút → được hủy.
+- 12:31 → còn 1 giờ 29 phút → không được hủy.
+- 13:59 → không được hủy.
+
+Khi hủy hợp lệ:
+- BOOKED → CANCELLED.
+- Slot được giải phóng để bệnh nhân khác có thể đặt nếu vẫn đáp ứng điều kiện đặt lịch.
+- Lưu thông tin hủy.
+
+Thông tin cần lưu:
+- cancelled_by.
+- cancel_reason.
+- cancelled_at.
+
+Nếu còn dưới 90 phút:
+- Không cho bệnh nhân tự hủy online.
+- Hiển thị thông báo:
+  "Không thể hủy lịch vì lịch hẹn còn dưới 1 giờ 30 phút. Vui lòng liên hệ phòng khám nếu có trường hợp đặc biệt."
+
+Backend:
+- Bắt buộc kiểm tra điều kiện 90 phút.
+- Dùng thời gian server theo múi giờ phòng khám.
+
+Trường hợp ngoại lệ:
+- Bệnh nhân liên hệ phòng khám.
+- Bác sĩ hoặc Admin có thể xử lý theo quyền được cấp.
+- Hệ thống vẫn phải ghi lại người thực hiện, lý do và thời gian.
+
+2.2.5. Quy định đổi lịch
+
+Mục tiêu:
+- Cho phép bệnh nhân linh hoạt đổi lịch khi còn đủ thời gian.
+- Không cho đổi lịch quá sát giờ khám.
+- Cho phép đổi sang slot khác trong cùng buổi nếu còn trống.
+
+Cấu hình:
+
+reschedule_cutoff_minutes = 90
+
+Quy tắc:
+
+1. Bệnh nhân chỉ được phép đổi lịch khi còn ít nhất 1 giờ 30 phút trước GIỜ HẸN HIỆN TẠI.
+
+Điều kiện:
+
+appointment.status = BOOKED
+và
+old_appointment_time - current_time >= 90 phút
+
+2. Điều kiện 90 phút được tính theo lịch hẹn hiện tại, không tính theo slot mới.
+
+Ví dụ:
+
+Lịch hiện tại: 14:00
+Thời điểm đổi: 12:30
+
+14:00 - 12:30 = 1 giờ 30 phút
+
+Kết quả:
+- Được phép đổi.
+
+Nếu:
+
+Lịch hiện tại: 14:00
+Thời điểm đổi: 12:31
+
+Chỉ còn 1 giờ 29 phút.
+
+Kết quả:
+- Không được đổi.
+
+3. Khi đủ điều kiện, bệnh nhân có thể đổi sang:
+- Slot khác trong cùng buổi.
+- Slot khác trong cùng ngày.
+- Slot của ngày khác.
+
+Slot mới phải:
+- Thuộc lịch làm việc của bác sĩ.
+- Còn trống.
+- Nằm trong tương lai.
+- Không trùng với Appointment khác.
+
+Ví dụ đổi cùng buổi:
+
+Lịch cũ: 14:00 - 15:00
+Thời điểm hiện tại: 11:00
+Slot mới: 16:00 - 17:00
+
+Kết quả:
+- Được đổi nếu slot 16:00 còn trống.
+
+4. Nếu còn dưới 90 phút trước lịch hiện tại:
+- Không được tự đổi lịch.
+- Dù slot mới còn rất xa, bệnh nhân vẫn không được đổi.
+
+Ví dụ:
+
+Lịch cũ: 14:00
+Thời điểm hiện tại: 12:45
+Slot mới: 17:00
+
+Kết quả:
+- Không được đổi.
+- Vì lịch hiện tại chỉ còn 1 giờ 15 phút.
+
+5. Nếu đã tới hoặc qua giờ hẹn:
+- Không được đổi lịch.
+- Xử lý theo CHECKED_IN hoặc NO_SHOW tùy tình trạng bệnh nhân.
+
+6. Luồng đổi lịch:
+
+Appointment hiện tại = BOOKED
+        ↓
+Bệnh nhân chọn "Đổi lịch"
+        ↓
+Backend kiểm tra còn ít nhất 90 phút trước lịch hiện tại
+        ↓
+Nếu không đủ 90 phút → từ chối
+        ↓
+Nếu đủ điều kiện → hiển thị slot còn trống
+        ↓
+Bệnh nhân chọn slot mới
+        ↓
+Backend kiểm tra lịch làm việc + slot mới
+        ↓
+Transaction
+        ↓
+Cập nhật Appointment
+        ↓
+Giải phóng slot cũ
+        ↓
+Lưu lịch sử đổi lịch
+
+7. Việc đổi lịch phải thực hiện trong transaction.
+
+Nếu slot mới vừa bị người khác đặt:
+- Toàn bộ thao tác đổi thất bại.
+- Lịch cũ vẫn được giữ nguyên.
+- Bệnh nhân chọn slot khác.
+
+8. Lưu lịch sử đổi lịch:
+
+- old_date.
+- old_start_time.
+- new_date.
+- new_start_time.
+- changed_by.
+- change_reason.
+- changed_at.
+
+9. Frontend:
+- Chỉ bật nút "Đổi lịch" khi còn đủ 90 phút.
+- Có thể cho người dùng chọn slot khác trong cùng buổi nếu còn trống.
+
+10. Backend:
+- Bắt buộc kiểm tra lại điều kiện 90 phút.
+- Không được chỉ dựa vào Frontend.
+- Dùng thời gian server theo múi giờ phòng khám.
+
+Thông báo gợi ý:
+
+Nếu còn dưới 90 phút:
+"Không thể đổi lịch vì lịch hẹn còn dưới 1 giờ 30 phút. Vui lòng giữ lịch hiện tại hoặc liên hệ phòng khám."
+
+Nếu slot mới vừa bị người khác đặt:
+"Khung giờ mới vừa được người khác đặt. Lịch hiện tại của bạn vẫn được giữ nguyên. Vui lòng chọn khung giờ khác."
+
+2.2.6. Xử lý bệnh nhân không đến khám
+
+Không tự động đánh dấu NO_SHOW ngay đúng giờ hẹn.
+
+Nên có khoảng thời gian chờ, ví dụ:
+
+no_show_grace_minutes = 15
+
+Ví dụ:
+- Giờ hẹn: 14:00.
+- 14:00 → vẫn BOOKED.
+- 14:10 → vẫn BOOKED.
+- Từ 14:15 trở đi → cho phép bác sĩ/nhân viên đánh dấu NO_SHOW.
+
+Khi xác nhận không đến:
+BOOKED → NO_SHOW
+
+Nên lưu:
+- no_show_at.
+- marked_by.
+
+Không nên để hệ thống tự động chuyển NO_SHOW hoàn toàn vì có thể bệnh nhân đã đến nhưng đang chờ hoặc quy trình tiếp nhận bị chậm.
+
+2.2.7. Xử lý khi bác sĩ khám quá thời lượng slot
+
+Mỗi slot được thiết kế cố định 60 phút, nhưng thời gian khám thực tế có thể ngắn hơn hoặc dài hơn 60 phút.
+
+Ví dụ:
+
+07:00 - 08:00: Bệnh nhân A
+08:00 - 09:00: Bệnh nhân B
+
+Nếu bệnh nhân A được khám từ 07:00 nhưng đến 08:00 vẫn chưa hoàn thành:
+
+- Không được tự động kết thúc ca khám của A.
+- Không được tự động chuyển B sang IN_PROGRESS.
+- Nếu B đã đến phòng khám thì B giữ trạng thái CHECKED_IN và chờ.
+- Bác sĩ tiếp tục hoàn thành ca A.
+- Khi A được Check-out/COMPLETED, bác sĩ mới bắt đầu khám B.
+
+Ví dụ thực tế:
+
+Bệnh nhân A:
+scheduled_start_time = 07:00
+scheduled_end_time   = 08:00
+actual_start_time    = 07:00
+actual_end_time      = 08:15
+
+Bệnh nhân B:
+scheduled_start_time = 08:00
+scheduled_end_time   = 09:00
+checked_in_at        = 07:55
+actual_start_time    = 08:15
+
+Trạng thái:
+
+07:55:
+A = IN_PROGRESS
+B = CHECKED_IN
+
+08:00:
+A = IN_PROGRESS
+B = CHECKED_IN và đang chờ
+
+08:15:
+A → COMPLETED
+B → IN_PROGRESS
+
+Hệ thống phải phân biệt:
+
+- scheduled_start_time: giờ hẹn theo lịch.
+- scheduled_end_time: giờ kết thúc dự kiến của slot.
+- checked_in_at: thời điểm bệnh nhân đến/check-in.
+- actual_start_time: thời điểm bác sĩ thực sự bắt đầu khám.
+- actual_end_time: thời điểm bác sĩ thực sự hoàn thành.
+
+Không tự động thay đổi scheduled_start_time của các bệnh nhân phía sau chỉ vì ca trước bị trễ.
+
+Ví dụ:
+- B vẫn có scheduled_start_time = 08:00.
+- Nếu bác sĩ bắt đầu khám B lúc 08:15 thì actual_start_time = 08:15.
+
+Mục tiêu:
+- Giữ nguyên lịch hẹn gốc để truy vết.
+- Đo được thời gian chờ thực tế.
+- Đo được mức độ trễ của bác sĩ.
+- Không làm sai lịch sử Appointment.
+
+Có thể cấu hình cảnh báo trễ:
+
+delay_warning_minutes = 30
+
+Ví dụ:
+- B có lịch 08:00.
+- Đã CHECKED_IN.
+- Đến 08:30 vẫn chưa được bắt đầu khám.
+
+Hệ thống có thể hiển thị cảnh báo:
+
+"Bác sĩ đang trễ lịch 30 phút. Bệnh nhân hiện đang chờ."
+
+Các lựa chọn xử lý:
+1. Bệnh nhân tiếp tục chờ:
+   - Giữ trạng thái CHECKED_IN.
+   - Khi bác sĩ sẵn sàng mới chuyển IN_PROGRESS.
+
+2. Bệnh nhân không thể tiếp tục chờ:
+   - Bác sĩ/Admin/nhân viên hỗ trợ đổi lịch.
+   - Đây là trường hợp phát sinh do phòng khám/bác sĩ bị trễ.
+   - Có thể lưu:
+     reschedule_reason = DOCTOR_DELAY
+   - Không xem đây là lỗi hoặc NO_SHOW của bệnh nhân.
+
+3. Không tự động đẩy toàn bộ lịch phía sau sang giờ mới.
+   Ví dụ không tự sửa:
+   08:00 → 08:15
+   09:00 → 09:15
+   10:00 → 10:15
+
+Thay vào đó:
+- Giữ giờ hẹn gốc.
+- Ghi giờ bắt đầu thực tế.
+- Hiển thị trạng thái chờ cho bệnh nhân tiếp theo.
+
+Lưu ý với NO_SHOW:
+- Nếu bệnh nhân đã CHECKED_IN thì không được đánh dấu NO_SHOW.
+- Việc bác sĩ khám ca trước quá giờ không được dùng làm lý do đánh dấu bệnh nhân tiếp theo vắng mặt.
+
+2.2.8. Chống đặt trùng slot
+
+Bắt buộc có ràng buộc:
+
+UNIQUE (doctor_id, appointment_date, start_time)
+
+Và phải dùng transaction ở backend.
+
+Mục tiêu:
+- Không cho hai bệnh nhân đặt cùng bác sĩ, cùng ngày, cùng giờ.
+- Quy tắc này áp dụng cho lịch do bệnh nhân, bác sĩ, Admin hoặc chatbot tạo.
+
+Ví dụ:
+
+Bệnh nhân A và B cùng nhìn thấy 09:00 còn trống.
+
+Nếu A đặt trước:
+- A thành công.
+- B nhận thông báo:
+  "Khung giờ vừa được người khác đặt, vui lòng chọn giờ khác."
+
+--------------------------------------------------------------------------------
+2.3. QUẢN LÝ LỊCH LÀM VIỆC & SLOT
+--------------------------------------------------------------------------------
+
+Hệ thống quản lý lịch làm việc của bác sĩ theo ngày trong tuần và theo từng buổi.
+
+Ví dụ:
+
+Buổi sáng: 07:00 - 12:00
+Buổi chiều: 13:00 - 18:00
+
+Khoảng cách slot cơ sở được chốt cố định:
+
+slot_duration_minutes = 60
+
+Mỗi slot tương ứng một khoảng thời gian 1 giờ.
+
+Ví dụ:
+
+Buổi sáng:
+07:00 - 08:00
+08:00 - 09:00
+09:00 - 10:00
+10:00 - 11:00
+11:00 - 12:00
+
+Buổi chiều:
+13:00 - 14:00
+14:00 - 15:00
+15:00 - 16:00
+16:00 - 17:00
+17:00 - 18:00
+
+Mục đích chọn slot 60 phút:
+- Dễ quản lý và hiển thị lịch.
+- Tránh lịch quá dày.
+- Cho bác sĩ có thời gian khám, ghi hồ sơ, tư vấn và nghỉ ngắn giữa các ca nếu hoàn thành sớm.
+- Phù hợp phạm vi đồ án.
+
+Lịch làm việc:
+- Có lịch mặc định theo ngày trong tuần từ Thứ 2 → Chủ nhật.
+- Có thể cấu hình nhiều buổi trong một ngày.
+- Có lịch override cho ngày/tuần cụ thể khi bác sĩ nghỉ hoặc thay đổi giờ làm.
+
+Các thông tin có thể gồm:
+- DayOfWeek.
+- Session/Shift.
+- StartTime.
+- EndTime.
+- IsOff.
+- WeekStart hoặc ngày áp dụng override.
+
+Ví dụ lịch mặc định:
+
+Thứ 2:
+- 07:00 - 12:00
+- 13:00 - 18:00
+
+Thứ 3:
+- 07:00 - 12:00
+- 13:00 - 18:00
+
+Thứ 4:
+- Nghỉ.
+
+Ví dụ override:
+- Bình thường bác sĩ làm thứ 5.
+- Tuần có ngày 15/10 bác sĩ xin nghỉ.
+- Không sửa lịch mặc định.
+- Tạo override với IsOff = true cho ngày/tuần tương ứng.
+
+Cách tính slot:
+
+Lịch làm việc bác sĩ
+        ↓
+Chia thành các slot 60 phút
+        ↓
+Loại slot đã có Appointment
+        ↓
+Loại slot không đáp ứng điều kiện đặt trước 3 giờ
+        ↓
+Trả về Available Slots
+
+Ví dụ:
+
+Lịch:
+07:00
+08:00
+09:00
+10:00
+11:00
+13:00
+14:00
+15:00
+16:00
+17:00
+
+Đã có Appointment:
+08:00
+14:00
+
+Thời điểm hiện tại: 10:30
+
+Theo điều kiện đặt trước 3 giờ:
+- 13:00 chỉ còn 2 giờ 30 phút → loại.
+- 14:00 đã có người đặt → loại.
+- 15:00 trở đi có thể hợp lệ nếu còn trống.
+
+Frontend có thể hiển thị:
+15:00
+16:00
+17:00
+
+Mỗi bác sĩ chỉ nhận một bệnh nhân trong một slot 60 phút.
+
+Slot phải được cập nhật khi:
+- Có lịch mới.
+- Hủy lịch.
+- Đổi lịch.
+- Có thay đổi lịch làm việc.
+
+Lưu ý:
+- Slot 60 phút là thời lượng dự kiến của lịch.
+- Nếu bác sĩ khám quá 60 phút thì xử lý theo quy tắc "bác sĩ khám quá thời lượng slot"; không tự động sửa giờ hẹn gốc của bệnh nhân tiếp theo.
+
+2.4. QUẢN LÝ DỊCH VỤ NHA KHOA
+--------------------------------------------------------------------------------
+
+Mỗi dịch vụ có:
+- Tên.
+- Mô tả.
+- Giá.
+
+Ví dụ:
+Tên: Cạo vôi răng
+Mô tả: Làm sạch cao răng và mảng bám.
+Giá: 300.000 VNĐ.
+
+Quyền:
+- Admin và bác sĩ được thêm/sửa/xóa theo phân quyền hệ thống.
+
+Dịch vụ có liên kết với bác sĩ để xác định bác sĩ nào có thể thực hiện dịch vụ nào.
+
+--------------------------------------------------------------------------------
+2.5. QUẢN LÝ BÁC SĨ
+--------------------------------------------------------------------------------
+
+Hồ sơ bác sĩ gồm:
+- Chuyên khoa.
+- Số giấy phép.
+- Tiểu sử.
+- Đánh giá.
+- Số năm kinh nghiệm.
+
+Quan hệ bác sĩ - dịch vụ:
+
+Một bác sĩ có thể thực hiện nhiều dịch vụ.
+Một dịch vụ có thể được nhiều bác sĩ thực hiện.
+
+Dùng bảng trung gian, ví dụ:
+
+doctor_services
+- doctor_id
+- service_id
+
+Admin chịu trách nhiệm tạo tài khoản bác sĩ.
+
+Có trang công khai:
+- Danh sách bác sĩ.
+- Chi tiết bác sĩ.
+- Chuyên khoa.
+- Kinh nghiệm.
+- Đánh giá.
+- Dịch vụ có thể thực hiện.
+
+--------------------------------------------------------------------------------
+2.6. KẾT QUẢ KHÁM - CHỨC NĂNG CỐT LÕI
+--------------------------------------------------------------------------------
+
+Sau khi khám, bác sĩ tạo kết quả khám.
+
+Thông tin gồm:
+- Chẩn đoán.
+- Điều trị.
+- Kế hoạch điều trị.
+- Đơn thuốc.
+- Ghi chú.
+- Ngày tái khám đề xuất.
+
+Ví dụ:
+
+Chẩn đoán: Viêm tủy răng 36.
+Điều trị: Điều trị tủy lần 1.
+Kế hoạch: Điều trị tiếp lần 2.
+Đơn thuốc: theo chỉ định bác sĩ.
+Ghi chú: hạn chế nhai bên đang điều trị.
+Ngày tái khám đề xuất: 20/10/2026.
+
+2.6.1. Phân biệt ngày tái khám đề xuất và lịch tái khám thực tế
+
+Không nên hiểu:
+
+NextDate = Appointment mới.
+
+NextDate chỉ là ngày bác sĩ khuyến nghị bệnh nhân quay lại.
+
+Ví dụ:
+recommended_next_date = 20/10/2026
+
+Muốn có lịch tái khám thực tế thì phải tạo một Appointment mới có:
+- Bệnh nhân.
+- Bác sĩ.
+- Dịch vụ.
+- Ngày.
+- Giờ.
+- Trạng thái BOOKED.
+
+2.6.2. Bác sĩ đặt lịch tái khám
+
+Sau khi nhập kết quả khám, bác sĩ có nút:
+
+[ Đặt lịch tái khám ]
+
+Khi bấm:
+- Hệ thống lấy bệnh nhân hiện tại.
+- Mặc định ưu tiên bác sĩ vừa khám.
+- Hiển thị ngày tái khám đề xuất.
+- Tải các slot còn trống.
+- Bác sĩ trao đổi trực tiếp với bệnh nhân.
+- Chọn ngày/giờ mà bệnh nhân đồng ý.
+- Backend kiểm tra lại slot.
+- Nếu hợp lệ thì tạo Appointment mới với status = BOOKED.
+
+Ví dụ:
+
+Bệnh nhân: Nguyễn Văn A
+Bác sĩ: Trần Văn B
+Ngày đề xuất: 20/10/2026
+
+Các slot:
+08:00
+08:30
+10:00
+14:30
+
+Bệnh nhân đồng ý 10:00.
+
+Hệ thống tạo lịch:
+20/10/2026 - 10:00 - BOOKED
+
+2.6.3. Nếu ngày tái khám bị full
+
+Không được chen thêm bệnh nhân vào slot đã có người.
+
+Ví dụ:
+20/10/2026 - tất cả slot đã BOOKED.
+
+Hệ thống báo:
+"Ngày 20/10/2026 không còn lịch trống."
+
+Sau đó hiển thị các ngày/slot gần nhất:
+
+21/10:
+09:00
+10:30
+
+22/10:
+08:30
+14:00
+
+23/10:
+09:30
+15:30
+
+Bác sĩ trao đổi với bệnh nhân và chọn phương án phù hợp.
+
+Không phá ràng buộc:
+UNIQUE (doctor_id, appointment_date, start_time)
+
+2.6.4. Ưu tiên bác sĩ cũ khi tái khám
+
+Mặc định:
+Bác sĩ tái khám = bác sĩ vừa điều trị.
+
+Lý do:
+- Bác sĩ đã biết chẩn đoán trước.
+- Biết kế hoạch điều trị.
+- Biết thuốc đã kê.
+- Dễ theo dõi tiến trình điều trị.
+
+Nếu bác sĩ cũ không còn lịch phù hợp:
+- Chọn ngày khác với bác sĩ đó.
+Hoặc:
+- Chuyển sang bác sĩ khác phù hợp nếu nghiệp vụ cho phép.
+
+2.6.5. Liên kết lịch tái khám với lần khám trước
+
+Appointment tái khám nên liên kết với lịch/lần khám trước.
+
+Ví dụ trường:
+
+previous_appointment_id
+
+Ví dụ:
+
+Appointment #100
+- Lần khám đầu.
+- COMPLETED.
+
+MedicalRecord #50
+- Kết quả khám.
+
+Appointment #125
+- Lịch tái khám.
+- previous_appointment_id = 100.
+- BOOKED.
+
+Khi bác sĩ mở lịch tái khám có thể xem:
+- Chẩn đoán lần trước.
+- Điều trị lần trước.
+- Đơn thuốc.
+- Kế hoạch điều trị.
+- Ghi chú.
+
+2.6.6. Không tự động tạo lịch khi nhập NextDate
+
+Khi bác sĩ nhập ngày tái khám đề xuất, không được tự động tạo Appointment.
+
+Luồng đúng:
+
+Bác sĩ nhập ngày đề xuất
+    ↓
+Bấm "Đặt lịch tái khám"
+    ↓
+Kiểm tra slot
+    ↓
+Trao đổi với bệnh nhân
+    ↓
+Chọn ngày/giờ phù hợp
+    ↓
+Tạo Appointment mới
+
+
+2.6.7. Bác sĩ quyết định có cần tái khám hay không
+
+Sau khi hoàn thành phần khám và nhập kết quả khám, bác sĩ phải chọn một trong hai phương án:
+
+[ Không cần tái khám ]
+hoặc
+[ Cần tái khám ]
+
+Tái khám không phải là bước bắt buộc đối với mọi lần khám.
+
+Trường hợp 1 - Không cần tái khám:
+
+Ví dụ:
+- Chẩn đoán: Cao răng mức độ nhẹ.
+- Điều trị: Cạo vôi và đánh bóng.
+- Ghi chú: Hướng dẫn vệ sinh răng miệng.
+- Tái khám: Không cần tái khám.
+
+Dữ liệu có thể lưu:
+
+follow_up_required = false
+recommended_follow_up_date = null
+follow_up_appointment_id = null
+
+Sau đó bác sĩ có thể thực hiện Check-out / Hoàn tất khám.
+
+Trường hợp 2 - Cần tái khám:
+
+Ví dụ:
+- Chẩn đoán: Viêm tủy.
+- Điều trị: Điều trị tủy lần 1.
+- Kế hoạch: Điều trị tủy lần 2.
+- Tái khám: Cần tái khám.
+- Ngày đề xuất: 20/10/2026.
+- Lý do: Tiếp tục điều trị tủy.
+
+Dữ liệu có thể lưu:
+
+follow_up_required = true
+recommended_follow_up_date = 20/10/2026
+follow_up_note = "Tiếp tục điều trị tủy"
+
+Sau đó bác sĩ có thể:
+- Xem lịch trống.
+- Trao đổi với bệnh nhân.
+- Tạo lịch tái khám mới nếu đã thống nhất được ngày/giờ.
+
+Nếu bệnh nhân chưa thể chốt ngày/giờ:
+- Vẫn cho phép bác sĩ hoàn tất lần khám hiện tại.
+- Lưu trạng thái cần tái khám nhưng chưa có Appointment tái khám.
+- Bệnh nhân có thể đặt lịch sau.
+
+Ví dụ:
+
+follow_up_required = true
+recommended_follow_up_date = 20/10/2026
+follow_up_appointment_id = null
+
+Như vậy hệ thống phải phân biệt được 3 trường hợp:
+
+1. Không cần tái khám.
+2. Cần tái khám nhưng chưa đặt lịch.
+3. Cần tái khám và đã đặt lịch thành công.
+
+2.6.8. Check-out / Hoàn tất khám
+
+Check-out là bước cuối cùng của bác sĩ đối với lần khám hiện tại.
+
+Luồng:
+
+BOOKED
+    ↓
+CHECKED_IN
+    ↓
+IN_PROGRESS
+    ↓
+Bác sĩ nhập kết quả khám
+    ↓
+Chọn:
+[ Không cần tái khám ]
+        hoặc
+[ Cần tái khám ]
+    ↓
+Nếu cần tái khám:
+- Có thể chọn ngày đề xuất.
+- Có thể đặt lịch tái khám.
+- Hoặc để bệnh nhân đặt sau.
+    ↓
+[ CHECK-OUT / HOÀN TẤT KHÁM ]
+    ↓
+COMPLETED
+
+Khi bác sĩ bấm Check-out / Hoàn tất khám, backend kiểm tra các dữ liệu bắt buộc.
+
+Ví dụ kiểm tra:
+
+- Đã nhập chẩn đoán.
+- Đã nhập nội dung điều trị.
+- Đã nhập các thông tin kết quả khám bắt buộc.
+- Đã chọn Có cần tái khám hay Không cần tái khám.
+
+Nếu chọn Cần tái khám:
+- Có ngày tái khám đề xuất hoặc ghi chú tái khám phù hợp.
+- Không bắt buộc phải tạo Appointment tái khám ngay.
+
+Sau khi hợp lệ:
+
+appointment.status = COMPLETED
+completed_at = thời gian hiện tại
+completed_by = doctor_id
+
+Sau khi Check-out:
+- Lần khám hiện tại được xem là đã hoàn thành.
+- Kết quả khám được lưu vào lịch sử khám của bệnh nhân.
+- Nếu đã tạo lịch tái khám thì lịch tái khám mới vẫn có trạng thái BOOKED.
+- Appointment cũ và Appointment tái khám là hai lịch hẹn riêng biệt.
+- Appointment tái khám có thể liên kết với Appointment cũ thông qua previous_appointment_id.
+
+Ví dụ:
+
+Appointment #100
+- Ngày khám: 15/10/2026
+- Trạng thái: COMPLETED
+
+MedicalRecord #50
+- Chẩn đoán: Viêm tủy
+- Điều trị: Điều trị tủy lần 1
+- follow_up_required = true
+- recommended_follow_up_date = 20/10/2026
+
+Appointment #125
+- Ngày tái khám: 20/10/2026
+- Giờ: 09:30
+- Trạng thái: BOOKED
+- previous_appointment_id = 100
+
+2.6.9. Luồng hoàn chỉnh khi kết thúc một lần khám
+
+Trường hợp A - Không cần tái khám:
+
+IN_PROGRESS
+    ↓
+Nhập kết quả khám
+    ↓
+Chọn "Không cần tái khám"
+    ↓
+Check-out
+    ↓
+COMPLETED
+
+Trường hợp B - Cần tái khám và đặt lịch ngay:
+
+IN_PROGRESS
+    ↓
+Nhập kết quả khám
+    ↓
+Chọn "Cần tái khám"
+    ↓
+Nhập ngày tái khám đề xuất
+    ↓
+Xem slot còn trống
+    ↓
+Bác sĩ và bệnh nhân thống nhất ngày/giờ
+    ↓
+Tạo Appointment tái khám mới - BOOKED
+    ↓
+Check-out lần khám hiện tại
+    ↓
+Appointment hiện tại - COMPLETED
+
+Trường hợp C - Cần tái khám nhưng chưa thể đặt lịch:
+
+IN_PROGRESS
+    ↓
+Nhập kết quả khám
+    ↓
+Chọn "Cần tái khám"
+    ↓
+Lưu ngày/ghi chú tái khám đề xuất
+    ↓
+Chưa tạo Appointment mới
+    ↓
+Check-out
+    ↓
+COMPLETED
+    ↓
+Bệnh nhân đặt lịch tái khám sau
+
+2.6.10. Quy tắc quan trọng về tái khám và Check-out
+
+1. Không bắt buộc mọi bệnh nhân phải tái khám.
+
+2. Bác sĩ phải chọn rõ:
+   - Không cần tái khám.
+   - Cần tái khám.
+
+3. Chỉ khi cần tái khám mới hiển thị các trường:
+   - Ngày tái khám đề xuất.
+   - Lý do/ghi chú tái khám.
+   - Nút xem lịch trống.
+   - Nút đặt lịch tái khám.
+
+4. Ngày tái khám đề xuất không tự động tạo Appointment.
+
+5. Nếu ngày tái khám đề xuất đã full:
+   - Không chen lịch.
+   - Hiển thị ngày/slot gần nhất còn trống.
+   - Bác sĩ và bệnh nhân chọn phương án khác.
+
+6. Nếu chưa thống nhất được lịch tái khám:
+   - Vẫn được Check-out.
+   - Lần khám hiện tại vẫn chuyển COMPLETED.
+   - Bệnh nhân có thể đặt lịch sau.
+
+7. Khi đã đặt tái khám:
+   - Appointment tái khám có status = BOOKED.
+   - Appointment hiện tại sau Check-out có status = COMPLETED.
+
+8. Check-out không đồng nghĩa với việc xóa hoặc kết thúc toàn bộ quá trình điều trị.
+   Check-out chỉ kết thúc lần khám hiện tại.
+
+9. Nếu bệnh nhân cần nhiều lần điều trị, mỗi lần khám là một Appointment riêng và có thể liên kết với lần trước.
+
+10. Sau khi Appointment đã COMPLETED, không nên cho sửa kết quả khám tùy tiện.
+    Nếu có chỉnh sửa sau hoàn tất thì nên ghi lại lịch sử cập nhật để truy vết.
+
+
+--------------------------------------------------------------------------------
+2.7. QUẢN LÝ BỆNH NHÂN
+--------------------------------------------------------------------------------
+
+Hồ sơ bệnh nhân gồm:
+- Ngày sinh.
+- Giới tính.
+- Địa chỉ.
+- Tiền sử bệnh.
+- Dị ứng.
+
+Bệnh nhân có thể:
+- Xem hồ sơ cá nhân.
+- Xem các lịch hẹn.
+- Xem lịch sử khám.
+- Xem kết quả khám của chính mình.
+
+Quan hệ tổng quát:
+
+Patient
+    ↓
+nhiều Appointment
+    ↓
+các Appointment đã khám
+    ↓
+MedicalRecord
+    ↓
+Lịch sử khám bệnh
+
+Thông tin tiền sử bệnh và dị ứng cần được hiển thị cho bác sĩ khi khám để hỗ trợ quá trình điều trị.
+
+--------------------------------------------------------------------------------
+2.8. AI CHATBOT RAG - ĐIỂM SÁNG CỦA ĐỀ TÀI
+--------------------------------------------------------------------------------
+
+Mục tiêu của chatbot:
+
+- Hỗ trợ bệnh nhân mô tả và làm rõ triệu chứng nha khoa.
+- Đưa ra nhận định tham khảo về tình trạng có thể liên quan dựa trên triệu chứng và Knowledge Base.
+- Không thay thế chẩn đoán trực tiếp của bác sĩ.
+- Không tự kê đơn hoặc đưa phác đồ điều trị thay bác sĩ.
+- Gợi ý bác sĩ phù hợp nếu người dùng có nhu cầu.
+- Hiển thị các slot trống của bác sĩ phù hợp để bệnh nhân tự vào chức năng đặt lịch.
+- Tra cứu thông tin dịch vụ và bảng giá trực tiếp từ cơ sở dữ liệu của hệ thống.
+- Trả lời các thông tin phòng khám phù hợp với dữ liệu đã có.
+
+2.8.1. Hỗ trợ nhận định tình trạng nha khoa từ triệu chứng
+
+Chatbot không nên khẳng định chắc chắn:
+
+"Bạn bị bệnh X."
+
+Thay vào đó, chatbot đưa ra nhận định theo dạng:
+
+"Các triệu chứng bạn mô tả có thể liên quan đến..."
+
+hoặc:
+
+"Dựa trên thông tin bạn cung cấp, tình trạng này có thể cần được bác sĩ kiểm tra trực tiếp."
+
+Kết quả chatbot chỉ có tính chất tham khảo và không thay thế chẩn đoán trực tiếp của bác sĩ.
+
+Chatbot có thể hỏi làm rõ triệu chứng theo nhiều bước.
+
+Ví dụ bệnh nhân nhập:
+
+"Tôi đau răng."
+
+Chatbot có thể hỏi:
+
+1. Vị trí đau:
+   - Răng trên/răng dưới.
+   - Bên trái/bên phải.
+
+2. Mức độ đau:
+   - Nhẹ.
+   - Vừa.
+   - Dữ dội.
+
+3. Thời gian diễn ra:
+   - Mới đau.
+   - Đau nhiều ngày.
+   - Đau kéo dài.
+
+4. Triệu chứng kèm theo:
+   - Sưng.
+   - Chảy máu.
+   - Ê buốt.
+   - Sốt.
+   - Triệu chứng khác.
+
+5. Tiền sử dị ứng thuốc nếu cần thiết cho ngữ cảnh tư vấn.
+
+Ví dụ context sau khi hỏi:
+
+Vị trí: hàm dưới bên trái.
+Mức độ: dữ dội.
+Thời gian: 3 ngày.
+Kèm theo: sưng.
+Dị ứng: penicillin.
+
+Sau đó hệ thống:
+
+Triệu chứng người dùng
+        ↓
+Embed câu hỏi/context
+        ↓
+Truy xuất Knowledge Base
+        ↓
+Lấy Top-K chunk liên quan
+        ↓
+Kiểm tra confidence threshold
+        ↓
+Gemini tổng hợp nhận định tham khảo
+        ↓
+Trả lời người dùng
+
+Chatbot có thể đưa:
+- Nhận định tham khảo.
+- Khuyến nghị chăm sóc chung.
+- Khuyến nghị đi khám khi cần.
+- Cảnh báo nên liên hệ cơ sở y tế khi có dấu hiệu cần khám sớm.
+
+Chatbot không:
+- Khẳng định chẩn đoán chắc chắn thay bác sĩ.
+- Tự kê đơn thuốc.
+- Tự quyết định phác đồ điều trị.
+
+2.8.2. Quick Replies
+
+Chatbot hiển thị các lựa chọn nhanh để người dùng không phải nhập toàn bộ bằng bàn phím.
+
+Ví dụ:
+
+"Mức độ đau của bạn?"
+
+[ Nhẹ ] [ Vừa ] [ Dữ dội ]
+
+"Bạn có triệu chứng nào kèm theo?"
+
+[ Sưng ]
+[ Chảy máu ]
+[ Ê buốt ]
+[ Sốt ]
+[ Không có ]
+
+Quick Replies giúp:
+- Chuẩn hóa dữ liệu triệu chứng.
+- Giảm nhập sai.
+- Tạo trải nghiệm hội thoại dễ sử dụng.
+- Hỗ trợ chatbot thu thập đủ thông tin theo từng bước.
+
+2.8.3. Truy xuất Knowledge Base cho nội dung chuyên môn nha khoa
+
+Knowledge Base chủ yếu dùng cho các dữ liệu mang tính tri thức tương đối ổn định, ví dụ:
+
+- Bệnh lý nha khoa.
+- Triệu chứng.
+- Nguyên nhân thường gặp.
+- Kiến thức chăm sóc răng miệng.
+- FAQ chuyên môn.
+- Hướng dẫn chung.
+
+Quy trình:
+
+Câu hỏi / triệu chứng
+        ↓
+Embedding
+        ↓
+Vector Search
+        ↓
+Top-K
+        ↓
+Confidence Threshold
+        ↓
+Context nha khoa
+        ↓
+Gemini tổng hợp câu trả lời
+
+Không nên dùng dữ liệu vector cũ làm nguồn chính cho các thông tin động như:
+- Giá dịch vụ hiện tại.
+- Danh sách bác sĩ hiện tại.
+- Lịch làm việc.
+- Slot trống.
+
+Các dữ liệu động này phải lấy trực tiếp từ PostgreSQL.
+
+2.8.4. Gợi ý bác sĩ phù hợp
+
+Sau khi chatbot đã có nhận định tham khảo về tình trạng của người dùng, chatbot có thể hỏi:
+
+"Bạn có muốn tôi tìm bác sĩ phù hợp với tình trạng này không?"
+
+Nếu người dùng đồng ý:
+
+Nhận định tình trạng
+        ↓
+Xác định chuyên khoa/dịch vụ phù hợp
+        ↓
+Query PostgreSQL
+        ↓
+Tìm bác sĩ phù hợp
+        ↓
+Hiển thị danh sách bác sĩ
+
+Điều kiện tìm bác sĩ có thể gồm:
+
+- Bác sĩ có chuyên khoa phù hợp.
+- Bác sĩ có thực hiện dịch vụ liên quan.
+- Bác sĩ đang hoạt động trong hệ thống.
+- Có lịch làm việc phù hợp.
+
+Mỗi bác sĩ đề xuất có thể hiển thị:
+
+- Tên bác sĩ.
+- Chuyên khoa.
+- Số năm kinh nghiệm.
+- Đánh giá.
+- Dịch vụ liên quan.
+
+AI không được tự bịa tên bác sĩ.
+
+Danh sách bác sĩ phải được lấy từ cơ sở dữ liệu thật của hệ thống.
+
+2.8.5. Hiển thị slot trống của bác sĩ phù hợp
+
+Sau khi người dùng chọn hoặc quan tâm một bác sĩ được gợi ý, chatbot có thể lấy các slot trống của bác sĩ đó.
+
+Luồng:
+
+Bác sĩ được chọn
+        ↓
+Query lịch làm việc
+        ↓
+Lấy Appointment đang chiếm slot
+        ↓
+Tính Available Slots
+        ↓
+Hiển thị cho người dùng
+
+Ví dụ:
+
+Bác sĩ Nguyễn Văn A
+Chuyên khoa: Nội nha
+
+Slot còn trống:
+
+15/10/2026
+[ 14:00 ] [ 15:30 ]
+
+16/10/2026
+[ 08:30 ] [ 10:00 ] [ 14:30 ]
+
+Chatbot chỉ có nhiệm vụ:
+- Hiển thị slot trống.
+- Gợi ý người dùng chọn lịch phù hợp.
+- Điều hướng người dùng sang chức năng đặt lịch.
+
+Chatbot không tự tạo Appointment chỉ vì đã hiển thị một slot.
+
+Người dùng phải tự:
+- Chọn bác sĩ.
+- Chọn ngày/giờ.
+- Xác nhận đặt lịch.
+
+Khi bệnh nhân thực hiện đặt lịch, Backend bắt buộc kiểm tra lại:
+
+- Quy tắc thời gian đặt lịch.
+- Lịch làm việc của bác sĩ.
+- Slot còn trống.
+- UNIQUE constraint.
+- Transaction.
+
+Lý do:
+Slot hiển thị trong chatbot có thể vừa được một bệnh nhân khác đặt trước khi người dùng bấm xác nhận.
+
+Luồng đầy đủ:
+
+Chatbot gợi ý bác sĩ
+        ↓
+Hiển thị slot trống
+        ↓
+Người dùng chọn "Đặt lịch"
+        ↓
+Đi tới chức năng đặt lịch
+        ↓
+Backend kiểm tra lại slot
+        ↓
+Nếu hợp lệ
+        ↓
+Appointment = BOOKED
+
+2.8.6. Tra cứu dịch vụ nha khoa từ cơ sở dữ liệu
+
+Chatbot hỗ trợ trả lời các câu hỏi về dịch vụ của phòng khám.
+
+Ví dụ:
+
+- "Phòng khám có dịch vụ nhổ răng khôn không?"
+- "Phòng khám có cạo vôi răng không?"
+- "Có dịch vụ trám răng không?"
+- "Niềng răng có những dịch vụ nào?"
+- "Dịch vụ này thực hiện như thế nào?"
+
+Với thông tin dịch vụ đang được quản lý trong hệ thống, chatbot phải query PostgreSQL thay vì tự suy đoán.
+
+Luồng:
+
+Người dùng hỏi về dịch vụ
+        ↓
+Chatbot xác định intent = SERVICE_INFO
+        ↓
+Query bảng dental_services
+        ↓
+Lấy dữ liệu dịch vụ
+        ↓
+Gemini diễn đạt câu trả lời tự nhiên
+
+Thông tin có thể lấy từ CSDL:
+
+- Tên dịch vụ.
+- Mô tả.
+- Giá hiện tại.
+- Các thông tin nghiệp vụ liên quan đang được hệ thống lưu.
+
+Ví dụ dữ liệu:
+
+Tên: Cạo vôi răng
+Mô tả: Làm sạch cao răng và mảng bám.
+Giá: 300.000 VNĐ
+
+Chatbot có thể trả lời:
+
+"Phòng khám hiện có dịch vụ Cạo vôi răng. Dịch vụ giúp làm sạch cao răng và mảng bám. Giá hiện tại trên hệ thống là 300.000 VNĐ."
+
+2.8.7. Tra cứu bảng giá từ cơ sở dữ liệu
+
+Giá dịch vụ là dữ liệu động và có thể thay đổi.
+
+Vì vậy:
+- Không lấy giá từ nội dung RAG cũ nếu hệ thống đã quản lý giá trong PostgreSQL.
+- Giá trả cho người dùng phải lấy trực tiếp từ cơ sở dữ liệu tại thời điểm hỏi.
+
+Ví dụ câu hỏi:
+
+"Giá cạo vôi răng bao nhiêu?"
+
+Luồng:
+
+Người dùng hỏi giá
+        ↓
+Chatbot xác định intent = SERVICE_PRICE
+        ↓
+Query PostgreSQL
+        ↓
+dental_services.price
+        ↓
+Trả giá hiện tại
+
+Ví dụ:
+
+Database:
+Cạo vôi răng = 300.000 VNĐ
+
+Chatbot:
+"Giá hiện tại của dịch vụ Cạo vôi răng trên hệ thống là 300.000 VNĐ."
+
+Nếu không tìm thấy dịch vụ hoặc giá:
+
+Chatbot không được tự tạo một mức giá.
+
+Hệ thống trả thông báo phù hợp, ví dụ:
+
+"Hiện tôi chưa tìm thấy thông tin giá của dịch vụ này trong hệ thống. Vui lòng liên hệ phòng khám để được hỗ trợ."
+
+2.8.8. Phân loại nguồn dữ liệu cho chatbot
+
+Chatbot sử dụng hai nhóm dữ liệu chính.
+
+A. Knowledge Base / RAG
+
+Dùng cho:
+- Triệu chứng.
+- Bệnh lý.
+- Nguyên nhân.
+- Kiến thức nha khoa.
+- Chăm sóc răng miệng.
+- FAQ chuyên môn.
+- Hướng dẫn chung.
+
+B. PostgreSQL - dữ liệu nghiệp vụ động
+
+Dùng cho:
+- Bác sĩ.
+- Chuyên khoa.
+- Dịch vụ.
+- Bảng giá.
+- Lịch làm việc.
+- Slot trống.
+- Các thông tin động của phòng khám.
+
+Nguyên tắc:
+
+Knowledge Base
+→ trả lời kiến thức nha khoa.
+
+PostgreSQL
+→ trả lời dữ liệu đang thay đổi trong hệ thống.
+
+Gemini
+→ dùng để tổng hợp và diễn đạt câu trả lời tự nhiên dựa trên dữ liệu đã truy xuất.
+
+2.8.9. Phân loại nhu cầu người dùng
+
+Chatbot có thể xác định người dùng đang cần nhóm thông tin nào.
+
+Ví dụ:
+
+Người dùng hỏi chatbot
+        ↓
+Phân loại nhu cầu
+        ├── SYMPTOM_CONSULTATION
+        │      ↓
+        │     RAG
+        │      ↓
+        │  Nhận định tham khảo
+        │      ↓
+        │  Có thể gợi ý bác sĩ
+        │
+        ├── FIND_DOCTOR
+        │      ↓
+        │  Query PostgreSQL
+        │      ↓
+        │  Bác sĩ phù hợp
+        │      ↓
+        │  Slot trống
+        │
+        ├── SERVICE_INFO
+        │      ↓
+        │  Query dental_services
+        │
+        └── SERVICE_PRICE
+               ↓
+           Query dental_services.price
+
+Có thể mở rộng thêm các intent khác nếu sau này cần.
+
+2.8.10. Gemini sinh câu trả lời
+
+Gemini không phải nguồn dữ liệu chính.
+
+Gemini nhận dữ liệu đã được hệ thống lấy từ:
+
+- Knowledge Base.
+- PostgreSQL.
+
+Sau đó Gemini có nhiệm vụ:
+- Tổng hợp.
+- Diễn đạt.
+- Tạo câu trả lời tự nhiên.
+- Giữ đúng context hội thoại.
+
+Ví dụ với tư vấn triệu chứng:
+
+Triệu chứng người dùng
+    +
+Knowledge Base Context
+    ↓
+Gemini
+    ↓
+Nhận định tham khảo
+
+Ví dụ với tìm bác sĩ:
+
+Nhận định tình trạng
+    +
+Doctor Data
+    +
+Available Slots
+    ↓
+Gemini / Backend Response
+    ↓
+Danh sách bác sĩ và slot
+
+Ví dụ với giá:
+
+Service Data từ PostgreSQL
+    ↓
+Gemini / Backend Response
+    ↓
+Thông tin dịch vụ + giá hiện tại
+
+AI không được tự tạo:
+- Tên bác sĩ không tồn tại.
+- Dịch vụ không tồn tại.
+- Giá không có trong database.
+- Slot không có trong hệ thống.
+
+2.8.11. Lưu lịch sử tư vấn
+
+Mỗi tài khoản có nhiều phiên chat.
+
+Ví dụ:
+
+User
+ ├── Chat Session 1
+ │    ├── Message 1
+ │    ├── Message 2
+ │    └── ...
+ ├── Chat Session 2
+ └── Chat Session 3
+
+Lưu:
+
+- Câu hỏi của bệnh nhân.
+- Triệu chứng đã mô tả.
+- Câu chatbot hỏi lại.
+- Trả lời của chatbot.
+- Bác sĩ được đề xuất.
+- Dịch vụ đã tra cứu khi cần.
+- Thông tin cần thiết để tiếp tục hội thoại.
+
+Bệnh nhân có thể:
+- Mở lại phiên chat cũ.
+- Xem lịch sử.
+- Tiếp tục chat.
+
+2.8.12. Confidence Threshold
+
+Bắt buộc có ngưỡng confidence cho phần RAG.
+
+Ví dụ:
+
+topScore = 0.31
+threshold = 0.65
+
+Nếu:
+
+topScore < threshold
+
+thì chatbot không dùng các chunk không đủ liên quan để đưa ra nhận định chuyên môn.
+
+Hệ thống trả thông báo phù hợp, ví dụ:
+
+"Chưa có đủ thông tin phù hợp trong dữ liệu để đưa ra nhận định. Bạn nên liên hệ hoặc đến phòng khám để được bác sĩ kiểm tra trực tiếp."
+
+Lưu ý:
+- Confidence Threshold chủ yếu áp dụng cho Retrieval của Knowledge Base.
+- Với giá, bác sĩ, dịch vụ và slot, hệ thống kiểm tra trực tiếp dữ liệu PostgreSQL.
+
+2.8.13. Benchmark đánh giá chatbot
+
+Chuẩn bị bộ benchmark tối thiểu 30 câu hỏi có đáp án kỳ vọng.
+
+Nên có nhiều nhóm:
+
+1. Tư vấn triệu chứng.
+2. Tình huống cần hỏi thêm triệu chứng.
+3. Gợi ý bác sĩ.
+4. Tra cứu dịch vụ.
+5. Tra cứu bảng giá.
+6. Kiểm tra slot.
+7. Câu hỏi không có dữ liệu.
+8. Câu hỏi ngoài phạm vi nha khoa.
+
+Dùng benchmark để đánh giá:
+- Khả năng Retrieval.
+- Độ phù hợp của câu trả lời.
+- Khả năng lấy đúng dữ liệu bác sĩ/dịch vụ/giá.
+- Khả năng từ chối suy diễn khi không có dữ liệu.
+- Mức độ hạn chế hallucination.
+
+2.8.14. Luồng chatbot tổng thể
+
+A. Luồng tư vấn triệu chứng:
+
+Người dùng mô tả triệu chứng
+        ↓
+Chatbot hỏi làm rõ
+        ↓
+RAG truy xuất Knowledge Base
+        ↓
+Nhận định tình trạng mang tính tham khảo
+        ↓
+Thông báo không thay thế bác sĩ
+        ↓
+Người dùng có muốn tìm bác sĩ?
+        ↓
+       Có
+        ↓
+Query PostgreSQL
+        ↓
+Gợi ý bác sĩ phù hợp
+        ↓
+Hiển thị slot trống
+        ↓
+Người dùng tự vào chức năng đặt lịch
+
+B. Luồng hỏi dịch vụ:
+
+Người dùng hỏi dịch vụ
+        ↓
+Query PostgreSQL
+        ↓
+Lấy dental_services
+        ↓
+Trả thông tin dịch vụ
+
+C. Luồng hỏi bảng giá:
+
+Người dùng hỏi giá
+        ↓
+Query PostgreSQL
+        ↓
+Lấy giá hiện tại
+        ↓
+Trả bảng giá
+
+D. Luồng tìm bác sĩ trực tiếp:
+
+Người dùng yêu cầu tìm bác sĩ
+        ↓
+Xác định nhu cầu/chuyên khoa/dịch vụ
+        ↓
+Query PostgreSQL
+        ↓
+Danh sách bác sĩ phù hợp
+        ↓
+Slot còn trống
+        ↓
+Người dùng tự chọn và đặt lịch
+
+================================================================================
+3. PIPELINE RAG
+================================================================================
+
+Quy trình tổng quát:
+
+Tài liệu nha khoa
+    ↓
+Document Loading
+    ↓
+Chunking
+    ↓
+Embedding
+    ↓
+Vector Database
+    ↓
+
+Người dùng đặt câu hỏi
+    ↓
+Embed câu hỏi
+    ↓
+Similarity Search
+    ↓
+Top-K
+    ↓
+Confidence Threshold
+    ↓
+Knowledge Context
+    +
+Dữ liệu nghiệp vụ từ Database
+    ↓
+Gemini
+    ↓
+Phản hồi cho người dùng
+
+Các công việc:
+
+1. Chuẩn bị Knowledge Base.
+2. Đọc tài liệu PDF/Word/TXT/CSV/Markdown.
+3. Chia tài liệu thành Chunk.
+4. Tạo Embedding cho từng Chunk.
+5. Lưu vector vào Vector Database.
+6. Embed câu hỏi người dùng.
+7. Truy xuất Top-K.
+8. Kiểm tra confidence threshold.
+9. Ghép context với dữ liệu động:
+   - Bác sĩ.
+   - Dịch vụ.
+   - Slot trống.
+10. Gửi prompt cho Gemini.
+11. Trả phản hồi về Frontend.
+12. Lưu lịch sử phiên chat.
+
+================================================================================
+4. LUỒNG NGHIỆP VỤ TỔNG THỂ
+================================================================================
+
+4.1. Luồng khám thông thường
+
+Bệnh nhân
+    ↓
+Chọn dịch vụ
+    ↓
+Chọn bác sĩ
+    ↓
+Chọn ngày
+    ↓
+Chọn slot
+    ↓
+BOOKED
+    ↓
+Bệnh nhân đến
+    ↓
+CHECKED_IN
+    ↓
+Bác sĩ bắt đầu khám
+    ↓
+IN_PROGRESS
+    ↓
+Nhập kết quả khám
+    ↓
+COMPLETED
+
+4.2. Luồng hủy
+
+BOOKED
+    ↓
+Kiểm tra thời hạn hủy
+    ↓
+Nếu còn đủ thời gian
+    ↓
+CANCELLED
+    ↓
+Giải phóng slot
+
+Nếu không còn đủ thời gian:
+- Không cho bệnh nhân tự hủy online.
+- Yêu cầu liên hệ phòng khám.
+
+4.3. Luồng không đến
+
+BOOKED
+    ↓
+Qua giờ hẹn
+    ↓
+Qua thời gian chờ
+    ↓
+Bác sĩ/nhân viên xác nhận
+    ↓
+NO_SHOW
+
+4.4. Luồng tái khám
+
+COMPLETED
+    ↓
+Bác sĩ nhập kết quả khám
+    ↓
+Nhập ngày tái khám đề xuất
+    ↓
+Bấm "Đặt lịch tái khám"
+    ↓
+Kiểm tra slot bác sĩ
+    ↓
+Nếu ngày đề xuất còn slot
+    ↓
+Chọn giờ
+    ↓
+Tạo Appointment mới - BOOKED
+
+Nếu ngày đề xuất FULL:
+    ↓
+Hiển thị ngày/slot gần nhất
+    ↓
+Trao đổi với bệnh nhân
+    ↓
+Chọn ngày/giờ khác
+    ↓
+Tạo Appointment mới - BOOKED
+
+4.5. Luồng chatbot đến đặt lịch
+
+Bệnh nhân mô tả triệu chứng
+    ↓
+Chatbot hỏi làm rõ
+    ↓
+RAG tìm Knowledge Base
+    ↓
+Xác định chuyên khoa/dịch vụ phù hợp
+    ↓
+Query bác sĩ trong Database
+    ↓
+Kiểm tra slot trống
+    ↓
+Đề xuất bác sĩ
+    ↓
+Xem lịch trống / Đặt lịch ngay
+    ↓
+Tạo Appointment
+
+================================================================================
+5. BUSINESS RULES QUAN TRỌNG
+================================================================================
+
+1. Bệnh nhân đặt lịch thành công là có lịch ngay, không cần bác sĩ/Admin duyệt.
+
+2. Mỗi slot khám có thời lượng cố định 60 phút:
+   slot_duration_minutes = 60.
+
+3. Lịch làm việc có thể chia theo buổi, ví dụ:
+   - Sáng: 07:00 - 12:00.
+   - Chiều: 13:00 - 18:00.
+
+4. Bệnh nhân phải đặt lịch trước giờ bắt đầu khám ít nhất 3 giờ:
+   booking_min_advance_minutes = 180.
+
+5. Không còn áp dụng quy tắc "buổi sáng chỉ đặt buổi chiều" hay "buổi chiều chỉ đặt ngày hôm sau".
+   Chỉ cần slot còn trống, thuộc lịch làm việc và cách thời điểm hiện tại ít nhất 3 giờ.
+
+6. Nếu ngày hiện tại không còn slot nào đáp ứng điều kiện 3 giờ, hệ thống hiển thị ngày làm việc tiếp theo của bác sĩ.
+
+7. Mọi lịch hẹn phải kiểm tra lịch làm việc và slot trống của bác sĩ.
+
+8. Không cho đặt trùng:
+   UNIQUE (doctor_id, appointment_date, start_time)
+   + transaction.
+
+9. Hủy lịch:
+   cancellation_cutoff_minutes = 90.
+   Bệnh nhân chỉ được tự hủy khi còn ít nhất 1 giờ 30 phút trước giờ hẹn.
+
+10. Đổi lịch:
+    reschedule_cutoff_minutes = 90.
+    Bệnh nhân chỉ được đổi khi còn ít nhất 1 giờ 30 phút trước giờ hẹn hiện tại.
+    Nếu đủ điều kiện, có thể đổi sang slot khác trong cùng buổi, cùng ngày hoặc ngày khác nếu slot còn trống.
+
+11. Điều kiện đổi lịch được tính theo giờ hẹn hiện tại, không tính theo giờ của slot mới.
+
+12. NO_SHOW chỉ được xác nhận sau khoảng thời gian chờ, ví dụ:
+    no_show_grace_minutes = 15.
+
+13. Không tự động đánh dấu NO_SHOW hoàn toàn; nên có xác nhận của bác sĩ/nhân viên.
+
+14. Nếu bệnh nhân đã CHECKED_IN thì không được đánh dấu NO_SHOW.
+
+15. Khi hủy/đổi/no-show phải lưu lịch sử để truy vết.
+
+16. Bác sĩ không xác nhận "chấp nhận lịch"; bác sĩ xác nhận:
+    - bệnh nhân đã đến,
+    - bắt đầu khám,
+    - hoàn thành khám,
+    - bệnh nhân không đến.
+
+17. Nếu bác sĩ khám quá 60 phút:
+    - ca hiện tại vẫn giữ IN_PROGRESS cho tới khi hoàn thành,
+    - bệnh nhân tiếp theo nếu đã đến giữ CHECKED_IN,
+    - không tự động bắt đầu ca tiếp theo,
+    - không tự động thay đổi giờ hẹn gốc của các lịch phía sau.
+
+18. Appointment nên lưu cả thời gian dự kiến và thực tế:
+    - scheduled_start_time,
+    - scheduled_end_time,
+    - checked_in_at,
+    - actual_start_time,
+    - actual_end_time.
+
+19. Có thể cấu hình cảnh báo khi bác sĩ trễ, ví dụ:
+    delay_warning_minutes = 30.
+
+20. Nếu bệnh nhân phải đổi lịch do bác sĩ/phòng khám bị trễ:
+    - có thể lưu reschedule_reason = DOCTOR_DELAY,
+    - không xem đây là lỗi hoặc NO_SHOW của bệnh nhân.
+
+21. Ngày tái khám đề xuất không đồng nghĩa với lịch tái khám thực tế.
+
+22. Muốn tái khám phải tạo Appointment mới sau khi đã chọn được slot còn trống.
+
+23. Không cho bác sĩ chen lịch khi ngày đã full.
+
+24. Ưu tiên tái khám với bác sĩ đã điều trị trước đó.
+
+25. Appointment tái khám nên liên kết với Appointment trước để theo dõi quá trình điều trị.
+
+26. Chatbot chỉ hỗ trợ nhận định tình trạng nha khoa dựa trên triệu chứng và Knowledge Base; không thay thế chẩn đoán trực tiếp của bác sĩ.
+
+27. Chatbot không tự kê đơn hoặc tự tạo phác đồ điều trị thay bác sĩ.
+
+28. Chatbot không tự bịa bác sĩ, dịch vụ, giá hoặc slot.
+
+29. Bác sĩ, dịch vụ, bảng giá, lịch làm việc và slot trống phải lấy từ PostgreSQL của hệ thống.
+
+30. Knowledge Base / RAG chủ yếu dùng cho tri thức nha khoa, triệu chứng, bệnh lý, hướng dẫn và FAQ chuyên môn.
+
+31. Nếu người dùng muốn tìm bác sĩ, chatbot dựa trên nhu cầu/nhận định để tìm bác sĩ phù hợp từ CSDL và hiển thị slot trống.
+
+32. Chatbot chỉ hiển thị/gợi ý slot; bệnh nhân phải tự thực hiện thao tác đặt lịch. Backend phải kiểm tra lại slot và điều kiện đặt trước 3 giờ trước khi tạo Appointment.
+
+33. Giá dịch vụ phải lấy trực tiếp từ CSDL tại thời điểm người dùng hỏi; nếu không có dữ liệu thì không tự tạo giá.
+
+34. Khi độ tương đồng RAG thấp hơn threshold, trả câu mặc định thay vì để AI suy diễn.
+
+35. Có bộ benchmark tối thiểu 30 câu để đánh giá chatbot.
+
+================================================================================
+
+6. PHÂN CÔNG TRÁCH NHIỆM THEO ROLE
+================================================================================
+
+PATIENT
+- Đăng ký/đăng nhập.
+- Quản lý hồ sơ.
+- Chọn dịch vụ.
+- Chọn bác sĩ.
+- Xem slot.
+- Đặt lịch.
+- Đổi/hủy lịch đúng quy định.
+- Xem lịch sử khám.
+- Xem kết quả khám.
+- Chat với AI.
+- Đặt lịch từ gợi ý của chatbot.
+
+DOCTOR
+- Xem/quản lý lịch làm việc.
+- Xem các lịch đã được bệnh nhân đặt.
+- Check-in bệnh nhân.
+- Bắt đầu khám.
+- Nhập kết quả khám.
+- Hoàn thành buổi khám.
+- Đánh dấu NO_SHOW.
+- Đề xuất ngày tái khám.
+- Đặt lịch tái khám sau khi thống nhất với bệnh nhân.
+
+ADMIN
+- Quản lý tài khoản.
+- Tạo tài khoản bác sĩ.
+- Quản lý bác sĩ.
+- Quản lý dịch vụ.
+- Theo dõi hoạt động hệ thống.
+- Xử lý các ngoại lệ cần quyền quản trị.
+- Không cần duyệt từng lịch hẹn.
+
+================================================================================
+KẾT THÚC
+================================================================================

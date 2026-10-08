@@ -1,0 +1,12 @@
+spring:
+  config:
+    activate:
+      on-profile: development
+
+  # Keep Hibernate validation enabled so accidental schema drift is not hidden.
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}

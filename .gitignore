@@ -1,0 +1,22 @@
+# Maven
+backend/target/
+.m2/
+.maven-settings.xml
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Local environment files
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Logs
+*.log
+
+# Local tooling and temporary work files
+.codegraph/
+.tmp/
+tmp/
