@@ -11,6 +11,7 @@ import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.common.exception.ConflictException;
 import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.common.util.ClinicTimeProvider;
+import com.dentalclinic.common.util.PostgreSqlErrorUtils;
 import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
@@ -22,7 +23,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -30,8 +30,6 @@ import java.util.UUID;
 
 @Service
 public class AppointmentBookingService {
-
-    private static final String UNIQUE_VIOLATION_SQL_STATE = "23505";
 
     private final PatientRepository patientRepository;
     private final AppointmentRepository appointmentRepository;
@@ -82,7 +80,7 @@ public class AppointmentBookingService {
         try {
             appointmentRepository.saveAndFlush(appointment);
         } catch (DataIntegrityViolationException exception) {
-            if (isUniqueViolation(exception)) {
+            if (PostgreSqlErrorUtils.isUniqueViolation(exception)) {
                 throw slotConflict();
             }
             throw exception;
@@ -124,18 +122,6 @@ public class AppointmentBookingService {
                 appointment.getStatus(),
                 appointment.getCreatedAt()
         );
-    }
-
-    private boolean isUniqueViolation(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null) {
-            if (current instanceof SQLException sqlException
-                    && UNIQUE_VIOLATION_SQL_STATE.equals(sqlException.getSQLState())) {
-                return true;
-            }
-            current = current.getCause();
-        }
-        return false;
     }
 
     private ConflictException slotConflict() {

@@ -105,21 +105,7 @@ public class SlotService {
             UUID serviceId,
             Instant scheduledStartAt
     ) {
-        ZoneId clinicZone = clinicTimeProvider.zoneId();
-        LocalDate appointmentDate = scheduledStartAt.atZone(clinicZone).toLocalDate();
-        SlotContext context = loadSlotContext(doctorId, serviceId, appointmentDate);
-        SlotCandidate candidate = generateSlotCandidates(
-                context.schedules(),
-                appointmentDate,
-                clinicZone
-        ).get(scheduledStartAt);
-
-        if (candidate == null) {
-            throw new BusinessException(
-                    ErrorCode.INVALID_REQUEST,
-                    "Khung giờ không thuộc lịch làm việc của bác sĩ"
-            );
-        }
+        SlotContext context = requireScheduledSlot(doctorId, serviceId, scheduledStartAt);
         if (scheduledStartAt.isBefore(clinicTimeProvider.now().plus(bookingMinAdvance))) {
             throw new BusinessException(
                     ErrorCode.INVALID_REQUEST,
@@ -134,6 +120,51 @@ public class SlotService {
             throw slotConflict();
         }
         return context.doctorService();
+    }
+
+    @Transactional(readOnly = true)
+    public DoctorService requireAvailableRescheduleSlot(
+            UUID doctorId,
+            UUID serviceId,
+            Instant scheduledStartAt
+    ) {
+        SlotContext context = requireScheduledSlot(doctorId, serviceId, scheduledStartAt);
+        if (!scheduledStartAt.isAfter(clinicTimeProvider.now())) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Khung giờ mới phải nằm trong tương lai"
+            );
+        }
+        if (appointmentRepository.existsOccupiedStart(
+                doctorId,
+                scheduledStartAt,
+                AppointmentStatus.CANCELLED
+        )) {
+            throw rescheduleSlotConflict();
+        }
+        return context.doctorService();
+    }
+
+    private SlotContext requireScheduledSlot(
+            UUID doctorId,
+            UUID serviceId,
+            Instant scheduledStartAt
+    ) {
+        ZoneId clinicZone = clinicTimeProvider.zoneId();
+        LocalDate appointmentDate = scheduledStartAt.atZone(clinicZone).toLocalDate();
+        SlotContext context = loadSlotContext(doctorId, serviceId, appointmentDate);
+        SlotCandidate candidate = generateSlotCandidates(
+                context.schedules(),
+                appointmentDate,
+                clinicZone
+        ).get(scheduledStartAt);
+        if (candidate == null) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Khung giờ không thuộc lịch làm việc của bác sĩ"
+            );
+        }
+        return context;
     }
 
     private SlotContext loadSlotContext(UUID doctorId, UUID serviceId, LocalDate date) {
@@ -203,6 +234,13 @@ public class SlotService {
     private ConflictException slotConflict() {
         return new ConflictException(
                 "Khung giờ vừa được người khác đặt. Vui lòng chọn khung giờ khác"
+        );
+    }
+
+    private ConflictException rescheduleSlotConflict() {
+        return new ConflictException(
+                "Khung giờ mới vừa được người khác đặt. Lịch hiện tại của bạn vẫn được giữ nguyên. "
+                        + "Vui lòng chọn khung giờ khác."
         );
     }
 

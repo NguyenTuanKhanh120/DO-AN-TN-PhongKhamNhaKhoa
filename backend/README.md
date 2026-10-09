@@ -1,6 +1,6 @@
 # Dental Clinic Backend
 
-Spring Boot backend for the dental clinic management system. The repository is currently implemented through **PHASE 12 — Book Appointment**.
+Spring Boot backend for the dental clinic management system. The repository currently includes **PHASE 19 — Medical Record**.
 
 ## Implemented
 
@@ -24,7 +24,20 @@ Spring Boot backend for the dental clinic management system. The repository is c
 - Fixed 60-minute slots with active doctor/service/mapping checks and a 180-minute booking lead time.
 - Transactional patient appointment booking with BOOK audit history.
 - PostgreSQL partial-unique-index protection for concurrent slot booking conflicts.
-- PostgreSQL integration tests; the current test suite contains 160 passing tests.
+- Role-owned patient and doctor appointment queries plus system-wide admin queries.
+- Appointment search, status/date/entity filters, pagination and clinic-timezone responses.
+- Transactional patient cancellation with a 90-minute cutoff and CANCEL audit history.
+- Pessimistic appointment locking and PostgreSQL partial-index slot release verification.
+- Transactional patient rescheduling with a 90-minute cutoff calculated from the old appointment.
+- Same-appointment rescheduling with schedule validation, RESCHEDULE audit history and no 180-minute booking lead-time rule on the new slot.
+- PostgreSQL partial-unique-index protection that keeps the losing appointment's old slot intact during a concurrent reschedule race.
+- Doctor-owned patient check-in with a pessimistic appointment lock, `BOOKED → CHECKED_IN`, actual check-in timestamp and CHECK_IN audit history.
+- Doctor-owned examination start with `CHECKED_IN → IN_PROGRESS`, actual start timestamp and START_EXAM audit history.
+- Per-doctor transactional locking prevents a second appointment from entering `IN_PROGRESS` before the current examination is completed.
+- Doctor-owned NO_SHOW confirmation after the configured 15-minute grace period, with checked-in protection and NO_SHOW audit history.
+- Doctor-owned medical-record creation and update while an appointment is `IN_PROGRESS`.
+- Typed prescription DTOs persisted as a JSONB array, one medical record per appointment and follow-up information validation.
+- PostgreSQL integration tests; the current test suite contains 260 passing tests.
 
 Frontend and AI chatbot features are not implemented yet.
 
@@ -75,6 +88,18 @@ mvn spring-boot:run
 - `GET /api/doctors/{doctorId}/schedule`
 - `GET /api/doctors/{doctorId}/available-slots?serviceId={serviceId}&date={yyyy-MM-dd}`
 - `POST /api/patient/appointments`
+- `GET /api/patient/appointments`
+- `GET /api/patient/appointments/{id}`
+- `PATCH /api/patient/appointments/{id}/cancel`
+- `PATCH /api/patient/appointments/{id}/reschedule`
+- `GET /api/doctor/appointments`
+- `GET /api/doctor/appointments/today`
+- `PATCH /api/doctor/appointments/{id}/check-in`
+- `PATCH /api/doctor/appointments/{id}/start`
+- `PATCH /api/doctor/appointments/{id}/no-show`
+- `POST /api/doctor/appointments/{id}/medical-record`
+- `PUT /api/doctor/appointments/{id}/medical-record`
+- `GET /api/admin/appointments`
 - `GET /api/services/{serviceId}/doctors`
 - `PUT /api/admin/doctors/{doctorId}/services`
 - `GET /api/doctor/schedules`

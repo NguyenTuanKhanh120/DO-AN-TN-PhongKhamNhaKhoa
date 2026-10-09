@@ -349,6 +349,96 @@ class SlotServiceTest {
     }
 
     @Test
+    void shouldAllowFutureRescheduleSlotInsideBookingAdvanceWindow() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        DoctorService mapping = stubValidDoctorAndService(doctor, dentalService);
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(),
+                (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor,
+                ScheduleSession.MORNING,
+                "07:00",
+                "12:00"
+        )));
+        Instant requestedStart = toInstant(MONDAY, LocalTime.of(11, 0));
+        when(appointmentRepository.existsOccupiedStart(
+                doctor.getId(),
+                requestedStart,
+                AppointmentStatus.CANCELLED
+        )).thenReturn(false);
+
+        DoctorService result = slotService.requireAvailableRescheduleSlot(
+                doctor.getId(),
+                dentalService.getId(),
+                requestedStart
+        );
+
+        assertThat(result).isSameAs(mapping);
+    }
+
+    @Test
+    void shouldRejectPastRescheduleSlot() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(),
+                (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor,
+                ScheduleSession.MORNING,
+                "07:00",
+                "12:00"
+        )));
+        Instant requestedStart = toInstant(MONDAY, LocalTime.of(9, 0));
+
+        assertThatThrownBy(() -> slotService.requireAvailableRescheduleSlot(
+                doctor.getId(),
+                dentalService.getId(),
+                requestedStart
+        )).isInstanceOf(BusinessException.class)
+                .hasMessage("Khung giờ mới phải nằm trong tương lai");
+
+        verify(appointmentRepository, never()).existsOccupiedStart(
+                doctor.getId(),
+                requestedStart,
+                AppointmentStatus.CANCELLED
+        );
+    }
+
+    @Test
+    void shouldRejectOccupiedRescheduleSlotWithRollbackMessage() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(),
+                (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor,
+                ScheduleSession.MORNING,
+                "07:00",
+                "12:00"
+        )));
+        Instant requestedStart = toInstant(MONDAY, LocalTime.of(11, 0));
+        when(appointmentRepository.existsOccupiedStart(
+                doctor.getId(),
+                requestedStart,
+                AppointmentStatus.CANCELLED
+        )).thenReturn(true);
+
+        assertThatThrownBy(() -> slotService.requireAvailableRescheduleSlot(
+                doctor.getId(),
+                dentalService.getId(),
+                requestedStart
+        )).isInstanceOf(ConflictException.class)
+                .hasMessage("Khung giờ mới vừa được người khác đặt. Lịch hiện tại của bạn vẫn "
+                        + "được giữ nguyên. Vui lòng chọn khung giờ khác.");
+    }
+
+    @Test
     void shouldReportMissingDoctor() {
         UUID doctorId = UUID.randomUUID();
         when(doctorRepository.findById(doctorId)).thenReturn(Optional.empty());
