@@ -3,6 +3,7 @@ package com.dentalclinic.auth.service;
 import com.dentalclinic.auth.dto.AuthResponse;
 import com.dentalclinic.auth.dto.LoginRequest;
 import com.dentalclinic.auth.dto.RegisterRequest;
+import com.dentalclinic.auth.security.BcryptPasswordValidator;
 import com.dentalclinic.auth.security.JwtTokenProvider;
 import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.constant.ErrorCode;
@@ -25,7 +26,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 @Service
@@ -53,7 +53,7 @@ public class AuthService {
 
     @Transactional
     public AuthResponse registerPatient(RegisterRequest request) {
-        validateBcryptPasswordLength(request.password());
+        BcryptPasswordValidator.validate(request.password());
         String normalizedEmail = normalizeEmail(request.email());
         if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
@@ -82,7 +82,7 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
-        validateBcryptPasswordLength(request.password());
+        BcryptPasswordValidator.validate(request.password());
         Authentication authentication;
         try {
             authentication = authenticationManager.authenticate(
@@ -120,9 +120,4 @@ public class AuthService {
         return fullName.trim().replaceAll("\\s+", " ");
     }
 
-    private void validateBcryptPasswordLength(String password) {
-        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw new BusinessException(ErrorCode.PASSWORD_TOO_LONG);
-        }
-    }
 }

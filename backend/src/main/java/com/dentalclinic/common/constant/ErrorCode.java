@@ -16,6 +16,9 @@ public enum ErrorCode {
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "Bạn không có quyền thực hiện thao tác này"),
     RESOURCE_CONFLICT(HttpStatus.CONFLICT, "Dữ liệu bị xung đột"),
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "Email đã được sử dụng"),
+    LICENSE_NUMBER_ALREADY_EXISTS(HttpStatus.CONFLICT, "Số giấy phép hành nghề đã được sử dụng"),
+    SERVICE_NAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "Tên dịch vụ đã được sử dụng"),
+    SCHEDULE_ALREADY_EXISTS(HttpStatus.CONFLICT, "Lịch làm việc cho ngày và buổi này đã tồn tại"),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "Phương thức HTTP không được hỗ trợ"),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Đã xảy ra lỗi hệ thống");
 

@@ -1,6 +1,6 @@
 # Dental Clinic Backend
 
-Spring Boot backend for the dental clinic management system. The repository is currently implemented through **PHASE 06 — Admin User Management**.
+Spring Boot backend for the dental clinic management system. The repository is currently implemented through **PHASE 12 — Book Appointment**.
 
 ## Implemented
 
@@ -12,7 +12,19 @@ Spring Boot backend for the dental clinic management system. The repository is c
 - Role-based authorization for ADMIN, DOCTOR and PATIENT.
 - Patient self-service profile APIs.
 - Admin user search, filtering, pagination, detail and status management.
-- PostgreSQL integration tests; the current test suite contains 54 passing tests.
+- Public doctor listing and detail APIs.
+- Admin doctor account creation, profile update and working-status management.
+- Public dental-service listing and detail APIs.
+- Admin dental-service creation, update and soft status management.
+- Public doctor-to-service and service-to-doctor lookup APIs.
+- Transactional admin replacement of doctor-service mappings with composite-key and foreign-key protection.
+- Public weekly doctor-schedule lookup.
+- Doctor-owned schedule CRUD with weekday, session and time-range validation.
+- Public available-slot calculation from weekly schedules and appointments.
+- Fixed 60-minute slots with active doctor/service/mapping checks and a 180-minute booking lead time.
+- Transactional patient appointment booking with BOOK audit history.
+- PostgreSQL partial-unique-index protection for concurrent slot booking conflicts.
+- PostgreSQL integration tests; the current test suite contains 160 passing tests.
 
 Frontend and AI chatbot features are not implemented yet.
 
@@ -49,6 +61,26 @@ mvn spring-boot:run
 - `GET /api/admin/users`
 - `GET /api/admin/users/{id}`
 - `PATCH /api/admin/users/{id}/status`
+- `GET /api/doctors`
+- `GET /api/doctors/{id}`
+- `POST /api/admin/doctors`
+- `PUT /api/admin/doctors/{id}`
+- `PATCH /api/admin/doctors/{id}/status`
+- `GET /api/services`
+- `GET /api/services/{id}`
+- `POST /api/admin/services`
+- `PUT /api/admin/services/{id}`
+- `PATCH /api/admin/services/{id}/status`
+- `GET /api/doctors/{doctorId}/services`
+- `GET /api/doctors/{doctorId}/schedule`
+- `GET /api/doctors/{doctorId}/available-slots?serviceId={serviceId}&date={yyyy-MM-dd}`
+- `POST /api/patient/appointments`
+- `GET /api/services/{serviceId}/doctors`
+- `PUT /api/admin/doctors/{doctorId}/services`
+- `GET /api/doctor/schedules`
+- `POST /api/doctor/schedules`
+- `PUT /api/doctor/schedules/{id}`
+- `DELETE /api/doctor/schedules/{id}`
 
 ## Test
 
