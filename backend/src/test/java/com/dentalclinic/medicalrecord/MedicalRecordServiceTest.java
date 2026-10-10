@@ -7,12 +7,14 @@ import com.dentalclinic.common.constant.ErrorCode;
 import com.dentalclinic.common.exception.BusinessException;
 import com.dentalclinic.common.exception.ConflictException;
 import com.dentalclinic.common.exception.NotFoundException;
+import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordRequest;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordResponse;
 import com.dentalclinic.medicalrecord.dto.PrescriptionItem;
 import com.dentalclinic.medicalrecord.entity.MedicalRecord;
+import com.dentalclinic.medicalrecord.mapper.MedicalRecordMapper;
 import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
 import com.dentalclinic.medicalrecord.service.MedicalRecordService;
 import com.dentalclinic.user.entity.User;
@@ -24,6 +26,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.Clock;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,7 +58,10 @@ class MedicalRecordServiceTest {
         medicalRecordService = new MedicalRecordService(
                 doctorRepository,
                 appointmentRepository,
-                medicalRecordRepository
+                medicalRecordRepository,
+                new MedicalRecordMapper(new ClinicTimeProvider(
+                        Clock.system(ZoneId.of("Asia/Ho_Chi_Minh"))
+                ))
         );
     }
 

@@ -1,7 +1,9 @@
 package com.dentalclinic.appointment.controller;
 
 import com.dentalclinic.appointment.dto.AppointmentResponse;
+import com.dentalclinic.appointment.dto.AppointmentHistoryResponse;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.service.AppointmentHistoryService;
 import com.dentalclinic.appointment.service.AppointmentQueryService;
 import com.dentalclinic.common.response.ApiResponse;
 import com.dentalclinic.common.response.PageResponse;
@@ -12,11 +14,13 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 @Validated
@@ -26,9 +30,14 @@ import java.util.UUID;
 public class AdminAppointmentController {
 
     private final AppointmentQueryService appointmentQueryService;
+    private final AppointmentHistoryService appointmentHistoryService;
 
-    public AdminAppointmentController(AppointmentQueryService appointmentQueryService) {
+    public AdminAppointmentController(
+            AppointmentQueryService appointmentQueryService,
+            AppointmentHistoryService appointmentHistoryService
+    ) {
         this.appointmentQueryService = appointmentQueryService;
+        this.appointmentHistoryService = appointmentHistoryService;
     }
 
     @GetMapping
@@ -65,5 +74,12 @@ public class AdminAppointmentController {
                 page,
                 size
         ));
+    }
+
+    @GetMapping("/{id}/history")
+    public ApiResponse<List<AppointmentHistoryResponse>> getAppointmentHistory(
+            @PathVariable UUID id
+    ) {
+        return ApiResponse.success(appointmentHistoryService.getHistory(id));
     }
 }

@@ -48,6 +48,23 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
             @Param("patientId") UUID patientId
     );
 
+    @EntityGraph(attributePaths = {
+            "patient.user",
+            "doctorService.doctor.user",
+            "doctorService.service",
+            "previousAppointment"
+    })
+    @Query("""
+            select appointment
+            from Appointment appointment
+            where appointment.id = :appointmentId
+              and appointment.doctorService.doctor.id = :doctorId
+            """)
+    Optional<Appointment> findDetailedByIdAndDoctorId(
+            @Param("appointmentId") UUID appointmentId,
+            @Param("doctorId") UUID doctorId
+    );
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select appointment
@@ -111,5 +128,25 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
             @Param("doctorId") UUID doctorId,
             @Param("status") AppointmentStatus status,
             @Param("excludedAppointmentId") UUID excludedAppointmentId
+    );
+
+    @Query("""
+            select count(appointment) as todayAppointments,
+                   coalesce(sum(case when appointment.status = :completedStatus
+                                     then 1 else 0 end), 0) as completedToday,
+                   coalesce(sum(case when appointment.status = :cancelledStatus
+                                     then 1 else 0 end), 0) as cancelledToday,
+                   coalesce(sum(case when appointment.status = :noShowStatus
+                                     then 1 else 0 end), 0) as noShowToday
+            from Appointment appointment
+            where appointment.scheduledStartAt >= :rangeStart
+              and appointment.scheduledStartAt < :rangeEnd
+            """)
+    AppointmentDailySummary summarizeScheduledRange(
+            @Param("rangeStart") Instant rangeStart,
+            @Param("rangeEnd") Instant rangeEnd,
+            @Param("completedStatus") AppointmentStatus completedStatus,
+            @Param("cancelledStatus") AppointmentStatus cancelledStatus,
+            @Param("noShowStatus") AppointmentStatus noShowStatus
     );
 }

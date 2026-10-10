@@ -77,7 +77,7 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- OpenAPI dependency is present for the later Swagger phase; no API is added here. -->
+        <!-- OpenAPI 3 specification and Swagger UI. -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>

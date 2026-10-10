@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Comparator;
 import java.util.List;
@@ -132,6 +133,14 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         return errorResponse(ErrorCode.METHOD_NOT_ALLOWED, null, null, request);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNoResourceFound(
+            NoResourceFoundException exception,
+            HttpServletRequest request
+    ) {
+        return errorResponse(ErrorCode.RESOURCE_NOT_FOUND, null, null, request);
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

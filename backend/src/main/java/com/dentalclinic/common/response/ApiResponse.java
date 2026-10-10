@@ -2,16 +2,24 @@ package com.dentalclinic.common.response;
 
 import com.dentalclinic.common.constant.ErrorCode;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Schema(description = "Envelope thống nhất cho mọi REST response")
 public record ApiResponse<T>(
+        @Schema(description = "Kết quả xử lý", example = "true")
         boolean success,
+        @Schema(description = "Mã kết quả hoặc mã lỗi", example = "SUCCESS")
         String code,
+        @Schema(description = "Thông báo cho client", example = "Thành công")
         String message,
+        @Schema(description = "Payload thành công; null khi có lỗi")
         T data,
+        @Schema(description = "Danh sách lỗi field; chỉ xuất hiện khi validation thất bại")
         List<FieldViolation> errors,
+        @Schema(description = "Request path gây lỗi", example = "/api/patient/appointments")
         String path
 ) {
 

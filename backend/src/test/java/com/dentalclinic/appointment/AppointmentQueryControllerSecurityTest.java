@@ -4,13 +4,19 @@ import com.dentalclinic.appointment.controller.AdminAppointmentController;
 import com.dentalclinic.appointment.controller.DoctorAppointmentController;
 import com.dentalclinic.appointment.dto.AppointmentResponse;
 import com.dentalclinic.appointment.dto.CheckInAppointmentResponse;
+import com.dentalclinic.appointment.dto.CompleteExaminationResponse;
+import com.dentalclinic.appointment.dto.CreateFollowUpAppointmentRequest;
+import com.dentalclinic.appointment.dto.FollowUpAppointmentResponse;
 import com.dentalclinic.appointment.dto.NoShowAppointmentResponse;
 import com.dentalclinic.appointment.dto.StartExaminationResponse;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
 import com.dentalclinic.appointment.service.AppointmentCheckInService;
+import com.dentalclinic.appointment.service.AppointmentCompleteExaminationService;
+import com.dentalclinic.appointment.service.AppointmentHistoryService;
 import com.dentalclinic.appointment.service.AppointmentNoShowService;
 import com.dentalclinic.appointment.service.AppointmentQueryService;
 import com.dentalclinic.appointment.service.AppointmentStartExaminationService;
+import com.dentalclinic.appointment.service.FollowUpAppointmentService;
 import com.dentalclinic.auth.security.CustomUserDetailsService;
 import com.dentalclinic.auth.security.JwtAuthenticationFilter;
 import com.dentalclinic.auth.security.JwtTokenProvider;
@@ -19,6 +25,8 @@ import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.exception.GlobalExceptionHandler;
 import com.dentalclinic.common.response.PageResponse;
 import com.dentalclinic.config.SecurityConfig;
+import com.dentalclinic.schedule.dto.AvailableSlotResponse;
+import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
@@ -35,6 +43,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import javax.crypto.SecretKey;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -46,6 +56,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -74,6 +85,15 @@ class AppointmentQueryControllerSecurityTest {
 
     @MockitoBean
     private AppointmentNoShowService appointmentNoShowService;
+
+    @MockitoBean
+    private AppointmentCompleteExaminationService appointmentCompleteExaminationService;
+
+    @MockitoBean
+    private FollowUpAppointmentService followUpAppointmentService;
+
+    @MockitoBean
+    private AppointmentHistoryService appointmentHistoryService;
 
     @MockitoBean
     private JwtTokenProvider jwtTokenProvider;
@@ -319,6 +339,181 @@ class AppointmentQueryControllerSecurityTest {
                         "/api/doctor/appointments/{id}/no-show",
                         UUID.randomUUID()
                 ).with(user("patient@example.com").roles("PATIENT")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    void shouldAllowAssignedDoctorToCompleteExamination() throws Exception {
+        UserPrincipal principal = principal(Role.DOCTOR);
+        UUID appointmentId = UUID.randomUUID();
+        CompleteExaminationResponse response = new CompleteExaminationResponse(
+                appointmentId,
+                AppointmentStatus.COMPLETED,
+                OffsetDateTime.parse("2026-10-12T09:00:00+07:00"),
+                OffsetDateTime.parse("2026-10-12T08:55:00+07:00"),
+                OffsetDateTime.parse("2026-10-12T09:15:00+07:00"),
+                OffsetDateTime.parse("2026-10-12T09:45:00+07:00")
+        );
+        when(appointmentCompleteExaminationService.complete(
+                principal.getId(),
+                appointmentId
+        )).thenReturn(response);
+
+        mockMvc.perform(patch(
+                        "/api/doctor/appointments/{id}/complete",
+                        appointmentId
+                ).with(user(principal)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Hoàn tất khám thành công"))
+                .andExpect(jsonPath("$.data.id").value(appointmentId.toString()))
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.actualStartAt")
+                        .value("2026-10-12T09:15:00+07:00"))
+                .andExpect(jsonPath("$.data.actualEndAt")
+                        .value("2026-10-12T09:45:00+07:00"));
+
+        verify(appointmentCompleteExaminationService).complete(
+                principal.getId(),
+                appointmentId
+        );
+    }
+
+    @Test
+    void shouldRejectPatientFromDoctorCompleteExamination() throws Exception {
+        mockMvc.perform(patch(
+                        "/api/doctor/appointments/{id}/complete",
+                        UUID.randomUUID()
+                ).with(user("patient@example.com").roles("PATIENT")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    void shouldAllowAssignedDoctorToGetFollowUpSlots() throws Exception {
+        UserPrincipal principal = principal(Role.DOCTOR);
+        UUID appointmentId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
+        LocalDate date = LocalDate.of(2026, 10, 20);
+        AvailableSlotResponse slot = new AvailableSlotResponse(
+                date,
+                ScheduleSession.MORNING,
+                LocalTime.of(9, 0),
+                LocalTime.of(10, 0),
+                OffsetDateTime.parse("2026-10-20T09:00:00+07:00"),
+                OffsetDateTime.parse("2026-10-20T10:00:00+07:00")
+        );
+        when(followUpAppointmentService.getFollowUpSlots(
+                principal.getId(),
+                appointmentId,
+                serviceId,
+                date
+        )).thenReturn(List.of(slot));
+
+        mockMvc.perform(get(
+                        "/api/doctor/appointments/{id}/follow-up-slots",
+                        appointmentId
+                ).with(user(principal))
+                        .param("serviceId", serviceId.toString())
+                        .param("date", date.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].startAt")
+                        .value("2026-10-20T09:00:00+07:00"));
+
+        verify(followUpAppointmentService).getFollowUpSlots(
+                principal.getId(),
+                appointmentId,
+                serviceId,
+                date
+        );
+    }
+
+    @Test
+    void shouldAllowAssignedDoctorToCreateFollowUpAppointment() throws Exception {
+        UserPrincipal principal = principal(Role.DOCTOR);
+        UUID previousAppointmentId = UUID.randomUUID();
+        UUID followUpAppointmentId = UUID.randomUUID();
+        UUID patientId = UUID.randomUUID();
+        UUID doctorId = UUID.randomUUID();
+        UUID serviceId = UUID.randomUUID();
+        CreateFollowUpAppointmentRequest request = new CreateFollowUpAppointmentRequest(
+                serviceId,
+                OffsetDateTime.parse("2026-10-20T09:00:00+07:00")
+        );
+        FollowUpAppointmentResponse response = new FollowUpAppointmentResponse(
+                followUpAppointmentId,
+                previousAppointmentId,
+                patientId,
+                doctorId,
+                serviceId,
+                request.scheduledStartAt(),
+                request.scheduledStartAt().plusHours(1),
+                AppointmentStatus.BOOKED,
+                Instant.parse("2026-10-12T03:00:00Z")
+        );
+        when(followUpAppointmentService.createFollowUp(
+                principal.getId(),
+                previousAppointmentId,
+                request
+        )).thenReturn(response);
+
+        mockMvc.perform(post(
+                        "/api/doctor/appointments/{id}/follow-up",
+                        previousAppointmentId
+                ).with(user(principal))
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "serviceId": "%s",
+                                  "scheduledStartAt": "2026-10-20T09:00:00+07:00"
+                                }
+                                """.formatted(serviceId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Đặt lịch tái khám thành công"))
+                .andExpect(jsonPath("$.data.id").value(followUpAppointmentId.toString()))
+                .andExpect(jsonPath("$.data.previousAppointmentId")
+                        .value(previousAppointmentId.toString()))
+                .andExpect(jsonPath("$.data.status").value("BOOKED"));
+
+        verify(followUpAppointmentService).createFollowUp(
+                principal.getId(),
+                previousAppointmentId,
+                request
+        );
+    }
+
+    @Test
+    void shouldValidateCreateFollowUpRequest() throws Exception {
+        mockMvc.perform(post(
+                        "/api/doctor/appointments/{id}/follow-up",
+                        UUID.randomUUID()
+                ).with(user(principal(Role.DOCTOR)))
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors.length()").value(2));
+    }
+
+    @Test
+    void shouldRejectPatientFromDoctorFollowUpApis() throws Exception {
+        UUID appointmentId = UUID.randomUUID();
+        mockMvc.perform(get(
+                        "/api/doctor/appointments/{id}/follow-up-slots",
+                        appointmentId
+                ).with(user("patient@example.com").roles("PATIENT"))
+                        .param("serviceId", UUID.randomUUID().toString())
+                        .param("date", "2026-10-20"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(post(
+                        "/api/doctor/appointments/{id}/follow-up",
+                        appointmentId
+                ).with(user("patient@example.com").roles("PATIENT"))
+                        .contentType("application/json")
+                        .content("{}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }
