@@ -87,7 +87,8 @@ public class FollowUpAppointmentService {
             UUID previousAppointmentId,
             CreateFollowUpAppointmentRequest request
     ) {
-        Doctor doctor = findDoctor(authenticatedUserId);
+        Doctor doctor = doctorRepository.findForUpdateByUserId(authenticatedUserId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bác sĩ"));
         Appointment previousAppointment = appointmentRepository
                 .findForUpdateByIdAndDoctorId(previousAppointmentId, doctor.getId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch hẹn"));

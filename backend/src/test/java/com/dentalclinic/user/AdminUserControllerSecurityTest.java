@@ -4,6 +4,7 @@ import com.dentalclinic.auth.security.CustomUserDetailsService;
 import com.dentalclinic.auth.security.JwtAuthenticationFilter;
 import com.dentalclinic.auth.security.JwtTokenProvider;
 import com.dentalclinic.auth.security.RestSecurityExceptionHandler;
+import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.exception.GlobalExceptionHandler;
 import com.dentalclinic.common.response.PageResponse;
 import com.dentalclinic.config.SecurityConfig;
@@ -11,6 +12,7 @@ import com.dentalclinic.user.controller.AdminUserController;
 import com.dentalclinic.user.dto.AdminUserResponse;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.UserStatus;
+import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.service.AdminUserService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Encoders;
@@ -118,17 +120,19 @@ class AdminUserControllerSecurityTest {
 
     @Test
     void shouldUpdateStatusForAdmin() throws Exception {
+        UserPrincipal actor = principal(Role.ADMIN, UserStatus.ACTIVE);
         AdminUserResponse item = response(Role.PATIENT, UserStatus.INACTIVE);
-        when(adminUserService.updateStatus(item.id(), UserStatus.INACTIVE)).thenReturn(item);
+        when(adminUserService.updateStatus(actor.getId(), item.id(), UserStatus.INACTIVE))
+                .thenReturn(item);
 
         mockMvc.perform(patch("/api/admin/users/{id}/status", item.id())
-                        .with(user("admin@example.com").roles("ADMIN"))
+                        .with(user(actor))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"INACTIVE\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("INACTIVE"));
 
-        verify(adminUserService).updateStatus(item.id(), UserStatus.INACTIVE);
+        verify(adminUserService).updateStatus(actor.getId(), item.id(), UserStatus.INACTIVE);
     }
 
     @Test
@@ -161,6 +165,17 @@ class AdminUserControllerSecurityTest {
                 Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2026-01-02T00:00:00Z")
         );
+    }
+
+    private UserPrincipal principal(Role role, UserStatus status) {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setEmail(role.name().toLowerCase() + "@example.com");
+        user.setPasswordHash("bcrypt-hash");
+        user.setFullName("Người dùng kiểm thử");
+        user.setRole(role);
+        user.setStatus(status);
+        return UserPrincipal.from(user);
     }
 
     private static String generateSecret() {

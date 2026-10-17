@@ -100,6 +100,7 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "chat_messages",
                 "chat_sessions",
                 "dental_services",
+                "doctor_days_off",
                 "doctor_schedules",
                 "doctor_services",
                 "doctors",
@@ -113,6 +114,35 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(vectorIndex.get("valid")).isEqualTo(true);
         assertThat(vectorIndex.get("definition").toString()).contains("vector_cosine_ops");
         assertThat(migrationSucceeded).isTrue();
+        Boolean dayOffMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '2'",
+                Boolean.class
+        );
+        Integer dayOffUniqueConstraint = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_constraint
+                        where conname = 'uq_doctor_days_off_doctor_date_session'
+                          and contype = 'u'
+                        """,
+                Integer.class
+        );
+        String dayOffSessionType = jdbcTemplate.queryForObject(
+                """
+                        select format_type(attribute.atttypid, attribute.atttypmod)
+                        from pg_attribute attribute
+                        join pg_class relation on relation.oid = attribute.attrelid
+                        join pg_namespace namespace on namespace.oid = relation.relnamespace
+                        where namespace.nspname = 'public'
+                          and relation.relname = 'doctor_days_off'
+                          and attribute.attname = 'session'
+                          and not attribute.attisdropped
+                        """,
+                String.class
+        );
+        assertThat(dayOffMigrationSucceeded).isTrue();
+        assertThat(dayOffUniqueConstraint).isEqualTo(1);
+        assertThat(dayOffSessionType).isEqualTo("session_enum");
     }
 
     @Test

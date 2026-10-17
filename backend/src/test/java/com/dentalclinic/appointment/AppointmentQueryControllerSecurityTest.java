@@ -550,6 +550,9 @@ class AppointmentQueryControllerSecurityTest {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
                 Instant.parse("2026-10-10T03:00:00Z"),
                 Instant.parse("2026-10-10T03:00:00Z")
         );

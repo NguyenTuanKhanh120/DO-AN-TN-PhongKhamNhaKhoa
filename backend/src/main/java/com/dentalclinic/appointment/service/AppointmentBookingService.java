@@ -13,6 +13,7 @@ import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.common.util.PostgreSqlErrorUtils;
 import com.dentalclinic.doctor.entity.DoctorService;
+import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.schedule.service.SlotService;
@@ -32,6 +33,7 @@ import java.util.UUID;
 public class AppointmentBookingService {
 
     private final PatientRepository patientRepository;
+    private final DoctorRepository doctorRepository;
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final SlotService slotService;
@@ -40,6 +42,7 @@ public class AppointmentBookingService {
 
     public AppointmentBookingService(
             PatientRepository patientRepository,
+            DoctorRepository doctorRepository,
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
             SlotService slotService,
@@ -50,6 +53,7 @@ public class AppointmentBookingService {
             throw new IllegalArgumentException("Cấu hình thời lượng slot không hợp lệ");
         }
         this.patientRepository = patientRepository;
+        this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.slotService = slotService;
@@ -62,6 +66,8 @@ public class AppointmentBookingService {
             UUID authenticatedUserId,
             BookAppointmentRequest request
     ) {
+        doctorRepository.findForUpdateById(request.doctorId())
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy bác sĩ"));
         Patient patient = patientRepository.findByUserId(authenticatedUserId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
         Instant scheduledStartAt = request.scheduledStartAt().toInstant();

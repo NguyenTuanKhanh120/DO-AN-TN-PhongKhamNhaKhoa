@@ -32,6 +32,7 @@ public class OpenApiConfig {
             "POST /api/admin/doctors",
             "POST /api/admin/services",
             "POST /api/doctor/schedules",
+            "POST /api/admin/doctors/{doctorId}/days-off",
             "POST /api/patient/appointments",
             "POST /api/doctor/appointments/{id}/medical-record"
     );
@@ -62,6 +63,7 @@ public class OpenApiConfig {
                         new Tag().name("Dental Services").description("Tra cứu và quản lý dịch vụ nha khoa"),
                         new Tag().name("Doctor Services").description("Phân công dịch vụ cho bác sĩ"),
                         new Tag().name("Doctor Schedules").description("Lịch làm việc cố định theo tuần"),
+                        new Tag().name("Doctor Days Off").description("Ngoại lệ nghỉ theo ngày do quản trị viên đăng ký"),
                         new Tag().name("Available Slots").description("Khung giờ khám còn trống"),
                         new Tag().name("Patient Appointments").description("Lịch hẹn của bệnh nhân"),
                         new Tag().name("Doctor Appointments").description("Quy trình khám của bác sĩ"),
@@ -212,6 +214,9 @@ public class OpenApiConfig {
             return "Admin Appointments";
         }
         if (path.startsWith("/api/admin/doctors")) {
+            if (path.contains("/days-off")) {
+                return "Doctor Days Off";
+            }
             return path.contains("/services") ? "Doctor Services" : "Doctors";
         }
         if (path.startsWith("/api/admin/services")) {
@@ -231,6 +236,9 @@ public class OpenApiConfig {
         }
         if (path.contains("available-slots")) {
             return "Available Slots";
+        }
+        if (path.startsWith("/api/doctors") && path.contains("/days-off")) {
+            return "Doctor Days Off";
         }
         if (path.endsWith("/schedule")) {
             return "Doctor Schedules";

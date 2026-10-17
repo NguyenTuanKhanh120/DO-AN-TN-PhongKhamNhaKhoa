@@ -1,5 +1,7 @@
 package com.dentalclinic.user.controller;
 
+import com.dentalclinic.auth.security.CurrentUser;
+import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.response.ApiResponse;
 import com.dentalclinic.common.response.PageResponse;
 import com.dentalclinic.user.dto.AdminUserResponse;
@@ -58,10 +60,15 @@ public class AdminUserController {
 
     @PatchMapping("/{id}/status")
     public ApiResponse<AdminUserResponse> updateStatus(
+            @CurrentUser UserPrincipal currentUser,
             @PathVariable UUID id,
             @Valid @RequestBody UpdateUserStatusRequest request
     ) {
-        AdminUserResponse response = adminUserService.updateStatus(id, request.status());
+        AdminUserResponse response = adminUserService.updateStatus(
+                currentUser.getId(),
+                id,
+                request.status()
+        );
         return ApiResponse.success("Cập nhật trạng thái tài khoản thành công", response);
     }
 }

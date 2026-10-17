@@ -17,6 +17,7 @@ import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.doctor.entity.DoctorServiceId;
+import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.schedule.service.SlotService;
@@ -58,6 +59,9 @@ class AppointmentRescheduleServiceTest {
     private PatientRepository patientRepository;
 
     @Mock
+    private DoctorRepository doctorRepository;
+
+    @Mock
     private AppointmentRepository appointmentRepository;
 
     @Mock
@@ -72,6 +76,7 @@ class AppointmentRescheduleServiceTest {
     void setUp() {
         rescheduleService = new AppointmentRescheduleService(
                 patientRepository,
+                doctorRepository,
                 appointmentRepository,
                 appointmentHistoryRepository,
                 slotService,
@@ -210,7 +215,7 @@ class AppointmentRescheduleServiceTest {
         UUID appointmentId = UUID.randomUUID();
         Patient patient = patient(authenticatedUserId);
         when(patientRepository.findByUserId(authenticatedUserId)).thenReturn(Optional.of(patient));
-        when(appointmentRepository.findForUpdateByIdAndPatientId(
+        when(appointmentRepository.findDetailedByIdAndPatientId(
                 appointmentId,
                 patient.getId()
         )).thenReturn(Optional.empty());
@@ -254,12 +259,50 @@ class AppointmentRescheduleServiceTest {
         verify(appointmentHistoryRepository, never()).saveAndFlush(any(AppointmentHistory.class));
     }
 
+    @Test
+    void shouldRejectRescheduleWhenDoctorIsOffAndKeepOldAppointment() {
+        UUID authenticatedUserId = UUID.randomUUID();
+        Patient patient = patient(authenticatedUserId);
+        Appointment appointment = appointment(
+                patient,
+                FIXED_NOW.plusSeconds(4 * 60 * 60L),
+                AppointmentStatus.BOOKED
+        );
+        Instant oldStart = appointment.getScheduledStartAt();
+        Instant newStart = FIXED_NOW.plusSeconds(6 * 60 * 60L);
+        stubOwnedAppointment(authenticatedUserId, patient, appointment);
+        when(slotService.requireAvailableRescheduleSlot(
+                appointment.getDoctorService().getDoctor().getId(),
+                appointment.getDoctorService().getService().getId(),
+                newStart
+        )).thenThrow(new ConflictException(
+                "Bác sĩ đã nghỉ trong khung giờ này. Vui lòng chọn khung giờ khác"
+        ));
+
+        assertThatThrownBy(() -> rescheduleService.reschedule(
+                authenticatedUserId, appointment.getId(), request(newStart)
+        )).isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Bác sĩ đã nghỉ");
+
+        assertThat(appointment.getScheduledStartAt()).isEqualTo(oldStart);
+        assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.BOOKED);
+        verify(appointmentRepository, never()).saveAndFlush(any(Appointment.class));
+        verify(appointmentHistoryRepository, never()).saveAndFlush(any(AppointmentHistory.class));
+    }
+
     private void stubOwnedAppointment(
             UUID authenticatedUserId,
             Patient patient,
             Appointment appointment
     ) {
         when(patientRepository.findByUserId(authenticatedUserId)).thenReturn(Optional.of(patient));
+        when(appointmentRepository.findDetailedByIdAndPatientId(
+                appointment.getId(),
+                patient.getId()
+        )).thenReturn(Optional.of(appointment));
+        when(doctorRepository.findForUpdateById(
+                appointment.getDoctorService().getDoctor().getId()
+        )).thenReturn(Optional.of(appointment.getDoctorService().getDoctor()));
         when(appointmentRepository.findForUpdateByIdAndPatientId(
                 appointment.getId(),
                 patient.getId()

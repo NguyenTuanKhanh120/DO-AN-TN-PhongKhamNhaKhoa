@@ -16,6 +16,7 @@ import com.dentalclinic.schedule.dto.AvailableSlotResponse;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
+import com.dentalclinic.schedule.repository.DoctorDayOffRepository;
 import com.dentalclinic.schedule.service.SlotService;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
@@ -49,6 +50,7 @@ class SlotServiceTest {
 
     private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final LocalDate MONDAY = LocalDate.of(2026, 10, 12);
+    private static final LocalDate NEXT_MONDAY = LocalDate.of(2026, 10, 19);
     private static final Instant NOW = Instant.parse("2026-10-12T03:00:00Z");
 
     @Mock
@@ -64,6 +66,9 @@ class SlotServiceTest {
     private DoctorScheduleRepository doctorScheduleRepository;
 
     @Mock
+    private DoctorDayOffRepository doctorDayOffRepository;
+
+    @Mock
     private AppointmentRepository appointmentRepository;
 
     private SlotService slotService;
@@ -76,6 +81,7 @@ class SlotServiceTest {
                 dentalServiceRepository,
                 doctorServiceRepository,
                 doctorScheduleRepository,
+                doctorDayOffRepository,
                 appointmentRepository,
                 timeProvider,
                 60,
@@ -119,6 +125,101 @@ class SlotServiceTest {
         assertThat(slots.getFirst().session()).isEqualTo(ScheduleSession.AFTERNOON);
         assertThat(slots.getFirst().startAt().toString()).isEqualTo("2026-10-12T13:00+07:00");
         assertThat(slots.getFirst().endAt().toString()).isEqualTo("2026-10-12T14:00+07:00");
+    }
+
+    @Test
+    void shouldRemoveOnlySlotsInRegisteredDayOffSession() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(
+                schedule(doctor, ScheduleSession.MORNING, "07:00", "12:00"),
+                schedule(doctor, ScheduleSession.AFTERNOON, "13:00", "18:00")
+        ));
+        when(doctorDayOffRepository.findSessionsByDoctorIdAndOffDate(
+                doctor.getId(), NEXT_MONDAY
+        )).thenReturn(List.of(ScheduleSession.MORNING));
+        when(appointmentRepository.findOccupiedStartTimes(
+                doctor.getId(),
+                toInstant(NEXT_MONDAY, LocalTime.MIN),
+                toInstant(NEXT_MONDAY.plusDays(1), LocalTime.MIN),
+                AppointmentStatus.CANCELLED
+        )).thenReturn(List.of());
+
+        List<AvailableSlotResponse> slots = slotService.getAvailableSlots(
+                doctor.getId(), dentalService.getId(), NEXT_MONDAY
+        );
+
+        assertThat(slots).hasSize(5);
+        assertThat(slots).allMatch(slot -> slot.session() == ScheduleSession.AFTERNOON);
+        assertThat(slots).extracting(AvailableSlotResponse::startTime)
+                .containsExactly(
+                        LocalTime.of(13, 0),
+                        LocalTime.of(14, 0),
+                        LocalTime.of(15, 0),
+                        LocalTime.of(16, 0),
+                        LocalTime.of(17, 0)
+                );
+    }
+
+    @Test
+    void shouldKeepRecurringWeeklySlotsAvailableOnAnotherDate() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        LocalDate followingMonday = NEXT_MONDAY.plusWeeks(1);
+        stubValidDoctorAndService(doctor, dentalService);
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor, ScheduleSession.MORNING, "07:00", "12:00"
+        )));
+        when(doctorDayOffRepository.findSessionsByDoctorIdAndOffDate(
+                doctor.getId(), followingMonday
+        )).thenReturn(List.of());
+        when(appointmentRepository.findOccupiedStartTimes(
+                doctor.getId(),
+                toInstant(followingMonday, LocalTime.MIN),
+                toInstant(followingMonday.plusDays(1), LocalTime.MIN),
+                AppointmentStatus.CANCELLED
+        )).thenReturn(List.of());
+
+        List<AvailableSlotResponse> slots = slotService.getAvailableSlots(
+                doctor.getId(), dentalService.getId(), followingMonday
+        );
+
+        assertThat(slots).hasSize(5);
+        assertThat(slots).allMatch(slot -> slot.session() == ScheduleSession.MORNING);
+    }
+
+    @Test
+    void shouldRejectBookingAndRescheduleWritesInsideDayOff() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor, ScheduleSession.MORNING, "07:00", "12:00"
+        )));
+        when(doctorDayOffRepository.findSessionsByDoctorIdAndOffDate(
+                doctor.getId(), NEXT_MONDAY
+        )).thenReturn(List.of(ScheduleSession.MORNING));
+        Instant requestedStart = toInstant(NEXT_MONDAY, LocalTime.of(9, 0));
+
+        assertThatThrownBy(() -> slotService.requireAvailableSlot(
+                doctor.getId(), dentalService.getId(), requestedStart
+        )).isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Bác sĩ đã nghỉ");
+        assertThatThrownBy(() -> slotService.requireAvailableRescheduleSlot(
+                doctor.getId(), dentalService.getId(), requestedStart
+        )).isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Bác sĩ đã nghỉ");
+
+        verify(appointmentRepository, never()).existsOccupiedStart(
+                doctor.getId(), requestedStart, AppointmentStatus.CANCELLED
+        );
     }
 
     @Test

@@ -89,6 +89,45 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
             @Param("doctorId") UUID doctorId
     );
 
+    @EntityGraph(attributePaths = {
+            "patient.user",
+            "doctorService.doctor.user",
+            "doctorService.service"
+    })
+    @Query("""
+            select appointment
+            from Appointment appointment
+            where appointment.doctorService.doctor.id = :doctorId
+              and appointment.scheduledStartAt >= :rangeStart
+              and appointment.scheduledStartAt < :rangeEnd
+            order by appointment.scheduledStartAt asc, appointment.id asc
+            """)
+    List<Appointment> findDetailedByDoctorIdAndScheduledRange(
+            @Param("doctorId") UUID doctorId,
+            @Param("rangeStart") Instant rangeStart,
+            @Param("rangeEnd") Instant rangeEnd
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {
+            "patient.user",
+            "doctorService.doctor.user",
+            "doctorService.service"
+    })
+    @Query("""
+            select appointment
+            from Appointment appointment
+            where appointment.doctorService.doctor.id = :doctorId
+              and appointment.scheduledStartAt >= :rangeStart
+              and appointment.scheduledStartAt < :rangeEnd
+            order by appointment.scheduledStartAt asc, appointment.id asc
+            """)
+    List<Appointment> findForUpdateByDoctorIdAndScheduledRange(
+            @Param("doctorId") UUID doctorId,
+            @Param("rangeStart") Instant rangeStart,
+            @Param("rangeEnd") Instant rangeEnd
+    );
+
     @Query("""
             select appointment.scheduledStartAt
             from Appointment appointment

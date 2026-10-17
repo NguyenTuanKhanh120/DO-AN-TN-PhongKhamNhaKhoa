@@ -34,6 +34,16 @@ public interface DoctorRepository extends JpaRepository<Doctor, UUID>, JpaSpecif
     Optional<Doctor> findByUserId(UUID userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = "user")
+    @Query("""
+            select doctor
+            from Doctor doctor
+            where doctor.id = :doctorId
+            """)
+    Optional<Doctor> findForUpdateById(@Param("doctorId") UUID doctorId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = "user")
     @Query("""
             select doctor
             from Doctor doctor

@@ -2,7 +2,10 @@ package com.dentalclinic.appointment.service;
 
 import com.dentalclinic.appointment.dto.AppointmentResponse;
 import com.dentalclinic.appointment.entity.Appointment;
+import com.dentalclinic.appointment.entity.AppointmentAction;
+import com.dentalclinic.appointment.entity.AppointmentHistory;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.repository.AppointmentHistoryRepository;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.common.constant.ErrorCode;
 import com.dentalclinic.common.exception.BusinessException;
@@ -31,6 +34,9 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.Locale;
+import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.UUID;
 
 @Service
@@ -39,6 +45,7 @@ public class AppointmentQueryService {
     private static final char LIKE_ESCAPE = '\\';
 
     private final AppointmentRepository appointmentRepository;
+    private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final PatientRepository patientRepository;
     private final DoctorRepository doctorRepository;
     private final ClinicTimeProvider clinicTimeProvider;
@@ -46,6 +53,7 @@ public class AppointmentQueryService {
 
     public AppointmentQueryService(
             AppointmentRepository appointmentRepository,
+            AppointmentHistoryRepository appointmentHistoryRepository,
             PatientRepository patientRepository,
             DoctorRepository doctorRepository,
             ClinicTimeProvider clinicTimeProvider,
@@ -55,6 +63,7 @@ public class AppointmentQueryService {
             throw new IllegalArgumentException("Cấu hình thời lượng slot không hợp lệ");
         }
         this.appointmentRepository = appointmentRepository;
+        this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.patientRepository = patientRepository;
         this.doctorRepository = doctorRepository;
         this.clinicTimeProvider = clinicTimeProvider;
@@ -99,7 +108,7 @@ public class AppointmentQueryService {
         Appointment appointment = appointmentRepository
                 .findDetailedByIdAndPatientId(appointmentId, patient.getId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch hẹn"));
-        return toResponse(appointment);
+        return toResponse(appointment, cancellationInfo(List.of(appointment)).get(appointment.getId()));
     }
 
     @Transactional(readOnly = true)
@@ -204,9 +213,11 @@ public class AppointmentQueryService {
                 toDate
         );
         PageRequest pageRequest = PageRequest.of(page, size, sort);
-        Page<AppointmentResponse> appointments = appointmentRepository
-                .findAll(specification, pageRequest)
-                .map(this::toResponse);
+        Page<Appointment> appointmentPage = appointmentRepository.findAll(specification, pageRequest);
+        Map<UUID, CancellationInfo> cancellationInfo = cancellationInfo(appointmentPage.getContent());
+        Page<AppointmentResponse> appointments = appointmentPage.map(appointment ->
+                toResponse(appointment, cancellationInfo.get(appointment.getId()))
+        );
         return PageResponse.from(appointments);
     }
 
@@ -308,7 +319,10 @@ public class AppointmentQueryService {
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bác sĩ"));
     }
 
-    private AppointmentResponse toResponse(Appointment appointment) {
+    private AppointmentResponse toResponse(
+            Appointment appointment,
+            CancellationInfo cancellationInfo
+    ) {
         Patient patient = appointment.getPatient();
         DoctorService doctorService = appointment.getDoctorService();
         Doctor doctor = doctorService.getDoctor();
@@ -332,9 +346,42 @@ public class AppointmentQueryService {
                 toClinicOffset(appointment.getCheckedInAt()),
                 toClinicOffset(appointment.getActualStartAt()),
                 toClinicOffset(appointment.getActualEndAt()),
+                cancellationInfo == null ? null : cancellationInfo.reason(),
+                cancellationInfo == null ? null : cancellationInfo.source(),
+                cancellationInfo == null ? null : cancellationInfo.cancelledAt(),
                 appointment.getCreatedAt(),
                 appointment.getUpdatedAt()
         );
+    }
+
+    private Map<UUID, CancellationInfo> cancellationInfo(List<Appointment> appointments) {
+        List<UUID> cancelledIds = appointments.stream()
+                .filter(appointment -> appointment.getStatus() == AppointmentStatus.CANCELLED)
+                .map(Appointment::getId)
+                .toList();
+        if (cancelledIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<UUID, CancellationInfo> result = new HashMap<>();
+        appointmentHistoryRepository.findByAppointmentIdsAndAction(
+                cancelledIds,
+                AppointmentAction.CANCEL
+        ).forEach(history -> result.putIfAbsent(
+                history.getAppointment().getId(),
+                toCancellationInfo(history)
+        ));
+        return result;
+    }
+
+    private CancellationInfo toCancellationInfo(AppointmentHistory history) {
+        String source = history.getDetails().path("source").asText(null);
+        if (source == null && history.getChangedBy() != null) {
+            source = history.getChangedBy().getRole() == com.dentalclinic.user.entity.Role.PATIENT
+                    ? "PATIENT_REQUEST"
+                    : "CLINIC";
+        }
+        return new CancellationInfo(history.getReason(), source, history.getCreatedAt());
     }
 
     private OffsetDateTime toClinicOffset(Instant instant) {
@@ -377,5 +424,8 @@ public class AppointmentQueryService {
                 .replace("\\", "\\\\")
                 .replace("%", "\\%")
                 .replace("_", "\\_");
+    }
+
+    private record CancellationInfo(String reason, String source, Instant cancelledAt) {
     }
 }

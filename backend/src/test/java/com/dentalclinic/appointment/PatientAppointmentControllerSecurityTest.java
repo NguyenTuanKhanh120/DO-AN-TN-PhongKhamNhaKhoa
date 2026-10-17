@@ -412,6 +412,9 @@ class PatientAppointmentControllerSecurityTest {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
                 Instant.parse("2026-10-12T03:01:00Z"),
                 Instant.parse("2026-10-12T03:01:00Z")
         );

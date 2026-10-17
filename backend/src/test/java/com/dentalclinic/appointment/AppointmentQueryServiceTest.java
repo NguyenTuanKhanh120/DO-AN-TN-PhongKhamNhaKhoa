@@ -2,8 +2,11 @@ package com.dentalclinic.appointment;
 
 import com.dentalclinic.appointment.dto.AppointmentResponse;
 import com.dentalclinic.appointment.entity.Appointment;
+import com.dentalclinic.appointment.entity.AppointmentAction;
+import com.dentalclinic.appointment.entity.AppointmentHistory;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
+import com.dentalclinic.appointment.repository.AppointmentHistoryRepository;
 import com.dentalclinic.appointment.service.AppointmentQueryService;
 import com.dentalclinic.common.constant.ErrorCode;
 import com.dentalclinic.common.exception.BusinessException;
@@ -18,6 +21,8 @@ import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.user.entity.User;
+import com.dentalclinic.user.entity.Role;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -56,6 +61,9 @@ class AppointmentQueryServiceTest {
     private AppointmentRepository appointmentRepository;
 
     @Mock
+    private AppointmentHistoryRepository appointmentHistoryRepository;
+
+    @Mock
     private PatientRepository patientRepository;
 
     @Mock
@@ -70,6 +78,7 @@ class AppointmentQueryServiceTest {
         );
         appointmentQueryService = new AppointmentQueryService(
                 appointmentRepository,
+                appointmentHistoryRepository,
                 patientRepository,
                 doctorRepository,
                 timeProvider,
@@ -202,6 +211,42 @@ class AppointmentQueryServiceTest {
                 20
         )).isInstanceOf(NotFoundException.class)
                 .hasMessage("Không tìm thấy hồ sơ bác sĩ");
+    }
+
+    @Test
+    void shouldExposeSafeClinicCancellationDetailsToPatient() {
+        UUID userId = UUID.randomUUID();
+        Appointment appointment = appointment();
+        appointment.setStatus(AppointmentStatus.CANCELLED);
+        Patient patient = appointment.getPatient();
+        User admin = new User();
+        admin.setId(UUID.randomUUID());
+        admin.setRole(Role.ADMIN);
+        AppointmentHistory history = new AppointmentHistory();
+        history.setId(UUID.randomUUID());
+        history.setAppointment(appointment);
+        history.setAction(AppointmentAction.CANCEL);
+        history.setChangedBy(admin);
+        history.setReason("Phòng khám hủy lịch vì bác sĩ không thể tiếp nhận.");
+        history.setDetails(JsonNodeFactory.instance.objectNode()
+                .put("source", "DOCTOR_DAY_OFF"));
+        history.setCreatedAt(Instant.parse("2026-10-11T03:00:00Z"));
+        when(patientRepository.findByUserId(userId)).thenReturn(Optional.of(patient));
+        when(appointmentRepository.findDetailedByIdAndPatientId(
+                appointment.getId(), patient.getId()
+        )).thenReturn(Optional.of(appointment));
+        when(appointmentHistoryRepository.findByAppointmentIdsAndAction(
+                List.of(appointment.getId()), AppointmentAction.CANCEL
+        )).thenReturn(List.of(history));
+
+        AppointmentResponse response = appointmentQueryService.getPatientAppointment(
+                userId, appointment.getId()
+        );
+
+        assertThat(response.status()).isEqualTo(AppointmentStatus.CANCELLED);
+        assertThat(response.cancellationReason()).isEqualTo(history.getReason());
+        assertThat(response.cancellationSource()).isEqualTo("DOCTOR_DAY_OFF");
+        assertThat(response.cancelledAt()).isEqualTo(history.getCreatedAt());
     }
 
     private Appointment appointment() {

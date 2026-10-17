@@ -97,10 +97,30 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(registration.path("responses").has("201")).isTrue();
         assertThat(registration.path("responses").has("409")).isTrue();
 
+        JsonNode createDayOff = operation(
+                document,
+                "/api/admin/doctors/{doctorId}/days-off",
+                "post"
+        );
+        assertThat(createDayOff.path("tags").get(0).asText()).isEqualTo("Doctor Days Off");
+        assertThat(createDayOff.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
+        assertThat(createDayOff.path("responses").has("201")).isTrue();
+        assertThat(createDayOff.path("responses").has("409")).isTrue();
+
+        JsonNode publicDaysOff = operation(
+                document,
+                "/api/doctors/{doctorId}/days-off",
+                "get"
+        );
+        assertThat(publicDaysOff.path("tags").get(0).asText()).isEqualTo("Doctor Days Off");
+        assertThat(publicDaysOff.has("security")).isFalse();
+
         JsonNode schemas = document.path("components").path("schemas");
         assertThat(schemas.has("RegisterRequest")).isTrue();
         assertThat(schemas.has("BookAppointmentRequest")).isTrue();
         assertThat(schemas.has("DashboardSummaryResponse")).isTrue();
+        assertThat(schemas.has("CreateDoctorDayOffRequest")).isTrue();
+        assertThat(schemas.has("CreateDoctorDayOffResponse")).isTrue();
         assertThat(schemas.has("ErrorResponse")).isTrue();
         assertThat(schemas.has("UserPrincipal")).isFalse();
         assertAllSchemaReferencesResolve(document, schemas);

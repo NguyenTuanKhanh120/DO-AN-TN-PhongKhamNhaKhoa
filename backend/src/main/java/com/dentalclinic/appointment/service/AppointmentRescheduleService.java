@@ -15,6 +15,7 @@ import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.common.util.PostgreSqlErrorUtils;
 import com.dentalclinic.doctor.entity.DoctorService;
+import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.schedule.service.SlotService;
@@ -40,6 +41,7 @@ public class AppointmentRescheduleService {
             + "Lịch hiện tại của bạn vẫn được giữ nguyên. Vui lòng chọn khung giờ khác.";
 
     private final PatientRepository patientRepository;
+    private final DoctorRepository doctorRepository;
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final SlotService slotService;
@@ -49,6 +51,7 @@ public class AppointmentRescheduleService {
 
     public AppointmentRescheduleService(
             PatientRepository patientRepository,
+            DoctorRepository doctorRepository,
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
             SlotService slotService,
@@ -62,6 +65,7 @@ public class AppointmentRescheduleService {
             throw new IllegalArgumentException("Cấu hình đổi lịch hoặc thời lượng slot không hợp lệ");
         }
         this.patientRepository = patientRepository;
+        this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.slotService = slotService;
@@ -78,6 +82,12 @@ public class AppointmentRescheduleService {
     ) {
         Patient patient = patientRepository.findByUserId(authenticatedUserId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
+        Appointment snapshot = appointmentRepository
+                .findDetailedByIdAndPatientId(appointmentId, patient.getId())
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch hẹn"));
+        UUID doctorId = snapshot.getDoctorService().getDoctor().getId();
+        doctorRepository.findForUpdateById(doctorId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy bác sĩ"));
         Appointment appointment = appointmentRepository
                 .findForUpdateByIdAndPatientId(appointmentId, patient.getId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch hẹn"));
@@ -96,7 +106,6 @@ public class AppointmentRescheduleService {
         }
 
         DoctorService doctorService = appointment.getDoctorService();
-        UUID doctorId = doctorService.getDoctor().getId();
         UUID serviceId = doctorService.getService().getId();
         slotService.requireAvailableRescheduleSlot(
                 doctorId,

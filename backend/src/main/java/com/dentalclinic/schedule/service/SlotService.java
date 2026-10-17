@@ -15,6 +15,8 @@ import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.schedule.dto.AvailableSlotResponse;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
+import com.dentalclinic.schedule.entity.ScheduleSession;
+import com.dentalclinic.schedule.repository.DoctorDayOffRepository;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
@@ -42,6 +44,7 @@ public class SlotService {
     private final DentalServiceRepository dentalServiceRepository;
     private final DoctorServiceRepository doctorServiceRepository;
     private final DoctorScheduleRepository doctorScheduleRepository;
+    private final DoctorDayOffRepository doctorDayOffRepository;
     private final AppointmentRepository appointmentRepository;
     private final ClinicTimeProvider clinicTimeProvider;
     private final Duration slotDuration;
@@ -52,6 +55,7 @@ public class SlotService {
             DentalServiceRepository dentalServiceRepository,
             DoctorServiceRepository doctorServiceRepository,
             DoctorScheduleRepository doctorScheduleRepository,
+            DoctorDayOffRepository doctorDayOffRepository,
             AppointmentRepository appointmentRepository,
             ClinicTimeProvider clinicTimeProvider,
             @Value("${clinic.appointment.slot-duration-minutes:60}") long slotDurationMinutes,
@@ -64,6 +68,7 @@ public class SlotService {
         this.dentalServiceRepository = dentalServiceRepository;
         this.doctorServiceRepository = doctorServiceRepository;
         this.doctorScheduleRepository = doctorScheduleRepository;
+        this.doctorDayOffRepository = doctorDayOffRepository;
         this.appointmentRepository = appointmentRepository;
         this.clinicTimeProvider = clinicTimeProvider;
         this.slotDuration = Duration.ofMinutes(slotDurationMinutes);
@@ -92,7 +97,10 @@ public class SlotService {
         ));
         Instant earliestBookableStart = clinicTimeProvider.now().plus(bookingMinAdvance);
 
-        return generateSlotCandidates(context.schedules(), date, clinicZone).entrySet().stream()
+        List<DoctorSchedule> availableSchedules = context.schedules().stream()
+                .filter(schedule -> !context.daysOff().contains(schedule.getSession()))
+                .toList();
+        return generateSlotCandidates(availableSchedules, date, clinicZone).entrySet().stream()
                 .filter(entry -> !entry.getKey().isBefore(earliestBookableStart))
                 .filter(entry -> !occupiedStarts.contains(entry.getKey()))
                 .map(entry -> toResponse(date, entry.getValue()))
@@ -164,6 +172,11 @@ public class SlotService {
                     "Khung giờ không thuộc lịch làm việc của bác sĩ"
             );
         }
+        if (context.daysOff().contains(candidate.schedule().getSession())) {
+            throw new ConflictException(
+                    "Bác sĩ đã nghỉ trong khung giờ này. Vui lòng chọn khung giờ khác"
+            );
+        }
         return context;
     }
 
@@ -188,7 +201,10 @@ public class SlotService {
         short dayOfWeek = (short) date.getDayOfWeek().getValue();
         List<DoctorSchedule> schedules = doctorScheduleRepository
                 .findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(doctorId, dayOfWeek);
-        return new SlotContext(doctorService, schedules);
+        Set<ScheduleSession> daysOff = new HashSet<>(
+                doctorDayOffRepository.findSessionsByDoctorIdAndOffDate(doctorId, date)
+        );
+        return new SlotContext(doctorService, schedules, daysOff);
     }
 
     private TreeMap<Instant, SlotCandidate> generateSlotCandidates(
@@ -246,7 +262,8 @@ public class SlotService {
 
     private record SlotContext(
             DoctorService doctorService,
-            List<DoctorSchedule> schedules
+            List<DoctorSchedule> schedules,
+            Set<ScheduleSession> daysOff
     ) {
     }
 

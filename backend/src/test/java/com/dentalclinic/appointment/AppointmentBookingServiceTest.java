@@ -15,6 +15,7 @@ import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.doctor.entity.DoctorServiceId;
+import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.schedule.service.SlotService;
@@ -56,6 +57,9 @@ class AppointmentBookingServiceTest {
     private PatientRepository patientRepository;
 
     @Mock
+    private DoctorRepository doctorRepository;
+
+    @Mock
     private AppointmentRepository appointmentRepository;
 
     @Mock
@@ -71,6 +75,7 @@ class AppointmentBookingServiceTest {
         ClinicTimeProvider timeProvider = new ClinicTimeProvider(Clock.fixed(FIXED_NOW, CLINIC_ZONE));
         bookingService = new AppointmentBookingService(
                 patientRepository,
+                doctorRepository,
                 appointmentRepository,
                 appointmentHistoryRepository,
                 slotService,
@@ -84,6 +89,8 @@ class AppointmentBookingServiceTest {
         Patient patient = patient();
         DoctorService mapping = mapping();
         BookAppointmentRequest request = request(mapping);
+        when(doctorRepository.findForUpdateById(request.doctorId()))
+                .thenReturn(Optional.of(mapping.getDoctor()));
         when(patientRepository.findByUserId(patient.getUser().getId()))
                 .thenReturn(Optional.of(patient));
         when(slotService.requireAvailableSlot(
@@ -145,6 +152,8 @@ class AppointmentBookingServiceTest {
                 UUID.randomUUID(),
                 OffsetDateTime.parse("2026-10-12T13:00:00+07:00")
         );
+        when(doctorRepository.findForUpdateById(request.doctorId()))
+                .thenReturn(Optional.of(new Doctor()));
         when(patientRepository.findByUserId(userId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> bookingService.book(userId, request))
@@ -159,6 +168,8 @@ class AppointmentBookingServiceTest {
         Patient patient = patient();
         DoctorService mapping = mapping();
         BookAppointmentRequest request = request(mapping);
+        when(doctorRepository.findForUpdateById(request.doctorId()))
+                .thenReturn(Optional.of(mapping.getDoctor()));
         when(patientRepository.findByUserId(patient.getUser().getId()))
                 .thenReturn(Optional.of(patient));
         when(slotService.requireAvailableSlot(
@@ -188,6 +199,8 @@ class AppointmentBookingServiceTest {
         Patient patient = patient();
         DoctorService mapping = mapping();
         BookAppointmentRequest request = request(mapping);
+        when(doctorRepository.findForUpdateById(request.doctorId()))
+                .thenReturn(Optional.of(mapping.getDoctor()));
         when(patientRepository.findByUserId(patient.getUser().getId()))
                 .thenReturn(Optional.of(patient));
         when(slotService.requireAvailableSlot(
@@ -203,6 +216,29 @@ class AppointmentBookingServiceTest {
 
         assertThatThrownBy(() -> bookingService.book(patient.getUser().getId(), request))
                 .isSameAs(failure);
+    }
+
+    @Test
+    void shouldRejectBookingWhenDoctorIsOffWithoutWritingAppointment() {
+        Patient patient = patient();
+        DoctorService mapping = mapping();
+        BookAppointmentRequest request = request(mapping);
+        when(doctorRepository.findForUpdateById(request.doctorId()))
+                .thenReturn(Optional.of(mapping.getDoctor()));
+        when(patientRepository.findByUserId(patient.getUser().getId()))
+                .thenReturn(Optional.of(patient));
+        when(slotService.requireAvailableSlot(
+                request.doctorId(), request.serviceId(), request.scheduledStartAt().toInstant()
+        )).thenThrow(new ConflictException(
+                "Bác sĩ đã nghỉ trong khung giờ này. Vui lòng chọn khung giờ khác"
+        ));
+
+        assertThatThrownBy(() -> bookingService.book(patient.getUser().getId(), request))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Bác sĩ đã nghỉ");
+
+        verify(appointmentRepository, never()).saveAndFlush(any(Appointment.class));
+        verify(appointmentHistoryRepository, never()).saveAndFlush(any(AppointmentHistory.class));
     }
 
     private BookAppointmentRequest request(DoctorService mapping) {

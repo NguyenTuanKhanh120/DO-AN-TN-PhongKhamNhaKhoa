@@ -1,6 +1,7 @@
 package com.dentalclinic.appointment.repository;
 
 import com.dentalclinic.appointment.entity.AppointmentHistory;
+import com.dentalclinic.appointment.entity.AppointmentAction;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,5 +20,18 @@ public interface AppointmentHistoryRepository extends JpaRepository<AppointmentH
             """)
     List<AppointmentHistory> findTimelineByAppointmentId(
             @Param("appointmentId") UUID appointmentId
+    );
+
+    @Query("""
+            select history
+            from AppointmentHistory history
+            left join fetch history.changedBy
+            where history.appointment.id in :appointmentIds
+              and history.action = :action
+            order by history.createdAt desc, history.id desc
+            """)
+    List<AppointmentHistory> findByAppointmentIdsAndAction(
+            @Param("appointmentIds") List<UUID> appointmentIds,
+            @Param("action") AppointmentAction action
     );
 }

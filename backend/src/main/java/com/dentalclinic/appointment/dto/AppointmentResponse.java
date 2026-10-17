@@ -23,6 +23,9 @@ public record AppointmentResponse(
         OffsetDateTime checkedInAt,
         OffsetDateTime actualStartAt,
         OffsetDateTime actualEndAt,
+        String cancellationReason,
+        String cancellationSource,
+        Instant cancelledAt,
         Instant createdAt,
         Instant updatedAt
 ) {

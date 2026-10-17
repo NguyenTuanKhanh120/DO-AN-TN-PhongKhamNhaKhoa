@@ -219,7 +219,7 @@ class FollowUpAppointmentServiceTest {
     @Test
     void shouldRejectFollowUpWhenMedicalRecordIsMissing() {
         Fixture fixture = fixture(AppointmentStatus.COMPLETED, true);
-        when(doctorRepository.findByUserId(fixture.doctor().getUser().getId()))
+        when(doctorRepository.findForUpdateByUserId(fixture.doctor().getUser().getId()))
                 .thenReturn(Optional.of(fixture.doctor()));
         when(appointmentRepository.findForUpdateByIdAndDoctorId(
                 fixture.previousAppointment().getId(),
@@ -239,7 +239,7 @@ class FollowUpAppointmentServiceTest {
     @Test
     void shouldRejectFollowUpForInvalidPreviousAppointmentStatus() {
         Fixture fixture = fixture(AppointmentStatus.BOOKED, true);
-        when(doctorRepository.findByUserId(fixture.doctor().getUser().getId()))
+        when(doctorRepository.findForUpdateByUserId(fixture.doctor().getUser().getId()))
                 .thenReturn(Optional.of(fixture.doctor()));
         when(appointmentRepository.findForUpdateByIdAndDoctorId(
                 fixture.previousAppointment().getId(),
@@ -259,7 +259,7 @@ class FollowUpAppointmentServiceTest {
     @Test
     void shouldNotRevealAnotherDoctorsAppointment() {
         Fixture fixture = fixture(AppointmentStatus.COMPLETED, true);
-        when(doctorRepository.findByUserId(fixture.doctor().getUser().getId()))
+        when(doctorRepository.findForUpdateByUserId(fixture.doctor().getUser().getId()))
                 .thenReturn(Optional.of(fixture.doctor()));
         when(appointmentRepository.findForUpdateByIdAndDoctorId(
                 fixture.previousAppointment().getId(),
@@ -323,6 +323,30 @@ class FollowUpAppointmentServiceTest {
         )).isSameAs(failure);
     }
 
+    @Test
+    void shouldRejectFollowUpWhenDoctorIsOffWithoutCreatingAppointment() {
+        Fixture fixture = fixture(AppointmentStatus.COMPLETED, true);
+        CreateFollowUpAppointmentRequest request = request(fixture.service().getId());
+        stubLockedSource(fixture);
+        when(slotService.requireAvailableSlot(
+                fixture.doctor().getId(),
+                fixture.service().getId(),
+                request.scheduledStartAt().toInstant()
+        )).thenThrow(new ConflictException(
+                "Bác sĩ đã nghỉ trong khung giờ này. Vui lòng chọn khung giờ khác"
+        ));
+
+        assertThatThrownBy(() -> followUpAppointmentService.createFollowUp(
+                fixture.doctor().getUser().getId(),
+                fixture.previousAppointment().getId(),
+                request
+        )).isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Bác sĩ đã nghỉ");
+
+        verify(appointmentRepository, never()).saveAndFlush(any(Appointment.class));
+        verify(appointmentHistoryRepository, never()).saveAndFlush(any(AppointmentHistory.class));
+    }
+
     private void stubDetailedSource(Fixture fixture) {
         when(doctorRepository.findByUserId(fixture.doctor().getUser().getId()))
                 .thenReturn(Optional.of(fixture.doctor()));
@@ -335,7 +359,7 @@ class FollowUpAppointmentServiceTest {
     }
 
     private void stubLockedSource(Fixture fixture) {
-        when(doctorRepository.findByUserId(fixture.doctor().getUser().getId()))
+        when(doctorRepository.findForUpdateByUserId(fixture.doctor().getUser().getId()))
                 .thenReturn(Optional.of(fixture.doctor()));
         when(appointmentRepository.findForUpdateByIdAndDoctorId(
                 fixture.previousAppointment().getId(),

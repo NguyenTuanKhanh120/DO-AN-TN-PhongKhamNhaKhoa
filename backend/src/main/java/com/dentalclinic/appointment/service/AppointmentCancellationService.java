@@ -108,6 +108,7 @@ public class AppointmentCancellationService {
         ObjectNode details = JsonNodeFactory.instance.objectNode();
         details.put("old_status", AppointmentStatus.BOOKED.name());
         details.put("new_status", AppointmentStatus.CANCELLED.name());
+        details.put("source", "PATIENT_REQUEST");
         details.put(
                 "scheduled_start_at",
                 toClinicOffset(appointment.getScheduledStartAt()).toString()
