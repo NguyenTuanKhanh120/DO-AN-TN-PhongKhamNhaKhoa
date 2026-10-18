@@ -115,12 +115,35 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(publicDaysOff.path("tags").get(0).asText()).isEqualTo("Doctor Days Off");
         assertThat(publicDaysOff.has("security")).isFalse();
 
+        JsonNode doctorPayment = operation(
+                document,
+                "/api/doctor/appointments/{id}/payment/items",
+                "put"
+        );
+        assertThat(doctorPayment.path("tags").get(0).asText()).isEqualTo("Doctor Payments");
+        assertThat(doctorPayment.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
+        assertThat(doctorPayment.path("responses").has("409")).isTrue();
+
+        JsonNode adminPayment = operation(document, "/api/admin/payments/{id}/confirm", "patch");
+        assertThat(adminPayment.path("tags").get(0).asText()).isEqualTo("Admin Payments");
+        assertThat(adminPayment.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
+
+        JsonNode patientPayments = operation(document, "/api/patient/payments", "get");
+        assertThat(patientPayments.path("tags").get(0).asText()).isEqualTo("Patient Payments");
+
+        JsonNode revenue = operation(document, "/api/admin/dashboard/revenue", "get");
+        assertThat(revenue.path("tags").get(0).asText()).isEqualTo("Admin Dashboard");
+
         JsonNode schemas = document.path("components").path("schemas");
         assertThat(schemas.has("RegisterRequest")).isTrue();
         assertThat(schemas.has("BookAppointmentRequest")).isTrue();
         assertThat(schemas.has("DashboardSummaryResponse")).isTrue();
         assertThat(schemas.has("CreateDoctorDayOffRequest")).isTrue();
         assertThat(schemas.has("CreateDoctorDayOffResponse")).isTrue();
+        assertThat(schemas.has("UpdatePaymentItemsRequest")).isTrue();
+        assertThat(schemas.has("PaymentResponse")).isTrue();
+        assertThat(schemas.has("ConfirmPaymentRequest")).isTrue();
+        assertThat(schemas.has("RevenueSummaryResponse")).isTrue();
         assertThat(schemas.has("ErrorResponse")).isTrue();
         assertThat(schemas.has("UserPrincipal")).isFalse();
         assertAllSchemaReferencesResolve(document, schemas);

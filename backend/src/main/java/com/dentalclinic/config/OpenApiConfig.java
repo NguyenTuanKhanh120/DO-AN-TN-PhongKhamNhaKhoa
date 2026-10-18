@@ -67,6 +67,9 @@ public class OpenApiConfig {
                         new Tag().name("Available Slots").description("Khung giờ khám còn trống"),
                         new Tag().name("Patient Appointments").description("Lịch hẹn của bệnh nhân"),
                         new Tag().name("Doctor Appointments").description("Quy trình khám của bác sĩ"),
+                        new Tag().name("Doctor Payments").description("Bác sĩ ghi nhận dịch vụ thực tế"),
+                        new Tag().name("Patient Payments").description("Bệnh nhân xem phiếu thanh toán"),
+                        new Tag().name("Admin Payments").description("Thu tiền trực tiếp tại quầy"),
                         new Tag().name("Patient Medical History").description("Lịch sử bệnh án của bệnh nhân"),
                         new Tag().name("Admin Appointments").description("Tra cứu và audit lịch hẹn"),
                         new Tag().name("Admin Dashboard").description("Thống kê tổng quan phòng khám")
@@ -207,6 +210,9 @@ public class OpenApiConfig {
         if (path.startsWith("/api/admin/dashboard")) {
             return "Admin Dashboard";
         }
+        if (path.startsWith("/api/admin/payments")) {
+            return "Admin Payments";
+        }
         if (path.startsWith("/api/admin/users")) {
             return "Admin Users";
         }
@@ -225,11 +231,14 @@ public class OpenApiConfig {
         if (path.startsWith("/api/patient/medical-records")) {
             return "Patient Medical History";
         }
+        if (path.startsWith("/api/patient/payments")) {
+            return "Patient Payments";
+        }
         if (path.startsWith("/api/patient/appointments")) {
             return "Patient Appointments";
         }
         if (path.startsWith("/api/doctor/appointments")) {
-            return "Doctor Appointments";
+            return path.contains("/payment") ? "Doctor Payments" : "Doctor Appointments";
         }
         if (path.startsWith("/api/doctor/schedules")) {
             return "Doctor Schedules";

@@ -17,6 +17,10 @@ import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.payment.entity.Payment;
+import com.dentalclinic.payment.entity.PaymentItemSnapshot;
+import com.dentalclinic.payment.entity.PaymentStatus;
+import com.dentalclinic.payment.repository.PaymentRepository;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.DoctorDayOff;
 import com.dentalclinic.schedule.entity.ScheduleSession;
@@ -40,6 +44,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,6 +64,7 @@ class PersistenceMappingIntegrationTest {
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final MedicalRecordRepository medicalRecordRepository;
+    private final PaymentRepository paymentRepository;
     private final EntityManager entityManager;
 
     @Autowired
@@ -73,6 +79,7 @@ class PersistenceMappingIntegrationTest {
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
             MedicalRecordRepository medicalRecordRepository,
+            PaymentRepository paymentRepository,
             EntityManager entityManager
     ) {
         this.userRepository = userRepository;
@@ -85,11 +92,12 @@ class PersistenceMappingIntegrationTest {
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.medicalRecordRepository = medicalRecordRepository;
+        this.paymentRepository = paymentRepository;
         this.entityManager = entityManager;
     }
 
     @Test
-    void persistsTenBusinessEntitiesWithPostgreSqlSpecificMappings() {
+    void persistsElevenBusinessEntitiesWithPostgreSqlSpecificMappings() {
         String testId = UUID.randomUUID().toString();
 
         User patientUser = createUser("patient-" + testId + "@example.com", "Phase 02 Patient", Role.PATIENT);
@@ -171,9 +179,24 @@ class PersistenceMappingIntegrationTest {
         medicalRecord.setPrescription(prescription);
         medicalRecordRepository.saveAndFlush(medicalRecord);
 
+        Payment payment = new Payment();
+        payment.setAppointment(appointment);
+        payment.setItems(List.of(new PaymentItemSnapshot(
+                dentalService.getId(),
+                dentalService.getName(),
+                new BigDecimal("250000.00"),
+                1,
+                new BigDecimal("250000.00"),
+                false
+        )));
+        payment.setTotalAmount(new BigDecimal("250000.00"));
+        payment.setStatus(PaymentStatus.DRAFT);
+        paymentRepository.saveAndFlush(payment);
+
         UUID appointmentId = appointment.getId();
         UUID historyId = history.getId();
         UUID medicalRecordId = medicalRecord.getId();
+        UUID paymentId = payment.getId();
         entityManager.clear();
 
         Appointment persistedAppointment = appointmentRepository.findById(appointmentId).orElseThrow();
@@ -181,6 +204,7 @@ class PersistenceMappingIntegrationTest {
         MedicalRecord persistedRecord = medicalRecordRepository.findById(medicalRecordId).orElseThrow();
         DoctorSchedule persistedSchedule = doctorScheduleRepository.findById(schedule.getId()).orElseThrow();
         DoctorDayOff persistedDayOff = doctorDayOffRepository.findById(dayOff.getId()).orElseThrow();
+        Payment persistedPayment = paymentRepository.findById(paymentId).orElseThrow();
 
         assertThat(persistedAppointment.getStatus()).isEqualTo(AppointmentStatus.BOOKED);
         assertThat(persistedAppointment.getScheduledStartAt()).isEqualTo(Instant.parse("2030-01-07T01:00:00Z"));
@@ -203,6 +227,14 @@ class PersistenceMappingIntegrationTest {
         assertThat(persistedDayOff.getSession()).isEqualTo(ScheduleSession.AFTERNOON);
         assertThat(persistedDayOff.getCreatedBy().getRole()).isEqualTo(Role.ADMIN);
         assertThat(persistedDayOff.getCreatedAt()).isNotNull();
+        assertThat(persistedPayment.getStatus()).isEqualTo(PaymentStatus.DRAFT);
+        assertThat(persistedPayment.getItems()).hasSize(1);
+        assertThat(persistedPayment.getItems().getFirst().serviceName())
+                .isEqualTo(dentalService.getName());
+        assertThat(persistedPayment.getItems().getFirst().unitPrice())
+                .isEqualByComparingTo("250000.00");
+        assertThat(persistedPayment.getCreatedAt()).isNotNull();
+        assertThat(persistedPayment.getUpdatedAt()).isNotNull();
         assertThat(persistedAppointment.getPatient().getGender()).isEqualTo(Gender.FEMALE);
     }
 

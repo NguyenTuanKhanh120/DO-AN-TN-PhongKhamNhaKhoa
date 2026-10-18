@@ -93,7 +93,7 @@ class SlotEnginePostgreSqlIntegrationTest {
         registry.add("security.jwt.issuer", () -> "slot-engine-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
         registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
-        registry.add("clinic.appointment.booking-min-advance-minutes", () -> 180);
+        registry.add("clinic.appointment.booking-min-advance-minutes", () -> 120);
     }
 
     @Test

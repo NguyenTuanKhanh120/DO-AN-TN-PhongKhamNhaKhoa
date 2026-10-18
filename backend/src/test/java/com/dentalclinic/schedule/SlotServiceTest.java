@@ -85,7 +85,7 @@ class SlotServiceTest {
                 appointmentRepository,
                 timeProvider,
                 60,
-                180
+                120
         );
     }
 
@@ -427,7 +427,7 @@ class SlotServiceTest {
     }
 
     @Test
-    void shouldRejectRequestedSlotInsideThreeHourAdvanceWindow() {
+    void shouldRejectRequestedSlotInsideTwoHourAdvanceWindow() {
         Doctor doctor = doctor();
         DentalService dentalService = dentalService(true);
         stubValidDoctorAndService(doctor, dentalService);
@@ -446,7 +446,37 @@ class SlotServiceTest {
                 dentalService.getId(),
                 toInstant(MONDAY, LocalTime.of(11, 0))
         )).isInstanceOf(BusinessException.class)
-                .hasMessage("Bạn cần đặt lịch trước giờ khám ít nhất 3 giờ");
+                .hasMessage("Bạn cần đặt lịch trước giờ khám ít nhất 2 giờ");
+    }
+
+    @Test
+    void shouldAllowRequestedSlotAtTwoHourAdvanceBoundary() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        DoctorService mapping = stubValidDoctorAndService(doctor, dentalService);
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(),
+                (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor,
+                ScheduleSession.AFTERNOON,
+                "12:00",
+                "14:00"
+        )));
+        Instant requestedStart = toInstant(MONDAY, LocalTime.of(12, 0));
+        when(appointmentRepository.existsOccupiedStart(
+                doctor.getId(),
+                requestedStart,
+                AppointmentStatus.CANCELLED
+        )).thenReturn(false);
+
+        DoctorService result = slotService.requireAvailableSlot(
+                doctor.getId(),
+                dentalService.getId(),
+                requestedStart
+        );
+
+        assertThat(result).isSameAs(mapping);
     }
 
     @Test

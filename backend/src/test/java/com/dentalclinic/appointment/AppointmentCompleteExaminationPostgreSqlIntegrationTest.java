@@ -18,6 +18,10 @@ import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.payment.entity.Payment;
+import com.dentalclinic.payment.entity.PaymentItemSnapshot;
+import com.dentalclinic.payment.entity.PaymentStatus;
+import com.dentalclinic.payment.repository.PaymentRepository;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
 import com.dentalclinic.user.entity.Role;
@@ -49,6 +53,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -88,6 +93,9 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
 
     @Autowired
     private MedicalRecordRepository medicalRecordRepository;
+
+    @Autowired
+    private PaymentRepository paymentRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -138,7 +146,9 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
                        details ->> 'actual_start_at' as actual_start_at,
                        details ->> 'actual_end_at' as actual_end_at,
                        details ->> 'medical_record_id' as medical_record_id,
-                       details ->> 'follow_up_required' as follow_up_required
+                       details ->> 'follow_up_required' as follow_up_required,
+                       details ->> 'payment_id' as payment_id,
+                       details ->> 'payment_status' as payment_status
                 from appointment_histories
                 where appointment_id = ? and action = 'COMPLETE'
                 """, fixture.inProgressAppointmentId());
@@ -153,6 +163,17 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
         assertThat(historyRow.get("medical_record_id"))
                 .isEqualTo(fixture.medicalRecordId().toString());
         assertThat(historyRow.get("follow_up_required")).isEqualTo("true");
+        assertThat(historyRow.get("payment_id")).isEqualTo(fixture.paymentId().toString());
+        assertThat(historyRow.get("payment_status")).isEqualTo("UNPAID");
+
+        Map<String, Object> paymentRow = jdbcTemplate.queryForMap("""
+                select status::text as status, total_amount, items
+                from payments
+                where id = ?
+                """, fixture.paymentId());
+        assertThat(paymentRow.get("status")).isEqualTo("UNPAID");
+        assertThat((BigDecimal) paymentRow.get("total_amount"))
+                .isEqualByComparingTo("300000.00");
     }
 
     @Test
@@ -172,6 +193,7 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
         assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.IN_PROGRESS);
         assertThat(appointment.getActualEndAt()).isNull();
         assertThat(completeHistoryCount(fixture.inProgressAppointmentId())).isZero();
+        assertThat(paymentStatusOf(fixture.paymentId())).isEqualTo("DRAFT");
     }
 
     @Test
@@ -248,11 +270,26 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
         medicalRecord.setFollowUpNote("Tiếp tục điều trị tủy");
         medicalRecord = medicalRecordRepository.saveAndFlush(medicalRecord);
 
+        Payment payment = new Payment();
+        payment.setAppointment(appointment);
+        payment.setItems(List.of(new PaymentItemSnapshot(
+                service.getId(),
+                service.getName(),
+                service.getPrice().setScale(2),
+                1,
+                service.getPrice().setScale(2),
+                false
+        )));
+        payment.setTotalAmount(service.getPrice().setScale(2));
+        payment.setStatus(PaymentStatus.DRAFT);
+        payment = paymentRepository.saveAndFlush(payment);
+
         return new Fixture(
                 doctorUser.getId(),
                 otherDoctorUser.getId(),
                 appointment.getId(),
-                medicalRecord.getId()
+                medicalRecord.getId(),
+                payment.getId()
         );
     }
 
@@ -318,6 +355,14 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
         return count == null ? 0 : count;
     }
 
+    private String paymentStatusOf(UUID paymentId) {
+        return jdbcTemplate.queryForObject(
+                "select status::text from payments where id = ?",
+                String.class,
+                paymentId
+        );
+    }
+
     private static String generateSecret() {
         SecretKey key = Jwts.SIG.HS256.key().build();
         return Encoders.BASE64.encode(key.getEncoded());
@@ -327,7 +372,8 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
             UUID doctorUserId,
             UUID otherDoctorUserId,
             UUID inProgressAppointmentId,
-            UUID medicalRecordId
+            UUID medicalRecordId,
+            UUID paymentId
     ) {
     }
 

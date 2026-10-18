@@ -15,6 +15,10 @@ import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.medicalrecord.entity.MedicalRecord;
 import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
+import com.dentalclinic.payment.entity.Payment;
+import com.dentalclinic.payment.entity.PaymentItemSnapshot;
+import com.dentalclinic.payment.entity.PaymentStatus;
+import com.dentalclinic.payment.service.PaymentService;
 import com.dentalclinic.user.entity.User;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +33,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Optional;
+import java.util.List;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,6 +62,9 @@ class AppointmentCompleteExaminationServiceTest {
     @Mock
     private MedicalRecordRepository medicalRecordRepository;
 
+    @Mock
+    private PaymentService paymentService;
+
     private AppointmentCompleteExaminationService completeExaminationService;
 
     @BeforeEach
@@ -65,6 +74,7 @@ class AppointmentCompleteExaminationServiceTest {
                 appointmentRepository,
                 appointmentHistoryRepository,
                 medicalRecordRepository,
+                paymentService,
                 new ClinicTimeProvider(Clock.fixed(FIXED_NOW, CLINIC_ZONE))
         );
     }
@@ -78,6 +88,7 @@ class AppointmentCompleteExaminationServiceTest {
         stubOwnedAppointment(authenticatedUserId, doctor, appointment);
         when(medicalRecordRepository.findByAppointmentId(appointment.getId()))
                 .thenReturn(Optional.of(medicalRecord));
+        Payment payment = stubValidPayment(appointment);
 
         CompleteExaminationResponse response = completeExaminationService.complete(
                 authenticatedUserId,
@@ -111,6 +122,10 @@ class AppointmentCompleteExaminationServiceTest {
         assertThat(history.getDetails().path("medical_record_id").asText())
                 .isEqualTo(medicalRecord.getId().toString());
         assertThat(history.getDetails().path("follow_up_required").asBoolean()).isFalse();
+        assertThat(history.getDetails().path("payment_id").asText())
+                .isEqualTo(payment.getId().toString());
+        assertThat(history.getDetails().path("payment_status").asText())
+                .isEqualTo("UNPAID");
     }
 
     @Test
@@ -124,6 +139,7 @@ class AppointmentCompleteExaminationServiceTest {
         stubOwnedAppointment(authenticatedUserId, doctor, appointment);
         when(medicalRecordRepository.findByAppointmentId(appointment.getId()))
                 .thenReturn(Optional.of(medicalRecord));
+        stubValidPayment(appointment);
 
         CompleteExaminationResponse response = completeExaminationService.complete(
                 authenticatedUserId,
@@ -289,5 +305,23 @@ class AppointmentCompleteExaminationServiceTest {
         medicalRecord.setPrescription(JsonNodeFactory.instance.arrayNode());
         medicalRecord.setFollowUpRequired(false);
         return medicalRecord;
+    }
+
+    private Payment stubValidPayment(Appointment appointment) {
+        Payment payment = new Payment();
+        payment.setId(UUID.randomUUID());
+        payment.setAppointment(appointment);
+        payment.setItems(List.of(new PaymentItemSnapshot(
+                UUID.randomUUID(),
+                "Khám tổng quát",
+                new BigDecimal("100000.00"),
+                1,
+                new BigDecimal("100000.00"),
+                false
+        )));
+        payment.setTotalAmount(new BigDecimal("100000.00"));
+        payment.setStatus(PaymentStatus.UNPAID);
+        when(paymentService.finalizeDraftForCompletion(appointment)).thenReturn(payment);
+        return payment;
     }
 }

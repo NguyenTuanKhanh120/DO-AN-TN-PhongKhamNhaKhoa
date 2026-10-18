@@ -59,7 +59,7 @@ public class SlotService {
             AppointmentRepository appointmentRepository,
             ClinicTimeProvider clinicTimeProvider,
             @Value("${clinic.appointment.slot-duration-minutes:60}") long slotDurationMinutes,
-            @Value("${clinic.appointment.booking-min-advance-minutes:180}") long bookingMinAdvanceMinutes
+            @Value("${clinic.appointment.booking-min-advance-minutes:120}") long bookingMinAdvanceMinutes
     ) {
         if (slotDurationMinutes <= 0 || bookingMinAdvanceMinutes < 0) {
             throw new IllegalArgumentException("Cấu hình thời lượng slot hoặc thời gian đặt trước không hợp lệ");
@@ -117,7 +117,7 @@ public class SlotService {
         if (scheduledStartAt.isBefore(clinicTimeProvider.now().plus(bookingMinAdvance))) {
             throw new BusinessException(
                     ErrorCode.INVALID_REQUEST,
-                    "Bạn cần đặt lịch trước giờ khám ít nhất 3 giờ"
+                    "Bạn cần đặt lịch trước giờ khám ít nhất 2 giờ"
             );
         }
         if (appointmentRepository.existsOccupiedStart(

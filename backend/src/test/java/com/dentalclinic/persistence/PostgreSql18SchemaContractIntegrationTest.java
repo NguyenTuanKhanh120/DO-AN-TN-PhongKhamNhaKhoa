@@ -106,6 +106,7 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "doctors",
                 "medical_records",
                 "patients",
+                "payments",
                 "users",
                 "vector_store"
         );
@@ -143,6 +144,131 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(dayOffMigrationSucceeded).isTrue();
         assertThat(dayOffUniqueConstraint).isEqualTo(1);
         assertThat(dayOffSessionType).isEqualTo("session_enum");
+
+        Boolean paymentMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '3'",
+                Boolean.class
+        );
+        Integer paymentUniqueConstraint = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_constraint
+                        where conname = 'uq_payments_appointment'
+                          and contype = 'u'
+                        """,
+                Integer.class
+        );
+        String paymentStatusType = jdbcTemplate.queryForObject(
+                """
+                        select format_type(attribute.atttypid, attribute.atttypmod)
+                        from pg_attribute attribute
+                        join pg_class relation on relation.oid = attribute.attrelid
+                        join pg_namespace namespace on namespace.oid = relation.relnamespace
+                        where namespace.nspname = 'public'
+                          and relation.relname = 'payments'
+                          and attribute.attname = 'status'
+                          and not attribute.attisdropped
+                        """,
+                String.class
+        );
+        Integer paymentUpdatedAtTrigger = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_trigger trigger_metadata
+                        join pg_class relation on relation.oid = trigger_metadata.tgrelid
+                        where relation.relname = 'payments'
+                          and trigger_metadata.tgname = 'trg_payments_updated_at'
+                          and not trigger_metadata.tgisinternal
+                        """,
+                Integer.class
+        );
+        assertThat(paymentMigrationSucceeded).isTrue();
+        assertThat(paymentUniqueConstraint).isEqualTo(1);
+        assertThat(paymentStatusType).isEqualTo("payment_status_enum");
+        assertThat(paymentUpdatedAtTrigger).isEqualTo(1);
+    }
+
+    @Test
+    void shouldRequirePaymentItemsToBeJsonArray() {
+        Fixture fixture = createFixture();
+        UUID appointmentId = insertAppointment(
+                fixture.patientId(),
+                fixture.doctorId(),
+                fixture.serviceId(),
+                APPOINTMENT_START,
+                "IN_PROGRESS"
+        );
+
+        assertConstraintViolation(
+                () -> jdbcTemplate.update(
+                        """
+                                insert into payments (
+                                    appointment_id,
+                                    items,
+                                    total_amount,
+                                    status
+                                ) values (?, ?::jsonb, 0, 'DRAFT')
+                                """,
+                        appointmentId,
+                        "{}"
+                ),
+                "23514",
+                "ck_payments_items_array"
+        );
+    }
+
+    @Test
+    void shouldRequirePaidPaymentMetadata() {
+        Fixture fixture = createFixture();
+        UUID appointmentId = insertAppointment(
+                fixture.patientId(),
+                fixture.doctorId(),
+                fixture.serviceId(),
+                APPOINTMENT_START,
+                "COMPLETED"
+        );
+
+        assertConstraintViolation(
+                () -> jdbcTemplate.update(
+                        """
+                                insert into payments (
+                                    appointment_id,
+                                    items,
+                                    total_amount,
+                                    status
+                                ) values (?, ?::jsonb, 250000, 'PAID')
+                                """,
+                        appointmentId,
+                        "[{\"serviceId\":\"" + fixture.serviceId() + "\"}]"
+                ),
+                "23514",
+                "ck_payments_paid_metadata"
+        );
+    }
+
+    @Test
+    void shouldAllowOnlyOnePaymentPerAppointment() {
+        Fixture fixture = createFixture();
+        UUID appointmentId = insertAppointment(
+                fixture.patientId(),
+                fixture.doctorId(),
+                fixture.serviceId(),
+                APPOINTMENT_START,
+                "IN_PROGRESS"
+        );
+        jdbcTemplate.update(
+                "insert into payments (appointment_id) values (?)",
+                appointmentId
+        );
+
+        assertConstraintViolation(
+                () -> jdbcTemplate.update(
+                        "insert into payments (appointment_id) values (?)",
+                        appointmentId
+                ),
+                "23505",
+                "uq_payments_appointment"
+        );
     }
 
     @Test

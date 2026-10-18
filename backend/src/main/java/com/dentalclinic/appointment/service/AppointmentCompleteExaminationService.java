@@ -14,6 +14,8 @@ import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.medicalrecord.entity.MedicalRecord;
 import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
+import com.dentalclinic.payment.entity.Payment;
+import com.dentalclinic.payment.service.PaymentService;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ public class AppointmentCompleteExaminationService {
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final MedicalRecordRepository medicalRecordRepository;
+    private final PaymentService paymentService;
     private final ClinicTimeProvider clinicTimeProvider;
 
     public AppointmentCompleteExaminationService(
@@ -40,12 +43,14 @@ public class AppointmentCompleteExaminationService {
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
             MedicalRecordRepository medicalRecordRepository,
+            PaymentService paymentService,
             ClinicTimeProvider clinicTimeProvider
     ) {
         this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.medicalRecordRepository = medicalRecordRepository;
+        this.paymentService = paymentService;
         this.clinicTimeProvider = clinicTimeProvider;
     }
 
@@ -73,6 +78,8 @@ public class AppointmentCompleteExaminationService {
                 .orElseThrow(() -> new ConflictException(INVALID_MEDICAL_RECORD_MESSAGE));
         validateMedicalRecord(medicalRecord);
 
+        Payment payment = paymentService.finalizeDraftForCompletion(appointment);
+
         Instant actualEndAt = clinicTimeProvider.now();
         if (actualEndAt.isBefore(appointment.getActualStartAt())) {
             throw new ConflictException("Thời gian hoàn tất khám không hợp lệ");
@@ -86,7 +93,7 @@ public class AppointmentCompleteExaminationService {
         history.setAppointment(appointment);
         history.setAction(AppointmentAction.COMPLETE);
         history.setChangedBy(doctor.getUser());
-        history.setDetails(completeDetails(appointment, medicalRecord, actualEndAt));
+        history.setDetails(completeDetails(appointment, medicalRecord, payment, actualEndAt));
         appointmentHistoryRepository.saveAndFlush(history);
 
         return new CompleteExaminationResponse(
@@ -118,6 +125,7 @@ public class AppointmentCompleteExaminationService {
     private ObjectNode completeDetails(
             Appointment appointment,
             MedicalRecord medicalRecord,
+            Payment payment,
             Instant actualEndAt
     ) {
         ObjectNode details = JsonNodeFactory.instance.objectNode();
@@ -129,6 +137,9 @@ public class AppointmentCompleteExaminationService {
         details.put("actual_end_at", toClinicOffset(actualEndAt).toString());
         details.put("medical_record_id", medicalRecord.getId().toString());
         details.put("follow_up_required", medicalRecord.isFollowUpRequired());
+        details.put("payment_id", payment.getId().toString());
+        details.put("payment_status", payment.getStatus().name());
+        details.put("payment_total_amount", payment.getTotalAmount());
         return details;
     }
 
