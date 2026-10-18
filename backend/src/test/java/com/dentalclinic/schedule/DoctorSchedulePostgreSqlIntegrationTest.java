@@ -79,7 +79,7 @@ class DoctorSchedulePostgreSqlIntegrationTest {
     }
 
     @Test
-    void shouldManageOwnedWeeklyScheduleOnPostgreSql() throws Exception {
+    void shouldAllowOnlyAdminToManageWeeklyScheduleOnPostgreSql() throws Exception {
         String marker = UUID.randomUUID().toString();
         User doctorUser = saveUser(
                 "phase10-doctor-" + marker + "@example.com",
@@ -91,15 +91,20 @@ class DoctorSchedulePostgreSqlIntegrationTest {
                 "Bác sĩ Khác",
                 Role.DOCTOR
         );
+        User adminUser = saveUser(
+                "phase10-admin-" + marker + "@example.com",
+                "Quản trị viên",
+                Role.ADMIN
+        );
         User patientUser = saveUser(
                 "phase10-patient-" + marker + "@example.com",
                 "Bệnh nhân",
                 Role.PATIENT
         );
         Doctor doctor = saveDoctor(doctorUser, "PHASE10-A-" + marker);
-        saveDoctor(otherDoctorUser, "PHASE10-B-" + marker);
+        Doctor otherDoctor = saveDoctor(otherDoctorUser, "PHASE10-B-" + marker);
         String doctorToken = login(doctorUser.getEmail());
-        String otherDoctorToken = login(otherDoctorUser.getEmail());
+        String adminToken = login(adminUser.getEmail());
         String patientToken = login(patientUser.getEmail());
 
         mockMvc.perform(get("/api/doctors/{doctorId}/schedule", doctor.getId()))
@@ -107,15 +112,32 @@ class DoctorSchedulePostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data").isEmpty());
 
         Map<String, Object> morningBody = scheduleBody(1, "MORNING", "07:00", "12:00");
-        mockMvc.perform(post("/api/doctor/schedules")
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", doctor.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(morningBody)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
-        MvcResult morningCreated = mockMvc.perform(post("/api/doctor/schedules")
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", doctor.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(doctorToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(morningBody)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(post("/api/doctor/schedules")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(doctorToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(morningBody)))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
+
+        MvcResult morningCreated = mockMvc.perform(post(
+                        "/api/admin/doctors/{doctorId}/schedules",
+                        doctor.getId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(morningBody)))
                 .andExpect(status().isCreated())
@@ -133,24 +155,27 @@ class DoctorSchedulePostgreSqlIntegrationTest {
         assertThat(persistedMorning.getSession()).isEqualTo(ScheduleSession.MORNING);
         assertThat(persistedMorning.getStartTime()).isEqualTo(LocalTime.of(7, 0));
 
-        mockMvc.perform(post("/api/doctor/schedules")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(doctorToken))
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", doctor.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(morningBody)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("SCHEDULE_ALREADY_EXISTS"));
 
         Map<String, Object> invalidTimeBody = scheduleBody(2, "MORNING", "12:00", "07:00");
-        mockMvc.perform(post("/api/doctor/schedules")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(doctorToken))
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", doctor.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(invalidTimeBody)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
         Map<String, Object> afternoonBody = scheduleBody(1, "AFTERNOON", "13:00", "18:00");
-        MvcResult afternoonCreated = mockMvc.perform(post("/api/doctor/schedules")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(doctorToken))
+        MvcResult afternoonCreated = mockMvc.perform(post(
+                        "/api/admin/doctors/{doctorId}/schedules",
+                        doctor.getId()
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(afternoonBody)))
                 .andExpect(status().isCreated())
@@ -165,6 +190,11 @@ class DoctorSchedulePostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data[0].id").value(morningId.toString()))
                 .andExpect(jsonPath("$.data[1].id").value(afternoonId.toString()));
 
+        mockMvc.perform(get("/api/admin/doctors/{doctorId}/schedules", doctor.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2));
+
         mockMvc.perform(get("/api/doctors/{doctorId}/schedule", doctor.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(2))
@@ -172,15 +202,23 @@ class DoctorSchedulePostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data[1].session").value("AFTERNOON"));
 
         Map<String, Object> movedMorningBody = scheduleBody(2, "MORNING", "08:00", "12:00");
-        mockMvc.perform(put("/api/doctor/schedules/{id}", morningId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(otherDoctorToken))
+        mockMvc.perform(put(
+                        "/api/admin/doctors/{doctorId}/schedules/{scheduleId}",
+                        otherDoctor.getId(),
+                        morningId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(movedMorningBody)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
-        mockMvc.perform(put("/api/doctor/schedules/{id}", morningId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(doctorToken))
+        mockMvc.perform(put(
+                        "/api/admin/doctors/{doctorId}/schedules/{scheduleId}",
+                        doctor.getId(),
+                        morningId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(movedMorningBody)))
                 .andExpect(status().isOk())
@@ -188,8 +226,12 @@ class DoctorSchedulePostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.startTime").value("08:00:00"));
 
         Map<String, Object> conflictingUpdate = scheduleBody(1, "AFTERNOON", "14:00", "17:00");
-        mockMvc.perform(put("/api/doctor/schedules/{id}", morningId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(doctorToken))
+        mockMvc.perform(put(
+                        "/api/admin/doctors/{doctorId}/schedules/{scheduleId}",
+                        doctor.getId(),
+                        morningId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(conflictingUpdate)))
                 .andExpect(status().isConflict())
@@ -200,14 +242,22 @@ class DoctorSchedulePostgreSqlIntegrationTest {
         assertThat(unchangedMorning.getSession()).isEqualTo(ScheduleSession.MORNING);
         assertThat(unchangedMorning.getStartTime()).isEqualTo(LocalTime.of(8, 0));
 
-        mockMvc.perform(delete("/api/doctor/schedules/{id}", afternoonId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(otherDoctorToken)))
+        mockMvc.perform(delete(
+                        "/api/admin/doctors/{doctorId}/schedules/{scheduleId}",
+                        otherDoctor.getId(),
+                        afternoonId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         assertThat(doctorScheduleRepository.existsById(afternoonId)).isTrue();
 
-        mockMvc.perform(delete("/api/doctor/schedules/{id}", afternoonId)
-                        .header(HttpHeaders.AUTHORIZATION, bearer(doctorToken)))
+        mockMvc.perform(delete(
+                        "/api/admin/doctors/{doctorId}/schedules/{scheduleId}",
+                        doctor.getId(),
+                        afternoonId
+                )
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
         assertThat(doctorScheduleRepository.existsById(afternoonId)).isFalse();

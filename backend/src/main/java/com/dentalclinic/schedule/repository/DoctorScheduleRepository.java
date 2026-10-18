@@ -20,7 +20,7 @@ public interface DoctorScheduleRepository extends JpaRepository<DoctorSchedule, 
     );
 
     @EntityGraph(attributePaths = "doctor")
-    Optional<DoctorSchedule> findByIdAndDoctor_User_Id(UUID scheduleId, UUID userId);
+    Optional<DoctorSchedule> findByIdAndDoctor_Id(UUID scheduleId, UUID doctorId);
 
     boolean existsByDoctor_IdAndDayOfWeekAndSession(
             UUID doctorId,

@@ -19,7 +19,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Configuration
@@ -27,11 +29,13 @@ public class OpenApiConfig {
 
     public static final String BEARER_AUTH = "bearerAuth";
     private static final String ERROR_SCHEMA = "ErrorResponse";
+    private static final String LOGIN_ENDPOINT = "/api/auth/login";
+    private static final String REGISTER_ENDPOINT = "/api/auth/register";
     private static final Set<String> CREATED_ENDPOINTS = Set.of(
             "POST /api/auth/register",
             "POST /api/admin/doctors",
             "POST /api/admin/services",
-            "POST /api/doctor/schedules",
+            "POST /api/admin/doctors/{doctorId}/schedules",
             "POST /api/admin/doctors/{doctorId}/days-off",
             "POST /api/patient/appointments",
             "POST /api/doctor/appointments/{id}/medical-record"
@@ -62,7 +66,9 @@ public class OpenApiConfig {
                         new Tag().name("Doctors").description("Tra cứu và quản lý bác sĩ"),
                         new Tag().name("Dental Services").description("Tra cứu và quản lý dịch vụ nha khoa"),
                         new Tag().name("Doctor Services").description("Phân công dịch vụ cho bác sĩ"),
-                        new Tag().name("Doctor Schedules").description("Lịch làm việc cố định theo tuần"),
+                        new Tag().name("Doctor Schedules").description(
+                                "Admin quản lý lịch làm việc tuần; bác sĩ chỉ xem lịch của mình"
+                        ),
                         new Tag().name("Doctor Days Off").description("Ngoại lệ nghỉ theo ngày do quản trị viên đăng ký"),
                         new Tag().name("Available Slots").description("Khung giờ khám còn trống"),
                         new Tag().name("Patient Appointments").description("Lịch hẹn của bệnh nhân"),
@@ -87,38 +93,10 @@ public class OpenApiConfig {
                         if (protectedEndpoint) {
                             operation.addSecurityItem(new SecurityRequirement().addList(BEARER_AUTH));
                         }
+                        addExecutionResultNote(path, operation);
 
                         normalizeCreatedResponse(path, method.name(), operation);
-                        addResponseIfMissing(
-                                operation,
-                                "400",
-                                "INVALID_REQUEST, VALIDATION_FAILED hoặc MALFORMED_REQUEST"
-                        );
-                        if (protectedEndpoint || path.equals("/api/auth/login")) {
-                            addResponseIfMissing(
-                                    operation,
-                                    "401",
-                                    "AUTHENTICATION_REQUIRED hoặc INVALID_CREDENTIALS"
-                            );
-                        }
-                        if (protectedEndpoint) {
-                            addResponseIfMissing(
-                                    operation,
-                                    "403",
-                                    "ACCESS_DENIED hoặc ACCOUNT_INACTIVE"
-                            );
-                        }
-                        if (path.contains("{")) {
-                            addResponseIfMissing(operation, "404", "RESOURCE_NOT_FOUND");
-                        }
-                        if (!method.name().equals("GET")) {
-                            addResponseIfMissing(
-                                    operation,
-                                    "409",
-                                    "RESOURCE_CONFLICT hoặc mã xung đột nghiệp vụ cụ thể"
-                            );
-                        }
-                        addResponseIfMissing(operation, "500", "INTERNAL_SERVER_ERROR");
+                        addSuccessExample(path, method.name(), operation);
                     })
             );
         };
@@ -140,37 +118,82 @@ public class OpenApiConfig {
         operation.getResponses().addApiResponse("201", success);
     }
 
-    private void addResponseIfMissing(
-            io.swagger.v3.oas.models.Operation operation,
-            String status,
-            String description
+    private void addSuccessExample(
+            String path,
+            String method,
+            io.swagger.v3.oas.models.Operation operation
     ) {
-        if (operation.getResponses().containsKey(status)) {
+        String status = CREATED_ENDPOINTS.contains(method + " " + path) ? "201" : "200";
+        io.swagger.v3.oas.models.responses.ApiResponse response = operation.getResponses().get(status);
+        if (response == null || response.getContent() == null) {
             return;
         }
-        Schema<?> schema = new Schema<>().$ref("#/components/schemas/" + ERROR_SCHEMA);
         io.swagger.v3.oas.models.media.MediaType mediaType =
-                new io.swagger.v3.oas.models.media.MediaType().schema(schema);
-        operation.getResponses().addApiResponse(
-                status,
-                new io.swagger.v3.oas.models.responses.ApiResponse()
-                        .description(description)
-                        .content(new io.swagger.v3.oas.models.media.Content()
-                                .addMediaType(MediaType.APPLICATION_JSON_VALUE, mediaType))
-        );
+                response.getContent().get(MediaType.APPLICATION_JSON_VALUE);
+        if (mediaType != null) {
+            mediaType.setExample(successExample(path));
+            if (path.equals(LOGIN_ENDPOINT)) {
+                response.setDescription("Đăng nhập thành công; JWT được trả tại data.accessToken");
+            }
+        }
+    }
+
+    private void addExecutionResultNote(
+            String path,
+            io.swagger.v3.oas.models.Operation operation
+    ) {
+        if (!path.equals(LOGIN_ENDPOINT)) {
+            return;
+        }
+        operation.setDescription("""
+                Sau khi bấm **Execute**, kết quả thực tế của lần gọi nằm trong mục **Server response**.
+
+                Bảng **Responses** bên dưới là tài liệu các kết quả *có thể xảy ra*, không phải các kết quả
+                được trả đồng thời. Khi đăng nhập thành công, JWT nằm tại `data.accessToken` của response 200.
+                """);
+    }
+
+    private Map<String, Object> successExample(String path) {
+        Map<String, Object> example = new LinkedHashMap<>();
+        example.put("success", true);
+        example.put("code", ErrorCode.SUCCESS.name());
+        if (path.equals(LOGIN_ENDPOINT) || path.equals(REGISTER_ENDPOINT)) {
+            boolean login = path.equals(LOGIN_ENDPOINT);
+            example.put("message", login
+                    ? "Đăng nhập thành công"
+                    : "Đăng ký tài khoản thành công");
+            example.put("data", authResponseExample(path));
+        } else {
+            example.put("message", ErrorCode.SUCCESS.getDefaultMessage());
+            example.put("data", Map.of());
+        }
+        return example;
+    }
+
+    private Map<String, Object> authResponseExample(String path) {
+        boolean login = path.equals(LOGIN_ENDPOINT);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("accessToken", "<JWT_ACCESS_TOKEN>");
+        data.put("tokenType", "Bearer");
+        data.put("expiresInSeconds", 3600);
+        data.put("userId", login ? "<USER_ID>" : "00000000-0000-0000-0000-000000000000");
+        data.put("email", login ? "<EMAIL>" : "patient@example.com");
+        data.put("fullName", login ? "<FULL_NAME>" : "Nguyễn Văn A");
+        data.put("role", login ? "<PATIENT|DOCTOR|ADMIN>" : "PATIENT");
+        return data;
     }
 
     private Schema<?> errorResponseSchema() {
         Schema<?> fieldViolation = new ObjectSchema()
-                .addProperty("field", new StringSchema().example("email"))
-                .addProperty("message", new StringSchema().example("Email không đúng định dạng"));
+                .addProperty("field", new StringSchema().description("Tên field không hợp lệ"))
+                .addProperty("message", new StringSchema().description("Chi tiết lỗi validation"));
         return new ObjectSchema()
                 .description("Cấu trúc lỗi thống nhất của REST API")
-                .addProperty("success", new BooleanSchema().example(false))
-                .addProperty("code", new StringSchema().example(ErrorCode.VALIDATION_FAILED.name()))
-                .addProperty("message", new StringSchema().example(ErrorCode.VALIDATION_FAILED.getDefaultMessage()))
+                .addProperty("success", new BooleanSchema().description("Luôn false khi có lỗi"))
+                .addProperty("code", new StringSchema().description("Mã lỗi nghiệp vụ"))
+                .addProperty("message", new StringSchema().description("Thông báo lỗi"))
                 .addProperty("errors", new ArraySchema().items(fieldViolation).nullable(true))
-                .addProperty("path", new StringSchema().example("/api/auth/register"));
+                .addProperty("path", new StringSchema().description("Endpoint phát sinh lỗi"));
     }
 
     private String apiDescription() {
@@ -222,6 +245,9 @@ public class OpenApiConfig {
         if (path.startsWith("/api/admin/doctors")) {
             if (path.contains("/days-off")) {
                 return "Doctor Days Off";
+            }
+            if (path.contains("/schedules")) {
+                return "Doctor Schedules";
             }
             return path.contains("/services") ? "Doctor Services" : "Doctors";
         }

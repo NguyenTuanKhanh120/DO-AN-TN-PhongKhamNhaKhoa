@@ -20,7 +20,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Public doctor-to-service and service-to-doctor lookup APIs.
 - Transactional admin replacement of doctor-service mappings with composite-key and foreign-key protection.
 - Public weekly doctor-schedule lookup.
-- Doctor-owned schedule CRUD with weekday, session and time-range validation.
+- Admin-owned weekly doctor-schedule CRUD with weekday, session and time-range validation; doctors have read-only access to their own schedules.
 - Admin-managed date-specific doctor days off with preview, morning/afternoon/full-day support and no mutation of recurring weekly schedules.
 - Creating a day off transactionally cancels affected future `BOOKED` appointments, writes clinic-safe CANCEL history and rejects active `CHECKED_IN`/`IN_PROGRESS` examinations.
 - Booking, rescheduling and follow-up creation share a pessimistic Doctor lock and recheck days off before writing.
@@ -234,9 +234,10 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `GET /api/services/{serviceId}/doctors`
 - `PUT /api/admin/doctors/{doctorId}/services`
 - `GET /api/doctor/schedules`
-- `POST /api/doctor/schedules`
-- `PUT /api/doctor/schedules/{id}`
-- `DELETE /api/doctor/schedules/{id}`
+- `GET /api/admin/doctors/{doctorId}/schedules`
+- `POST /api/admin/doctors/{doctorId}/schedules`
+- `PUT /api/admin/doctors/{doctorId}/schedules/{scheduleId}`
+- `DELETE /api/admin/doctors/{doctorId}/schedules/{scheduleId}`
 
 ## React integration notes
 

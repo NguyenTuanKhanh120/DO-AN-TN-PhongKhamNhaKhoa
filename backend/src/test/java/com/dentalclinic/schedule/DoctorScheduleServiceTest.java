@@ -111,10 +111,33 @@ class DoctorScheduleServiceTest {
     }
 
     @Test
-    void shouldCreateOwnedSchedule() {
+    void shouldReturnDoctorSchedulesForAdminManagement() {
+        Doctor doctor = doctor();
+        DoctorSchedule morning = schedule(
+                doctor,
+                (short) 1,
+                ScheduleSession.MORNING,
+                "07:00",
+                "12:00"
+        );
+        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        when(doctorScheduleRepository.findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(
+                doctor.getId()
+        )).thenReturn(List.of(morning));
+
+        List<DoctorScheduleResponse> response = service.getAdminSchedules(doctor.getId());
+
+        assertThat(response).singleElement().satisfies(item -> {
+            assertThat(item.id()).isEqualTo(morning.getId());
+            assertThat(item.doctorId()).isEqualTo(doctor.getId());
+        });
+    }
+
+    @Test
+    void shouldCreateScheduleForDoctorSelectedByAdmin() {
         Doctor doctor = doctor();
         DoctorScheduleRequest request = request(1, ScheduleSession.MORNING, "07:00", "12:00");
-        when(doctorRepository.findByUserId(doctor.getUser().getId())).thenReturn(Optional.of(doctor));
+        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.existsByDoctor_IdAndDayOfWeekAndSession(
                 doctor.getId(),
                 (short) 1,
@@ -126,7 +149,7 @@ class DoctorScheduleServiceTest {
             return saved;
         });
 
-        DoctorScheduleResponse response = service.createSchedule(doctor.getUser().getId(), request);
+        DoctorScheduleResponse response = service.createSchedule(doctor.getId(), request);
 
         ArgumentCaptor<DoctorSchedule> captor = ArgumentCaptor.forClass(DoctorSchedule.class);
         verify(doctorScheduleRepository).saveAndFlush(captor.capture());
@@ -143,14 +166,14 @@ class DoctorScheduleServiceTest {
     void shouldRejectDuplicateDoctorDayAndSession() {
         Doctor doctor = doctor();
         DoctorScheduleRequest request = request(1, ScheduleSession.MORNING, "07:00", "12:00");
-        when(doctorRepository.findByUserId(doctor.getUser().getId())).thenReturn(Optional.of(doctor));
+        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.existsByDoctor_IdAndDayOfWeekAndSession(
                 doctor.getId(),
                 (short) 1,
                 ScheduleSession.MORNING
         )).thenReturn(true);
 
-        assertThatThrownBy(() -> service.createSchedule(doctor.getUser().getId(), request))
+        assertThatThrownBy(() -> service.createSchedule(doctor.getId(), request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.SCHEDULE_ALREADY_EXISTS);
@@ -168,11 +191,11 @@ class DoctorScheduleServiceTest {
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
 
-        verify(doctorRepository, never()).findByUserId(any());
+        verify(doctorRepository, never()).findById(any());
     }
 
     @Test
-    void shouldUpdateOwnedSchedule() {
+    void shouldUpdateScheduleForDoctorSelectedByAdmin() {
         Doctor doctor = doctor();
         DoctorSchedule schedule = schedule(
                 doctor,
@@ -182,9 +205,10 @@ class DoctorScheduleServiceTest {
                 "12:00"
         );
         DoctorScheduleRequest request = request(2, ScheduleSession.AFTERNOON, "13:30", "17:30");
-        when(doctorScheduleRepository.findByIdAndDoctor_User_Id(
+        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        when(doctorScheduleRepository.findByIdAndDoctor_Id(
                 schedule.getId(),
-                doctor.getUser().getId()
+                doctor.getId()
         )).thenReturn(Optional.of(schedule));
         when(doctorScheduleRepository.existsByDoctor_IdAndDayOfWeekAndSessionAndIdNot(
                 doctor.getId(),
@@ -194,7 +218,7 @@ class DoctorScheduleServiceTest {
         )).thenReturn(false);
 
         DoctorScheduleResponse response = service.updateSchedule(
-                doctor.getUser().getId(),
+                doctor.getId(),
                 schedule.getId(),
                 request
         );
@@ -217,9 +241,10 @@ class DoctorScheduleServiceTest {
                 "12:00"
         );
         DoctorScheduleRequest request = request(1, ScheduleSession.AFTERNOON, "13:00", "18:00");
-        when(doctorScheduleRepository.findByIdAndDoctor_User_Id(
+        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        when(doctorScheduleRepository.findByIdAndDoctor_Id(
                 schedule.getId(),
-                doctor.getUser().getId()
+                doctor.getId()
         )).thenReturn(Optional.of(schedule));
         when(doctorScheduleRepository.existsByDoctor_IdAndDayOfWeekAndSessionAndIdNot(
                 doctor.getId(),
@@ -229,7 +254,7 @@ class DoctorScheduleServiceTest {
         )).thenReturn(true);
 
         assertThatThrownBy(() -> service.updateSchedule(
-                doctor.getUser().getId(),
+                doctor.getId(),
                 schedule.getId(),
                 request
         )).isInstanceOf(BusinessException.class)
@@ -240,14 +265,17 @@ class DoctorScheduleServiceTest {
     }
 
     @Test
-    void shouldNotUpdateAnotherDoctorsSchedule() {
-        UUID userId = UUID.randomUUID();
+    void shouldNotUpdateScheduleBelongingToAnotherDoctor() {
+        UUID doctorId = UUID.randomUUID();
         UUID scheduleId = UUID.randomUUID();
-        when(doctorScheduleRepository.findByIdAndDoctor_User_Id(scheduleId, userId))
+        Doctor doctor = doctor();
+        doctor.setId(doctorId);
+        when(doctorRepository.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(doctorScheduleRepository.findByIdAndDoctor_Id(scheduleId, doctorId))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.updateSchedule(
-                userId,
+                doctorId,
                 scheduleId,
                 request(1, ScheduleSession.MORNING, "07:00", "12:00")
         )).isInstanceOf(NotFoundException.class)
@@ -257,7 +285,7 @@ class DoctorScheduleServiceTest {
     }
 
     @Test
-    void shouldDeleteOnlyOwnedSchedule() {
+    void shouldDeleteScheduleForDoctorSelectedByAdmin() {
         Doctor doctor = doctor();
         DoctorSchedule schedule = schedule(
                 doctor,
@@ -266,12 +294,13 @@ class DoctorScheduleServiceTest {
                 "07:00",
                 "12:00"
         );
-        when(doctorScheduleRepository.findByIdAndDoctor_User_Id(
+        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        when(doctorScheduleRepository.findByIdAndDoctor_Id(
                 schedule.getId(),
-                doctor.getUser().getId()
+                doctor.getId()
         )).thenReturn(Optional.of(schedule));
 
-        service.deleteSchedule(doctor.getUser().getId(), schedule.getId());
+        service.deleteSchedule(doctor.getId(), schedule.getId());
 
         verify(doctorScheduleRepository).delete(schedule);
         verify(doctorScheduleRepository).flush();
@@ -281,7 +310,7 @@ class DoctorScheduleServiceTest {
     void shouldMapDatabaseUniqueConflictToScheduleConflict() {
         Doctor doctor = doctor();
         DoctorScheduleRequest request = request(1, ScheduleSession.MORNING, "07:00", "12:00");
-        when(doctorRepository.findByUserId(doctor.getUser().getId())).thenReturn(Optional.of(doctor));
+        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.existsByDoctor_IdAndDayOfWeekAndSession(
                 doctor.getId(),
                 (short) 1,
@@ -290,7 +319,7 @@ class DoctorScheduleServiceTest {
         when(doctorScheduleRepository.saveAndFlush(any(DoctorSchedule.class)))
                 .thenThrow(new DataIntegrityViolationException("unique conflict"));
 
-        assertThatThrownBy(() -> service.createSchedule(doctor.getUser().getId(), request))
+        assertThatThrownBy(() -> service.createSchedule(doctor.getId(), request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.SCHEDULE_ALREADY_EXISTS);

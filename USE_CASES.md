@@ -146,14 +146,12 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 
 ## C. CHỨC NĂNG BÁC SĨ
 
-### UC17 - Quản lý lịch làm việc cá nhân
+### UC17 - Xem lịch làm việc cá nhân
 
 - **Tác nhân:** Bác sĩ.
-- **Mục đích:** Thiết lập lịch làm việc cố định theo tuần.
-- **Luồng chính:** Bác sĩ xem, tạo, cập nhật hoặc xóa lịch của chính mình.
-- **Điều kiện:** Ngày trong tuần từ 1 đến 7; buổi `MORNING` hoặc `AFTERNOON`; giờ kết thúc phải sau giờ bắt đầu.
-- **Ngoại lệ:** Không được có hai lịch trùng cùng thứ và cùng buổi.
-- **Bảo mật:** Bác sĩ không thể sửa lịch thuộc bác sĩ khác.
+- **Mục đích:** Xem lịch làm việc cố định theo tuần đã được Admin thiết lập.
+- **Luồng chính:** Bác sĩ đăng nhập; hệ thống xác định hồ sơ bác sĩ từ JWT; trả lịch làm việc của chính bác sĩ.
+- **Bảo mật:** Bác sĩ chỉ có quyền xem, không được tạo, cập nhật hoặc xóa lịch tuần.
 
 ### UC18 - Xem danh sách lịch khám được phân công
 
@@ -282,14 +280,23 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Ảnh hưởng:** Bác sĩ không ở trạng thái `ACTIVE` sẽ không sinh slot mới và không thể được đặt lịch.
 - **Lưu ý:** Trạng thái làm việc của Doctor khác với trạng thái tài khoản User.
 
-### UC34 - Tạo dịch vụ nha khoa
+### UC34 - Quản lý lịch làm việc tuần của bác sĩ
+
+- **Tác nhân:** Admin.
+- **Mục đích:** Thiết lập lịch làm việc cố định theo tuần cho từng bác sĩ.
+- **Luồng chính:** Admin chọn bác sĩ; xem, tạo, cập nhật hoặc xóa lịch tuần của bác sĩ đó.
+- **Điều kiện:** Ngày trong tuần từ 1 đến 7; buổi `MORNING` hoặc `AFTERNOON`; giờ kết thúc phải sau giờ bắt đầu.
+- **Ngoại lệ:** Không được có hai lịch trùng cùng thứ và cùng buổi của một bác sĩ; lịch được sửa hoặc xóa phải thuộc đúng bác sĩ trên URL.
+- **Bảo mật:** Chỉ Admin được tạo, cập nhật và xóa lịch tuần; bác sĩ chỉ được xem lịch của mình.
+
+### UC35 - Tạo dịch vụ nha khoa
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Thêm dịch vụ mới.
 - **Luồng chính:** Admin nhập tên, mô tả và giá; hệ thống kiểm tra; tạo dịch vụ ở trạng thái hoạt động.
 - **Điều kiện:** Tên không trùng; giá không âm và đúng định dạng `NUMERIC(14,2)`.
 
-### UC35 - Cập nhật dịch vụ nha khoa
+### UC36 - Cập nhật dịch vụ nha khoa
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Chỉnh sửa tên, mô tả hoặc giá dịch vụ.
@@ -297,7 +304,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Điều kiện:** Tên mới không trùng và giá hợp lệ.
 - **Lưu ý:** Giá mới không làm thay đổi snapshot giá trong các Payment đã ghi nhận trước đó.
 
-### UC36 - Thay đổi trạng thái dịch vụ
+### UC37 - Thay đổi trạng thái dịch vụ
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Tạm ngừng hoặc kích hoạt dịch vụ.
@@ -305,7 +312,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Ảnh hưởng:** Dịch vụ ngừng hoạt động không được dùng cho slot hoặc lịch đặt mới.
 - **Quy tắc:** Không hard delete dịch vụ đã được sử dụng.
 
-### UC37 - Phân công dịch vụ cho bác sĩ
+### UC38 - Phân công dịch vụ cho bác sĩ
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Xác định những dịch vụ một bác sĩ được phép thực hiện.
@@ -313,7 +320,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Điều kiện:** Bác sĩ và tất cả dịch vụ phải tồn tại; danh sách không chứa ID trùng.
 - **Ngoại lệ:** Không xóa mapping nếu việc xóa vi phạm dữ liệu lịch hẹn đang tham chiếu.
 
-### UC38 - Xem trước ảnh hưởng ngày nghỉ
+### UC39 - Xem trước ảnh hưởng ngày nghỉ
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Kiểm tra các lịch hẹn bị ảnh hưởng trước khi đăng ký ngày nghỉ.
@@ -321,7 +328,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Điều kiện:** Ngày nghỉ và buổi nghỉ chưa tồn tại.
 - **Kết quả:** Chỉ xem trước, chưa thay đổi dữ liệu.
 
-### UC39 - Đăng ký ngày nghỉ bác sĩ
+### UC40 - Đăng ký ngày nghỉ bác sĩ
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Ngăn đặt lịch vào ngày bác sĩ nghỉ.
@@ -330,7 +337,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Ngoại lệ:** Không tạo ngày nghỉ nếu có Appointment `CHECKED_IN` hoặc `IN_PROGRESS`.
 - **Lưu ý:** Chỉ Admin quản lý ngày nghỉ; bác sĩ không có API tự đăng ký ngày nghỉ.
 
-### UC40 - Xem và xóa ngày nghỉ bác sĩ
+### UC41 - Xem và xóa ngày nghỉ bác sĩ
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Theo dõi hoặc gỡ ngày nghỉ đã khai báo.
@@ -338,35 +345,35 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Điều kiện:** Ngày nghỉ phải thuộc đúng bác sĩ.
 - **Lưu ý:** Xóa ngày nghỉ không tự khôi phục những Appointment đã bị hủy trước đó.
 
-### UC41 - Tra cứu toàn bộ lịch hẹn
+### UC42 - Tra cứu toàn bộ lịch hẹn
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Theo dõi hoạt động đặt và khám bệnh trong toàn hệ thống.
 - **Luồng chính:** Admin tìm kiếm; lọc theo trạng thái, bệnh nhân, bác sĩ, dịch vụ và khoảng ngày; xem kết quả phân trang.
 - **Kết quả:** Trả dữ liệu Appointment của toàn phòng khám.
 
-### UC42 - Xem lịch sử thay đổi Appointment
+### UC43 - Xem lịch sử thay đổi Appointment
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Kiểm tra audit của một lịch hẹn.
 - **Luồng chính:** Admin chọn Appointment; hệ thống trả lịch sử thay đổi theo thứ tự thời gian.
 - **Nội dung:** `BOOK`, `CANCEL`, `RESCHEDULE`, `CHECK_IN`, `START_EXAM`, `COMPLETE`, `NO_SHOW`, người thực hiện, lý do, thời điểm và chi tiết JSONB.
 
-### UC43 - Xem dashboard tổng quan
+### UC44 - Xem dashboard tổng quan
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Theo dõi tình hình hoạt động trong ngày.
 - **Kết quả:** Tổng số bệnh nhân, tổng số bác sĩ, số lịch hôm nay, số lịch hoàn thành, số lịch đã hủy và số lịch No-show.
 - **Quy tắc:** Số liệu ngày được tính theo múi giờ `Asia/Ho_Chi_Minh`.
 
-### UC44 - Tra cứu phiếu thanh toán
+### UC45 - Tra cứu phiếu thanh toán
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Theo dõi các khoản phải thu và đã thu.
 - **Luồng chính:** Admin tìm theo bệnh nhân hoặc bác sĩ; lọc trạng thái và ngày; sắp xếp và phân trang; chọn phiếu để xem chi tiết.
 - **Kết quả:** Hiển thị bệnh nhân, bác sĩ, dịch vụ gốc và dịch vụ bổ sung, tổng tiền, trạng thái và thông tin xác nhận.
 
-### UC45 - Xác nhận đã thu tiền
+### UC46 - Xác nhận đã thu tiền
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Ghi nhận bệnh nhân đã thanh toán trực tiếp tại phòng khám.
@@ -375,7 +382,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Concurrency:** Hai Admin xác nhận đồng thời chỉ một request thành công.
 - **Lưu ý:** `BANK_TRANSFER` là xác nhận thủ công, không phải cổng thanh toán trực tuyến.
 
-### UC46 - Xem thống kê doanh thu
+### UC47 - Xem thống kê doanh thu
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Theo dõi doanh thu thực nhận.

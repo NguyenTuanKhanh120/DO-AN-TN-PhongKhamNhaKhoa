@@ -81,8 +81,18 @@ class OpenApiDocumentationIntegrationTest {
 
         JsonNode publicLogin = operation(document, "/api/auth/login", "post");
         assertThat(publicLogin.has("security")).isFalse();
-        assertThat(publicLogin.path("responses").has("401")).isTrue();
-
+        assertOnlyResponses(publicLogin, "200");
+        assertThat(publicLogin.path("description").asText())
+                .contains("Server response", "data.accessToken");
+        JsonNode loginSuccess = responseExample(publicLogin, "200");
+        assertThat(loginSuccess.path("message").asText()).isEqualTo("Đăng nhập thành công");
+        assertThat(loginSuccess.path("data").path("accessToken").asText())
+                .isEqualTo("<JWT_ACCESS_TOKEN>");
+        assertThat(loginSuccess.path("data").path("tokenType").asText()).isEqualTo("Bearer");
+        assertThat(loginSuccess.path("data").path("email").asText()).isEqualTo("<EMAIL>");
+        assertThat(loginSuccess.path("data").path("fullName").asText()).isEqualTo("<FULL_NAME>");
+        assertThat(loginSuccess.path("data").path("role").asText())
+                .isEqualTo("<PATIENT|DOCTOR|ADMIN>");
         JsonNode protectedDashboard = operation(
                 document,
                 "/api/admin/dashboard/summary",
@@ -90,12 +100,15 @@ class OpenApiDocumentationIntegrationTest {
         );
         assertThat(protectedDashboard.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
                 .isTrue();
-        assertThat(protectedDashboard.path("responses").has("401")).isTrue();
-        assertThat(protectedDashboard.path("responses").has("403")).isTrue();
+        assertOnlyResponses(protectedDashboard, "200");
 
         JsonNode registration = operation(document, "/api/auth/register", "post");
-        assertThat(registration.path("responses").has("201")).isTrue();
-        assertThat(registration.path("responses").has("409")).isTrue();
+        assertOnlyResponses(registration, "201");
+        JsonNode registrationSuccess = responseExample(registration, "201");
+        assertThat(registrationSuccess.path("success").asBoolean()).isTrue();
+        assertThat(registrationSuccess.path("code").asText()).isEqualTo("SUCCESS");
+        assertThat(registrationSuccess.has("errors")).isFalse();
+        assertThat(registrationSuccess.has("path")).isFalse();
 
         JsonNode createDayOff = operation(
                 document,
@@ -104,8 +117,7 @@ class OpenApiDocumentationIntegrationTest {
         );
         assertThat(createDayOff.path("tags").get(0).asText()).isEqualTo("Doctor Days Off");
         assertThat(createDayOff.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
-        assertThat(createDayOff.path("responses").has("201")).isTrue();
-        assertThat(createDayOff.path("responses").has("409")).isTrue();
+        assertOnlyResponses(createDayOff, "201");
 
         JsonNode publicDaysOff = operation(
                 document,
@@ -115,6 +127,23 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(publicDaysOff.path("tags").get(0).asText()).isEqualTo("Doctor Days Off");
         assertThat(publicDaysOff.has("security")).isFalse();
 
+        JsonNode adminDoctorSchedule = operation(
+                document,
+                "/api/admin/doctors/{doctorId}/schedules",
+                "post"
+        );
+        assertThat(adminDoctorSchedule.path("tags").get(0).asText())
+                .isEqualTo("Doctor Schedules");
+        assertThat(adminDoctorSchedule.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
+                .isTrue();
+        assertThat(adminDoctorSchedule.path("responses").has("201")).isTrue();
+
+        JsonNode doctorSchedule = operation(document, "/api/doctor/schedules", "get");
+        assertThat(doctorSchedule.path("tags").get(0).asText()).isEqualTo("Doctor Schedules");
+        assertThat(document.path("paths").path("/api/doctor/schedules").has("post")).isFalse();
+        assertThat(document.path("paths").path("/api/doctor/schedules").has("put")).isFalse();
+        assertThat(document.path("paths").path("/api/doctor/schedules").has("delete")).isFalse();
+
         JsonNode doctorPayment = operation(
                 document,
                 "/api/doctor/appointments/{id}/payment/items",
@@ -122,7 +151,7 @@ class OpenApiDocumentationIntegrationTest {
         );
         assertThat(doctorPayment.path("tags").get(0).asText()).isEqualTo("Doctor Payments");
         assertThat(doctorPayment.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
-        assertThat(doctorPayment.path("responses").has("409")).isTrue();
+        assertOnlyResponses(doctorPayment, "200");
 
         JsonNode adminPayment = operation(document, "/api/admin/payments/{id}/confirm", "patch");
         assertThat(adminPayment.path("tags").get(0).asText()).isEqualTo("Admin Payments");
@@ -181,6 +210,22 @@ class OpenApiDocumentationIntegrationTest {
         JsonNode operation = document.path("paths").path(path).path(method);
         assertThat(operation.isMissingNode()).as(method + " " + path).isFalse();
         return operation;
+    }
+
+    private void assertOnlyResponses(JsonNode operation, String... expectedStatuses) {
+        List<String> actualStatuses = new ArrayList<>();
+        operation.path("responses").fieldNames().forEachRemaining(actualStatuses::add);
+        assertThat(actualStatuses).containsExactlyInAnyOrder(expectedStatuses);
+    }
+
+    private JsonNode responseExample(JsonNode operation, String status) {
+        JsonNode example = operation.path("responses")
+                .path(status)
+                .path("content")
+                .path("application/json")
+                .path("example");
+        assertThat(example.isMissingNode()).as("Missing response example for HTTP " + status).isFalse();
+        return example;
     }
 
     private void assertAllSchemaReferencesResolve(JsonNode document, JsonNode schemas) {

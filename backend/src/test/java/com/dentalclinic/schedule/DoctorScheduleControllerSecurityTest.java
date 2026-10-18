@@ -7,6 +7,7 @@ import com.dentalclinic.auth.security.RestSecurityExceptionHandler;
 import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.exception.GlobalExceptionHandler;
 import com.dentalclinic.config.SecurityConfig;
+import com.dentalclinic.schedule.controller.AdminDoctorScheduleController;
 import com.dentalclinic.schedule.controller.DoctorScheduleController;
 import com.dentalclinic.schedule.controller.PublicDoctorScheduleController;
 import com.dentalclinic.schedule.dto.DoctorScheduleRequest;
@@ -46,7 +47,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest({DoctorScheduleController.class, PublicDoctorScheduleController.class})
+@WebMvcTest({
+        AdminDoctorScheduleController.class,
+        DoctorScheduleController.class,
+        PublicDoctorScheduleController.class
+})
 @Import({
         SecurityConfig.class,
         JwtAuthenticationFilter.class,
@@ -115,15 +120,15 @@ class DoctorScheduleControllerSecurityTest {
     }
 
     @Test
-    void shouldCreateScheduleForAuthenticatedDoctor() throws Exception {
-        UserPrincipal principal = doctorPrincipal();
+    void shouldCreateScheduleForAdmin() throws Exception {
+        UserPrincipal principal = adminPrincipal();
         DoctorScheduleResponse response = response();
         when(doctorScheduleService.createSchedule(
-                eq(principal.getId()),
+                eq(response.doctorId()),
                 any(DoctorScheduleRequest.class)
         )).thenReturn(response);
 
-        mockMvc.perform(post("/api/doctor/schedules")
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", response.doctorId())
                         .with(user(principal))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
@@ -132,16 +137,20 @@ class DoctorScheduleControllerSecurityTest {
     }
 
     @Test
-    void shouldUpdateOwnedSchedule() throws Exception {
-        UserPrincipal principal = doctorPrincipal();
+    void shouldUpdateDoctorScheduleForAdmin() throws Exception {
+        UserPrincipal principal = adminPrincipal();
         DoctorScheduleResponse response = response();
         when(doctorScheduleService.updateSchedule(
-                eq(principal.getId()),
+                eq(response.doctorId()),
                 eq(response.id()),
                 any(DoctorScheduleRequest.class)
         )).thenReturn(response);
 
-        mockMvc.perform(put("/api/doctor/schedules/{id}", response.id())
+        mockMvc.perform(put(
+                        "/api/admin/doctors/{doctorId}/schedules/{scheduleId}",
+                        response.doctorId(),
+                        response.id()
+                )
                         .with(user(principal))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
@@ -150,22 +159,44 @@ class DoctorScheduleControllerSecurityTest {
     }
 
     @Test
-    void shouldDeleteOwnedSchedule() throws Exception {
-        UserPrincipal principal = doctorPrincipal();
+    void shouldDeleteDoctorScheduleForAdmin() throws Exception {
+        UserPrincipal principal = adminPrincipal();
+        UUID doctorId = UUID.randomUUID();
         UUID scheduleId = UUID.randomUUID();
 
-        mockMvc.perform(delete("/api/doctor/schedules/{id}", scheduleId)
+        mockMvc.perform(delete(
+                        "/api/admin/doctors/{doctorId}/schedules/{scheduleId}",
+                        doctorId,
+                        scheduleId
+                )
                         .with(user(principal)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(doctorScheduleService).deleteSchedule(principal.getId(), scheduleId);
+        verify(doctorScheduleService).deleteSchedule(doctorId, scheduleId);
     }
 
     @Test
-    void shouldValidateScheduleRequest() throws Exception {
+    void shouldPreventDoctorFromCreatingWeeklySchedule() throws Exception {
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", UUID.randomUUID())
+                        .with(user(doctorPrincipal()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
         mockMvc.perform(post("/api/doctor/schedules")
                         .with(user(doctorPrincipal()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
+    }
+
+    @Test
+    void shouldValidateAdminScheduleRequest() throws Exception {
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", UUID.randomUUID())
+                        .with(user(adminPrincipal()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
@@ -174,8 +205,8 @@ class DoctorScheduleControllerSecurityTest {
 
     @Test
     void shouldRejectDayOutsideWeeklyRange() throws Exception {
-        mockMvc.perform(post("/api/doctor/schedules")
-                        .with(user(doctorPrincipal()))
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", UUID.randomUUID())
+                        .with(user(adminPrincipal()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -191,8 +222,8 @@ class DoctorScheduleControllerSecurityTest {
 
     @Test
     void shouldRejectUnknownSessionValue() throws Exception {
-        mockMvc.perform(post("/api/doctor/schedules")
-                        .with(user(doctorPrincipal()))
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", UUID.randomUUID())
+                        .with(user(adminPrincipal()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -237,6 +268,17 @@ class DoctorScheduleControllerSecurityTest {
         user.setPasswordHash("bcrypt-hash");
         user.setFullName("Bác sĩ Nguyễn Văn An");
         user.setRole(Role.DOCTOR);
+        user.setStatus(UserStatus.ACTIVE);
+        return UserPrincipal.from(user);
+    }
+
+    private UserPrincipal adminPrincipal() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setEmail("admin@example.com");
+        user.setPasswordHash("bcrypt-hash");
+        user.setFullName("Quản trị viên");
+        user.setRole(Role.ADMIN);
         user.setStatus(UserStatus.ACTIVE);
         return UserPrincipal.from(user);
     }

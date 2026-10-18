@@ -45,13 +45,19 @@ public class DoctorScheduleService {
         return findSchedulesByDoctor(doctor.getId());
     }
 
+    @Transactional(readOnly = true)
+    public List<DoctorScheduleResponse> getAdminSchedules(UUID doctorId) {
+        findDoctor(doctorId);
+        return findSchedulesByDoctor(doctorId);
+    }
+
     @Transactional
     public DoctorScheduleResponse createSchedule(
-            UUID authenticatedUserId,
+            UUID doctorId,
             DoctorScheduleRequest request
     ) {
         validateTimeRange(request.startTime(), request.endTime());
-        Doctor doctor = findDoctorByUserId(authenticatedUserId);
+        Doctor doctor = findDoctor(doctorId);
         short dayOfWeek = (short) request.dayOfWeek();
         if (doctorScheduleRepository.existsByDoctor_IdAndDayOfWeekAndSession(
                 doctor.getId(),
@@ -70,12 +76,13 @@ public class DoctorScheduleService {
 
     @Transactional
     public DoctorScheduleResponse updateSchedule(
-            UUID authenticatedUserId,
+            UUID doctorId,
             UUID scheduleId,
             DoctorScheduleRequest request
     ) {
         validateTimeRange(request.startTime(), request.endTime());
-        DoctorSchedule schedule = findOwnedSchedule(scheduleId, authenticatedUserId);
+        findDoctor(doctorId);
+        DoctorSchedule schedule = findDoctorSchedule(doctorId, scheduleId);
         short dayOfWeek = (short) request.dayOfWeek();
         if (doctorScheduleRepository.existsByDoctor_IdAndDayOfWeekAndSessionAndIdNot(
                 schedule.getDoctor().getId(),
@@ -92,8 +99,9 @@ public class DoctorScheduleService {
     }
 
     @Transactional
-    public void deleteSchedule(UUID authenticatedUserId, UUID scheduleId) {
-        DoctorSchedule schedule = findOwnedSchedule(scheduleId, authenticatedUserId);
+    public void deleteSchedule(UUID doctorId, UUID scheduleId) {
+        findDoctor(doctorId);
+        DoctorSchedule schedule = findDoctorSchedule(doctorId, scheduleId);
         doctorScheduleRepository.delete(schedule);
         doctorScheduleRepository.flush();
     }
@@ -111,8 +119,13 @@ public class DoctorScheduleService {
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bác sĩ"));
     }
 
-    private DoctorSchedule findOwnedSchedule(UUID scheduleId, UUID userId) {
-        return doctorScheduleRepository.findByIdAndDoctor_User_Id(scheduleId, userId)
+    private Doctor findDoctor(UUID doctorId) {
+        return doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy bác sĩ"));
+    }
+
+    private DoctorSchedule findDoctorSchedule(UUID doctorId, UUID scheduleId) {
+        return doctorScheduleRepository.findByIdAndDoctor_Id(scheduleId, doctorId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch làm việc"));
     }
 
