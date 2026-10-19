@@ -125,8 +125,8 @@ mvn spring-boot:run
 
 With the development profile running:
 
-- Swagger UI: `http://localhost:8080/swagger-ui.html`
-- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+- Swagger UI: `http://localhost:8081/swagger-ui.html`
+- OpenAPI JSON: `http://localhost:8081/v3/api-docs`
 
 Use `POST /api/auth/login`, copy `data.accessToken`, select **Authorize** in Swagger UI and enter the token. Swagger adds the `Bearer` prefix through the configured HTTP security scheme.
 
@@ -241,7 +241,7 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 
 ## React integration notes
 
-- Configure the frontend API base URL as `http://localhost:8080` in development.
+- Configure the frontend API base URL as `http://localhost:8081` in development.
 - Send access tokens with `Authorization: Bearer <token>`; this demo intentionally has no refresh-token endpoint.
 - Configure `CORS_ALLOWED_ORIGINS` with exact React origins. Wildcard origins are not used.
 - Treat `401` as an expired/missing session, `403` as insufficient permission and `409` as a recoverable business conflict.
