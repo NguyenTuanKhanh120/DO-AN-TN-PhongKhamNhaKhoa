@@ -186,6 +186,27 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(paymentUniqueConstraint).isEqualTo(1);
         assertThat(paymentStatusType).isEqualTo("payment_status_enum");
         assertThat(paymentUpdatedAtTrigger).isEqualTo(1);
+
+        Boolean phase263MigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '4'",
+                Boolean.class
+        );
+        List<String> roles = jdbcTemplate.queryForList(
+                "select unnest(enum_range(null::role_enum))::text",
+                String.class
+        );
+        Integer activeFollowUpIndex = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_indexes
+                        where schemaname = 'public'
+                          and indexname = 'ux_appointments_active_follow_up_previous'
+                        """,
+                Integer.class
+        );
+        assertThat(phase263MigrationSucceeded).isTrue();
+        assertThat(roles).containsExactly("ADMIN", "DOCTOR", "PATIENT", "STAFF");
+        assertThat(activeFollowUpIndex).isEqualTo(1);
     }
 
     @Test
@@ -446,6 +467,30 @@ class PostgreSql18SchemaContractIntegrationTest {
                 () -> insertMedicalRecord(appointmentId, true, null, null, "[]"),
                 "23514",
                 "ck_medical_records_follow_up"
+        );
+    }
+
+    @Test
+    void shouldRequireFollowUpDateEvenWhenFollowUpNoteExists() {
+        Fixture fixture = createFixture();
+        UUID appointmentId = insertAppointment(
+                fixture.patientId(),
+                fixture.doctorId(),
+                fixture.serviceId(),
+                APPOINTMENT_START,
+                "IN_PROGRESS"
+        );
+
+        assertConstraintViolation(
+                () -> insertMedicalRecord(
+                        appointmentId,
+                        true,
+                        null,
+                        "Có ghi chú nhưng chưa có ngày",
+                        "[]"
+                ),
+                "23514",
+                "ck_medical_records_follow_up_date_required"
         );
     }
 

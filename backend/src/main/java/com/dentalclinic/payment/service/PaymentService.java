@@ -214,7 +214,7 @@ public class PaymentService {
         );
         PageRequest pageable = PageRequest.of(page, size, sort);
         Page<PaymentResponse> payments = paymentRepository.findAll(
-                        buildSpecification(search, status, fromDate, toDate),
+                        buildSpecification(search, status, fromDate, toDate, false),
                         pageable
                 )
                 .map(paymentMapper::toResponse);
@@ -227,13 +227,58 @@ public class PaymentService {
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy phiếu thanh toán")));
     }
 
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> getStaffPayments(
+            String search,
+            PaymentStatus status,
+            LocalDate fromDate,
+            LocalDate toDate,
+            int page,
+            int size,
+            String sortBy,
+            Sort.Direction direction
+    ) {
+        if (status == PaymentStatus.DRAFT) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Nhân viên không được xem phiếu thanh toán DRAFT"
+            );
+        }
+        validateDateRange(fromDate, toDate);
+        String resolvedSortBy = normalizeSortField(sortBy);
+        Sort.Direction resolvedDirection = direction == null ? Sort.Direction.DESC : direction;
+        PageRequest pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(
+                        new Sort.Order(resolvedDirection, resolvedSortBy),
+                        Sort.Order.asc("id")
+                )
+        );
+        return PageResponse.from(paymentRepository.findAll(
+                        buildSpecification(search, status, fromDate, toDate, true),
+                        pageable
+                )
+                .map(paymentMapper::toResponse));
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentResponse getStaffPayment(UUID paymentId) {
+        Payment payment = paymentRepository.findDetailedById(paymentId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy phiếu thanh toán"));
+        if (payment.getStatus() == PaymentStatus.DRAFT) {
+            throw new NotFoundException("Không tìm thấy phiếu thanh toán");
+        }
+        return paymentMapper.toResponse(payment);
+    }
+
     @Transactional
     public PaymentResponse confirmPayment(
             UUID authenticatedUserId,
             UUID paymentId,
             PaymentMethod paymentMethod
     ) {
-        User admin = requireActiveAdmin(authenticatedUserId);
+        User collector = requireActivePaymentCollector(authenticatedUserId);
         if (paymentMethod == null) {
             throw new BusinessException(
                     ErrorCode.INVALID_REQUEST,
@@ -260,7 +305,7 @@ public class PaymentService {
 
         payment.setStatus(PaymentStatus.PAID);
         payment.setPaymentMethod(paymentMethod);
-        payment.setConfirmedBy(admin);
+        payment.setConfirmedBy(collector);
         payment.setPaidAt(clinicTimeProvider.now());
         return paymentMapper.toResponse(paymentRepository.saveAndFlush(payment));
     }
@@ -430,7 +475,8 @@ public class PaymentService {
             String search,
             PaymentStatus status,
             LocalDate fromDate,
-            LocalDate toDate
+            LocalDate toDate,
+            boolean excludeDraft
     ) {
         Specification<Payment> specification = Specification.unrestricted();
         String normalizedSearch = normalizeSearch(search);
@@ -444,6 +490,9 @@ public class PaymentService {
                         root.get("appointment").get("doctorService")
                                 .get("doctor").get("user").get("fullName")
                 );
+                Expression<String> patientPhone = criteriaBuilder.lower(
+                        root.get("appointment").get("patient").get("phone")
+                );
                 Predicate patientMatches = criteriaBuilder.like(
                         patientName,
                         pattern,
@@ -454,12 +503,20 @@ public class PaymentService {
                         pattern,
                         LIKE_ESCAPE
                 );
-                return criteriaBuilder.or(patientMatches, doctorMatches);
+                Predicate phoneMatches = criteriaBuilder.like(
+                        patientPhone,
+                        pattern,
+                        LIKE_ESCAPE
+                );
+                return criteriaBuilder.or(patientMatches, doctorMatches, phoneMatches);
             });
         }
         if (status != null) {
             specification = specification.and((root, query, criteriaBuilder) ->
                     criteriaBuilder.equal(root.get("status"), status));
+        } else if (excludeDraft) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.notEqual(root.get("status"), PaymentStatus.DRAFT));
         }
         if (fromDate != null) {
             Instant rangeStart = clinicTimeProvider.toInstant(fromDate, LocalTime.MIDNIGHT);
@@ -487,12 +544,13 @@ public class PaymentService {
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
     }
 
-    private User requireActiveAdmin(UUID userId) {
+    private User requireActivePaymentCollector(UUID userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ForbiddenException("Tài khoản quản trị không hợp lệ"));
-        if (user.getRole() != Role.ADMIN || user.getStatus() != UserStatus.ACTIVE) {
+                .orElseThrow(() -> new ForbiddenException("Tài khoản thu tiền không hợp lệ"));
+        boolean allowedRole = user.getRole() == Role.ADMIN || user.getRole() == Role.STAFF;
+        if (!allowedRole || user.getStatus() != UserStatus.ACTIVE) {
             throw new ForbiddenException(
-                    "Chỉ tài khoản quản trị đang hoạt động mới được xác nhận thanh toán"
+                    "Chỉ Admin hoặc nhân viên đang hoạt động mới được xác nhận thanh toán"
             );
         }
         return user;

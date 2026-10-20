@@ -18,6 +18,8 @@ import com.dentalclinic.doctor.entity.DoctorServiceId;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
+import com.dentalclinic.medicalrecord.entity.MedicalRecord;
 import com.dentalclinic.schedule.service.SlotService;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.user.entity.Role;
@@ -43,6 +45,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -66,6 +69,9 @@ class AppointmentBookingServiceTest {
     private AppointmentHistoryRepository appointmentHistoryRepository;
 
     @Mock
+    private MedicalRecordRepository medicalRecordRepository;
+
+    @Mock
     private SlotService slotService;
 
     private AppointmentBookingService bookingService;
@@ -78,6 +84,7 @@ class AppointmentBookingServiceTest {
                 doctorRepository,
                 appointmentRepository,
                 appointmentHistoryRepository,
+                medicalRecordRepository,
                 slotService,
                 timeProvider,
                 60
@@ -152,8 +159,6 @@ class AppointmentBookingServiceTest {
                 UUID.randomUUID(),
                 OffsetDateTime.parse("2026-10-12T13:00:00+07:00")
         );
-        when(doctorRepository.findForUpdateById(request.doctorId()))
-                .thenReturn(Optional.of(new Doctor()));
         when(patientRepository.findByUserId(userId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> bookingService.book(userId, request))
@@ -241,6 +246,122 @@ class AppointmentBookingServiceTest {
         verify(appointmentHistoryRepository, never()).saveAndFlush(any(AppointmentHistory.class));
     }
 
+    @Test
+    void shouldAllowPatientToBookFollowUpFromOwnedCompletedAppointment() {
+        Patient patient = patient();
+        DoctorService mapping = mapping();
+        Appointment previous = previousAppointment(patient, true);
+        MedicalRecord medicalRecord = new MedicalRecord();
+        medicalRecord.setAppointment(previous);
+        medicalRecord.setFollowUpRequired(true);
+        BookAppointmentRequest request = new BookAppointmentRequest(
+                mapping.getDoctor().getId(),
+                mapping.getService().getId(),
+                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
+                previous.getId()
+        );
+        when(patientRepository.findByUserId(patient.getUser().getId()))
+                .thenReturn(Optional.of(patient));
+        when(appointmentRepository.findForUpdateByIdAndPatientId(
+                previous.getId(), patient.getId()
+        )).thenReturn(Optional.of(previous));
+        when(medicalRecordRepository.findByAppointmentId(previous.getId()))
+                .thenReturn(Optional.of(medicalRecord));
+        when(appointmentRepository.existsActiveFollowUp(
+                eq(previous.getId()), any()
+        )).thenReturn(false);
+        when(doctorRepository.findForUpdateById(request.doctorId()))
+                .thenReturn(Optional.of(mapping.getDoctor()));
+        when(slotService.requireAvailableSlot(
+                request.doctorId(), request.serviceId(), request.scheduledStartAt().toInstant()
+        )).thenReturn(mapping);
+        when(appointmentRepository.saveAndFlush(any(Appointment.class))).thenAnswer(invocation -> {
+            Appointment saved = invocation.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            saved.setCreatedAt(Instant.parse("2026-10-12T03:01:00Z"));
+            return saved;
+        });
+        when(appointmentHistoryRepository.saveAndFlush(any(AppointmentHistory.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        BookAppointmentResponse response = bookingService.book(
+                patient.getUser().getId(),
+                request
+        );
+
+        ArgumentCaptor<Appointment> appointmentCaptor = ArgumentCaptor.forClass(Appointment.class);
+        verify(appointmentRepository).saveAndFlush(appointmentCaptor.capture());
+        assertThat(appointmentCaptor.getValue().getPreviousAppointment()).isSameAs(previous);
+        assertThat(response.previousAppointmentId()).isEqualTo(previous.getId());
+
+        ArgumentCaptor<AppointmentHistory> historyCaptor =
+                ArgumentCaptor.forClass(AppointmentHistory.class);
+        verify(appointmentHistoryRepository).saveAndFlush(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().getDetails().path("booking_type").asText())
+                .isEqualTo("FOLLOW_UP");
+        assertThat(historyCaptor.getValue().getDetails().path("previous_appointment_id").asText())
+                .isEqualTo(previous.getId().toString());
+    }
+
+    @Test
+    void shouldRejectFollowUpWhenPreviousAppointmentIsNotOwned() {
+        Patient patient = patient();
+        DoctorService mapping = mapping();
+        UUID previousAppointmentId = UUID.randomUUID();
+        BookAppointmentRequest request = new BookAppointmentRequest(
+                mapping.getDoctor().getId(),
+                mapping.getService().getId(),
+                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
+                previousAppointmentId
+        );
+        when(patientRepository.findByUserId(patient.getUser().getId()))
+                .thenReturn(Optional.of(patient));
+        when(appointmentRepository.findForUpdateByIdAndPatientId(
+                previousAppointmentId, patient.getId()
+        )).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> bookingService.book(patient.getUser().getId(), request))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Không tìm thấy lịch khám trước");
+
+        verify(slotService, never()).requireAvailableSlot(any(), any(), any());
+    }
+
+    @Test
+    void shouldRejectFollowUpWithoutRecommendationOrWithActiveFollowUp() {
+        Patient patient = patient();
+        DoctorService mapping = mapping();
+        Appointment previous = previousAppointment(patient, true);
+        MedicalRecord medicalRecord = new MedicalRecord();
+        medicalRecord.setAppointment(previous);
+        medicalRecord.setFollowUpRequired(false);
+        BookAppointmentRequest request = new BookAppointmentRequest(
+                mapping.getDoctor().getId(),
+                mapping.getService().getId(),
+                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
+                previous.getId()
+        );
+        when(patientRepository.findByUserId(patient.getUser().getId()))
+                .thenReturn(Optional.of(patient));
+        when(appointmentRepository.findForUpdateByIdAndPatientId(
+                previous.getId(), patient.getId()
+        )).thenReturn(Optional.of(previous));
+        when(medicalRecordRepository.findByAppointmentId(previous.getId()))
+                .thenReturn(Optional.of(medicalRecord));
+
+        assertThatThrownBy(() -> bookingService.book(patient.getUser().getId(), request))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Bệnh án không yêu cầu tái khám");
+
+        medicalRecord.setFollowUpRequired(true);
+        when(appointmentRepository.existsActiveFollowUp(
+                eq(previous.getId()), any()
+        )).thenReturn(true);
+        assertThatThrownBy(() -> bookingService.book(patient.getUser().getId(), request))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Chỉ định tái khám đã có một lịch hẹn đang hoạt động");
+    }
+
     private BookAppointmentRequest request(DoctorService mapping) {
         return new BookAppointmentRequest(
                 mapping.getDoctor().getId(),
@@ -262,6 +383,16 @@ class AppointmentBookingServiceTest {
         patient.setId(UUID.randomUUID());
         patient.setUser(user);
         return patient;
+    }
+
+    private Appointment previousAppointment(Patient patient, boolean completed) {
+        Appointment appointment = new Appointment();
+        appointment.setId(UUID.randomUUID());
+        appointment.setPatient(patient);
+        appointment.setStatus(completed
+                ? AppointmentStatus.COMPLETED
+                : AppointmentStatus.IN_PROGRESS);
+        return appointment;
     }
 
     private DoctorService mapping() {

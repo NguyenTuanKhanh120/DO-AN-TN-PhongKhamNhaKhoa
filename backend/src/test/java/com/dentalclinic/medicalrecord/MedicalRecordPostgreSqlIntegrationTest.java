@@ -295,7 +295,7 @@ class MedicalRecordPostgreSqlIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").value(
-                        "Khi cần tái khám phải có ngày đề xuất hoặc ghi chú tái khám"
+                        "Khi cần tái khám phải có ngày tái khám dự kiến"
                 ));
 
         assertThat(recordCount(fixture.inProgressAppointmentId())).isZero();

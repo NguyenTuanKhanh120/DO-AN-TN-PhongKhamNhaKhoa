@@ -5,6 +5,7 @@ import com.dentalclinic.common.exception.ForbiddenException;
 import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.common.response.PageResponse;
 import com.dentalclinic.user.dto.AdminUserResponse;
+import com.dentalclinic.user.dto.CreateStaffRequest;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
@@ -21,6 +22,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Instant;
 import java.util.List;
@@ -44,11 +46,18 @@ class AdminUserServiceTest {
     @Mock
     private AdminAccountLockRepository adminAccountLockRepository;
 
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
     private AdminUserService adminUserService;
 
     @BeforeEach
     void setUp() {
-        adminUserService = new AdminUserService(userRepository, adminAccountLockRepository);
+        adminUserService = new AdminUserService(
+                userRepository,
+                adminAccountLockRepository,
+                passwordEncoder
+        );
     }
 
     @Test
@@ -84,6 +93,46 @@ class AdminUserServiceTest {
             assertThat(item.role()).isEqualTo(Role.PATIENT);
             assertThat(item.status()).isEqualTo(UserStatus.ACTIVE);
         });
+    }
+
+    @Test
+    void shouldCreateActiveStaffWithEncodedPassword() {
+        User actor = user(Role.ADMIN, UserStatus.ACTIVE);
+        CreateStaffRequest request = new CreateStaffRequest(
+                " STAFF@Example.com ",
+                "StrongPassword123!",
+                "  Nhân viên   lễ tân  "
+        );
+        when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        when(userRepository.existsByEmail("staff@example.com")).thenReturn(false);
+        when(passwordEncoder.encode(request.password())).thenReturn("encoded-password");
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+
+        AdminUserResponse response = adminUserService.createStaff(actor.getId(), request);
+
+        ArgumentCaptor<User> staffCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(staffCaptor.capture());
+        User staff = staffCaptor.getValue();
+        assertThat(staff.getEmail()).isEqualTo("staff@example.com");
+        assertThat(staff.getFullName()).isEqualTo("Nhân viên lễ tân");
+        assertThat(staff.getPasswordHash()).isEqualTo("encoded-password");
+        assertThat(staff.getRole()).isEqualTo(Role.STAFF);
+        assertThat(staff.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(response.role()).isEqualTo(Role.STAFF);
+    }
+
+    @Test
+    void shouldRejectNonStaffFromStaffDetail() {
+        User doctor = user(Role.DOCTOR, UserStatus.ACTIVE);
+        when(userRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+
+        assertThatThrownBy(() -> adminUserService.getStaff(doctor.getId()))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Không tìm thấy tài khoản nhân viên");
     }
 
     @Test

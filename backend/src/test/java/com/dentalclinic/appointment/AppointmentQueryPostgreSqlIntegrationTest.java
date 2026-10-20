@@ -223,6 +223,34 @@ class AppointmentQueryPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
+    @Test
+    void staffShouldViewAppointmentsAcrossAllDoctorsWithoutMedicalRecords() throws Exception {
+        String token = login(fixture.staffEmail());
+
+        mockMvc.perform(get("/api/staff/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .param("fromDate", TODAY.toString())
+                        .param("toDate", TODAY.toString())
+                        .param("sortBy", "scheduledStartAt")
+                        .param("direction", "ASC"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(3))
+                .andExpect(jsonPath("$.data.content[0].id")
+                        .value(fixture.firstAppointmentId().toString()))
+                .andExpect(jsonPath("$.data.content[0].patientPhone")
+                        .value("0901000001"));
+
+        mockMvc.perform(get("/api/staff/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .param("search", "0901000002")
+                        .param("doctorId", fixture.firstDoctorId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].id")
+                        .value(fixture.otherPatientAppointmentId().toString()))
+                .andExpect(jsonPath("$.data.content[0].diagnosis").doesNotExist());
+    }
+
     private Fixture createFixture() {
         String marker = UUID.randomUUID().toString();
         String firstServiceSearchToken = "phase13-service-a-" + marker;
@@ -232,6 +260,11 @@ class AppointmentQueryPostgreSqlIntegrationTest {
                 "phase13-admin-" + marker + "@example.com",
                 "Quản trị viên Phase 13",
                 Role.ADMIN
+        );
+        User staff = saveUser(
+                "phase263-staff-" + marker + "@example.com",
+                "Nhân viên Phase 26.3",
+                Role.STAFF
         );
         User firstDoctorUser = saveUser(
                 "phase13-doctor-a-" + marker + "@example.com",
@@ -295,6 +328,7 @@ class AppointmentQueryPostgreSqlIntegrationTest {
 
         return new Fixture(
                 admin.getEmail(),
+                staff.getEmail(),
                 firstDoctorUser.getEmail(),
                 firstDoctor.getId(),
                 firstPatientUser.getEmail(),
@@ -397,6 +431,7 @@ class AppointmentQueryPostgreSqlIntegrationTest {
 
     private record Fixture(
             String adminEmail,
+            String staffEmail,
             String firstDoctorEmail,
             UUID firstDoctorId,
             String firstPatientEmail,

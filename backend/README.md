@@ -1,17 +1,18 @@
 # Dental Clinic Backend
 
-Spring Boot backend for the dental clinic management system. The repository currently includes **PHASE 26.2 — Payment Management**.
+Spring Boot backend for the dental clinic management system. The repository currently includes **PHASE 26.3 — Staff Management, Simplified Examination and Patient Follow-up Booking**.
 
 ## Implemented
 
 - Java 21, Spring Boot 3.5, Maven and PostgreSQL 18.
-- Flyway V1–V3 migrations for the 14-table schema.
+- Flyway V1–V4 migrations for the 14-table schema.
 - JPA entities and repositories for the first nine business tables.
 - Common API response, pagination and exception handling.
 - Patient registration and login with BCrypt and JWT access tokens.
-- Role-based authorization for ADMIN, DOCTOR and PATIENT.
+- Role-based authorization for ADMIN, STAFF, DOCTOR and PATIENT.
 - Patient self-service profile APIs.
 - Admin user search, filtering, pagination, detail and status management.
+- Admin-only staff account creation, listing, detail and activation/deactivation.
 - Admin status updates reject self-deactivation and preserve at least one active admin with a PostgreSQL transaction-level advisory lock.
 - Public doctor listing and detail APIs.
 - Admin doctor account creation, profile update and working-status management.
@@ -23,7 +24,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Admin-owned weekly doctor-schedule CRUD with weekday, session and time-range validation; doctors have read-only access to their own schedules.
 - Admin-managed date-specific doctor days off with preview, morning/afternoon/full-day support and no mutation of recurring weekly schedules.
 - Creating a day off transactionally cancels affected future `BOOKED` appointments, writes clinic-safe CANCEL history and rejects active `CHECKED_IN`/`IN_PROGRESS` examinations.
-- Booking, rescheduling and follow-up creation share a pessimistic Doctor lock and recheck days off before writing.
+- Booking, rescheduling and patient follow-up creation share a pessimistic Doctor lock and recheck days off before writing.
 - Public available-slot calculation from weekly schedules and appointments.
 - Fixed 60-minute slots with active doctor/service/mapping checks and a 120-minute booking lead time.
 - Transactional patient appointment booking with BOOK audit history.
@@ -35,27 +36,28 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Transactional patient rescheduling with a 90-minute cutoff calculated from the old appointment.
 - Same-appointment rescheduling with schedule validation, RESCHEDULE audit history and no 120-minute booking lead-time rule on the new slot.
 - PostgreSQL partial-unique-index protection that keeps the losing appointment's old slot intact during a concurrent reschedule race.
-- Doctor-owned patient check-in with a pessimistic appointment lock, `BOOKED → CHECKED_IN`, actual check-in timestamp and CHECK_IN audit history.
-- Doctor-owned examination start with `CHECKED_IN → IN_PROGRESS`, actual start timestamp and START_EXAM audit history.
+- New examinations start directly with doctor-owned `BOOKED → IN_PROGRESS`; no check-in endpoint is exposed.
+- Historical `CHECKED_IN` appointments remain readable and may transition to `IN_PROGRESS` for backward compatibility.
 - Per-doctor transactional locking prevents a second appointment from entering `IN_PROGRESS` before the current examination is completed.
 - Doctor-owned NO_SHOW confirmation after the configured 15-minute grace period, with checked-in protection and NO_SHOW audit history.
 - Doctor-owned medical-record creation and update while an appointment is `IN_PROGRESS`.
-- Typed prescription DTOs persisted as a JSONB array, one medical record per appointment and follow-up information validation.
+- Typed prescription DTOs persisted as a JSONB array, one medical record per appointment and mandatory recommended date when follow-up is required.
 - Doctors record only services actually performed while an appointment is `IN_PROGRESS`; names and catalog prices are persisted as immutable JSONB snapshots in a DRAFT payment.
 - Payment item prices are always loaded from PostgreSQL, quantities are validated, duplicate services are rejected and additional services must be active and assigned to the responsible doctor.
 - Doctor-owned examination completion validates both MedicalRecord and Payment, atomically transitions `DRAFT → UNPAID` with `IN_PROGRESS → COMPLETED`, and writes COMPLETE audit history.
-- Admins collect payment at the clinic counter and atomically confirm `UNPAID → PAID` using `CASH` or manually verified `BANK_TRANSFER`.
+- Staff collect payment at the clinic counter and atomically confirm `UNPAID → PAID` using `CASH` or manually verified `BANK_TRANSFER`; Admin retains a backup confirmation API.
 - A pessimistic Payment row lock ensures two concurrent confirmations cannot record the same revenue twice.
 - Patients can view only their own finalized payment records; DRAFT data remains internal to the examination workflow.
-- Admin payment search, filtering, pagination and sorting expose patient, responsible doctor, original/additional services and collection metadata.
+- Staff payment search, filtering, pagination and sorting expose only finalized `UNPAID`/`PAID` records; Admin retains the full management view.
+- Staff can search and filter all clinic appointments to guide patients to the responsible doctor, without access to medical-record APIs.
 - Dashboard revenue uses `payments.paid_at` in `Asia/Ho_Chi_Minh` and counts only PAID payments; UNPAID totals are reported separately.
-- Doctor-created follow-up appointments reuse the slot engine, inherit patient and doctor ownership from the prior examination, and persist `previous_appointment_id` with BOOK audit history.
+- Patients self-book recommended follow-up appointments through the normal booking API by supplying `previousAppointmentId`; ownership, completed status, recommendation and active-follow-up uniqueness are rechecked transactionally.
 - Patients can view paginated medical history and individual completed examination results, including doctor, service, prescription and follow-up guidance.
 - Medical-history queries derive ownership from the authenticated patient and hide unfinished or other patients' medical records.
 - Admins can inspect each appointment's chronological audit timeline with action, actor, reason, JSONB details and timestamp.
 - Admin dashboard summary reports patient and doctor totals plus today's appointment status counts using the clinic timezone.
 - PostgreSQL integration tests cover the appointment lifecycle, transaction rollback and concurrent booking/rescheduling races.
-- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V3, all 14 tables, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
+- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V4, all 14 tables, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
 - OpenAPI 3 documentation exposes typed request/response schemas, reusable error responses and JWT Bearer authorization.
 - Swagger UI and OpenAPI JSON are public in development and disabled by default in production.
 - React clients are supported through an environment-controlled CORS allowlist without cookie credentials.
@@ -102,7 +104,7 @@ FROM pg_available_extensions
 WHERE name IN ('vector', 'uuid-ossp');
 ```
 
-Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql), [V2__add_doctor_days_off.sql](./src/main/resources/db/migration/V2__add_doctor_days_off.sql) and [V3__add_payments.sql](./src/main/resources/db/migration/V3__add_payments.sql). Hibernate only validates the schema through `ddl-auto=validate`.
+Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql), [V2__add_doctor_days_off.sql](./src/main/resources/db/migration/V2__add_doctor_days_off.sql), [V3__add_payments.sql](./src/main/resources/db/migration/V3__add_payments.sql) and [V4__phase_26_3_staff_and_follow_up.sql](./src/main/resources/db/migration/V4__phase_26_3_staff_and_follow_up.sql). Hibernate only validates the schema through `ddl-auto=validate`.
 
 ## Run
 
@@ -130,7 +132,7 @@ With the development profile running:
 
 Use `POST /api/auth/login`, copy `data.accessToken`, select **Authorize** in Swagger UI and enter the token. Swagger adds the `Bearer` prefix through the configured HTTP security scheme.
 
-Public endpoints do not require a token. Patient, doctor and admin endpoints document the JWT requirement and return `401` for missing/invalid authentication or `403` for insufficient role permissions.
+Public endpoints do not require a token. Patient, doctor, staff and admin endpoints document the JWT requirement and return `401` for missing/invalid authentication or `403` for insufficient role permissions.
 
 ## REST response contract
 
@@ -185,6 +187,10 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `GET /api/admin/users`
 - `GET /api/admin/users/{id}`
 - `PATCH /api/admin/users/{id}/status`
+- `POST /api/admin/staff`
+- `GET /api/admin/staff?search=&status=&page=&size=`
+- `GET /api/admin/staff/{id}`
+- `PATCH /api/admin/staff/{id}/status`
 - `POST /api/admin/doctors/{doctorId}/days-off/preview`
 - `POST /api/admin/doctors/{doctorId}/days-off`
 - `GET /api/admin/doctors/{doctorId}/days-off?fromDate={yyyy-MM-dd}&toDate={yyyy-MM-dd}`
@@ -210,7 +216,6 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `PATCH /api/patient/appointments/{id}/reschedule`
 - `GET /api/doctor/appointments`
 - `GET /api/doctor/appointments/today`
-- `PATCH /api/doctor/appointments/{id}/check-in`
 - `PATCH /api/doctor/appointments/{id}/start`
 - `PATCH /api/doctor/appointments/{id}/no-show`
 - `POST /api/doctor/appointments/{id}/medical-record`
@@ -218,8 +223,10 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `PATCH /api/doctor/appointments/{id}/complete`
 - `GET /api/doctor/appointments/{id}/payment`
 - `PUT /api/doctor/appointments/{id}/payment/items`
-- `GET /api/doctor/appointments/{id}/follow-up-slots?serviceId={serviceId}&date={yyyy-MM-dd}`
-- `POST /api/doctor/appointments/{id}/follow-up`
+- `GET /api/staff/appointments?search=&status=&doctorId=&serviceId=&fromDate=&toDate=&page=&size=&sortBy=&direction=`
+- `GET /api/staff/payments?search=&status=&fromDate=&toDate=&page=&size=&sortBy=&direction=`
+- `GET /api/staff/payments/{id}`
+- `PATCH /api/staff/payments/{id}/confirm`
 - `GET /api/patient/medical-records`
 - `GET /api/patient/medical-records/{appointmentId}`
 - `GET /api/admin/appointments`
@@ -250,16 +257,17 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - Parse timestamps as ISO-8601 values. Appointment display and day-based queries follow `Asia/Ho_Chi_Minh`.
 - Use the documented `ApiResponse` envelope and zero-based pagination contract instead of relying on JPA entity shapes.
 - Send only `serviceId` and `quantity` when a doctor updates Payment items. Never send or calculate prices as trusted frontend data.
-- A completed examination exposes an UNPAID payment until an Admin confirms actual receipt at the counter. `BANK_TRANSFER` is manual confirmation, not an online gateway.
+- A completed examination exposes an UNPAID payment until Staff, or Admin as backup, confirms actual receipt at the counter. `BANK_TRANSFER` is manual confirmation, not an online gateway.
+- Normal booking omits `previousAppointmentId`. A patient books a recommended follow-up through the same endpoint with the completed appointment ID in `previousAppointmentId`.
 - Revenue belongs to the clinic date containing `paidAt`, which may differ from the examination date.
 
 ## Direct payment workflow
 
-1. The patient is checked in and the doctor starts the examination.
+1. The doctor starts a booked appointment directly, changing `BOOKED` to `IN_PROGRESS`. Starting the examination is the operational evidence that the patient arrived.
 2. While the Appointment is `IN_PROGRESS`, the responsible doctor calls `PUT /api/doctor/appointments/{id}/payment/items` with the services actually performed.
 3. The backend validates doctor-service assignments, loads current catalog prices and stores name/price snapshots in a DRAFT Payment.
 4. `PATCH /api/doctor/appointments/{id}/complete` requires a valid MedicalRecord and a non-empty valid DRAFT Payment; both Appointment and Payment are finalized atomically as `COMPLETED` and `UNPAID`.
-5. After receiving money at the counter, an Admin calls `PATCH /api/admin/payments/{id}/confirm` with `CASH` or `BANK_TRANSFER`.
+5. After receiving money at the counter, Staff calls `PATCH /api/staff/payments/{id}/confirm` with `CASH` or `BANK_TRANSFER`. Admin may use the equivalent Admin endpoint as backup.
 6. Patients can then read their own UNPAID/PAID records. No payment gateway, webhook, installment, refund or accounting invoice is implemented.
 
 Doctor item request example:
@@ -273,7 +281,7 @@ Doctor item request example:
 }
 ```
 
-Admin confirmation example:
+Staff/Admin confirmation example:
 
 ```json
 {

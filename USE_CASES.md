@@ -2,11 +2,12 @@
 
 Tài liệu này mô tả các ca chức năng đang được triển khai trong Backend của hệ thống quản lý phòng khám nha khoa.
 
-Hệ thống có bốn nhóm tác nhân chính:
+Hệ thống có năm nhóm tác nhân chính:
 
 - Khách/người dùng chưa đăng nhập.
 - Bệnh nhân (`PATIENT`).
 - Bác sĩ (`DOCTOR`).
+- Nhân viên lễ tân kiêm thu ngân (`STAFF`).
 - Quản trị viên (`ADMIN`).
 
 Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký và đăng nhập bằng email. Mật khẩu phải có từ 8 đến 72 ký tự.
@@ -23,7 +24,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 
 ### UC02 - Đăng nhập
 
-- **Tác nhân:** Admin, Bác sĩ, Bệnh nhân.
+- **Tác nhân:** Admin, Nhân viên, Bác sĩ, Bệnh nhân.
 - **Mục đích:** Xác thực và nhận JWT để truy cập chức năng theo vai trò.
 - **Luồng chính:** Người dùng nhập email và mật khẩu; hệ thống xác thực mật khẩu BCrypt; kiểm tra trạng thái tài khoản; trả Access Token, thông tin người dùng và vai trò.
 - **Điều kiện:** Tài khoản tồn tại và đang ở trạng thái `ACTIVE`.
@@ -109,7 +110,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Mục đích:** Theo dõi các lịch đã đặt.
 - **Luồng chính:** Bệnh nhân xem danh sách phân trang; tìm kiếm; lọc theo trạng thái, bác sĩ, dịch vụ và khoảng ngày; chọn lịch để xem chi tiết.
 - **Điều kiện:** Chỉ trả các lịch thuộc bệnh nhân đang đăng nhập.
-- **Trạng thái:** `BOOKED`, `CHECKED_IN`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, `NO_SHOW`.
+- **Trạng thái hiện hành:** `BOOKED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`, `NO_SHOW`. Giá trị `CHECKED_IN` chỉ được giữ để tương thích dữ liệu lịch sử.
 
 ### UC13 - Hủy lịch hẹn
 
@@ -117,7 +118,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Mục đích:** Hủy lịch mà bệnh nhân không thể tham gia.
 - **Luồng chính:** Bệnh nhân chọn lịch và nhập lý do; hệ thống khóa Appointment; kiểm tra điều kiện; chuyển `BOOKED` sang `CANCELLED`; ghi lịch sử `CANCEL`.
 - **Điều kiện:** Lịch thuộc bệnh nhân, đang `BOOKED` và còn ít nhất 90 phút trước giờ hẹn.
-- **Ngoại lệ:** Không thể hủy lịch đã check-in, đang khám, đã hoàn thành, đã hủy hoặc quá thời hạn.
+- **Ngoại lệ:** Không thể hủy lịch đang khám, đã hoàn thành, đã hủy hoặc quá thời hạn.
 
 ### UC14 - Đổi lịch hẹn
 
@@ -160,21 +161,14 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Bác sĩ xem toàn bộ lịch hoặc lịch hôm nay; tìm kiếm và lọc theo trạng thái, bệnh nhân, dịch vụ và khoảng ngày.
 - **Điều kiện:** Chỉ trả các Appointment thuộc bác sĩ đang đăng nhập.
 
-### UC19 - Check-in bệnh nhân
-
-- **Tác nhân:** Bác sĩ.
-- **Mục đích:** Xác nhận bệnh nhân đã đến phòng khám.
-- **Luồng chính:** Bác sĩ chọn lịch; hệ thống khóa Appointment; chuyển `BOOKED` sang `CHECKED_IN`; lưu `checked_in_at`; ghi lịch sử `CHECK_IN`.
-- **Điều kiện:** Appointment thuộc bác sĩ và đang `BOOKED`.
-- **Ngoại lệ:** Không check-in lịch đã hủy, No-show hoặc đã chuyển sang trạng thái khác.
-
 ### UC20 - Bắt đầu khám
 
 - **Tác nhân:** Bác sĩ.
 - **Mục đích:** Bắt đầu quá trình khám và điều trị.
-- **Luồng chính:** Bác sĩ chọn lịch đã check-in; hệ thống khóa bác sĩ và Appointment; chuyển `CHECKED_IN` sang `IN_PROGRESS`; lưu `actual_start_at`; ghi lịch sử `START_EXAM`.
-- **Điều kiện:** Appointment thuộc bác sĩ và đang `CHECKED_IN`.
+- **Luồng chính:** Bác sĩ chọn lịch đã đặt; hệ thống khóa bác sĩ và Appointment; chuyển trực tiếp `BOOKED` sang `IN_PROGRESS`; lưu `actual_start_at`; ghi lịch sử `START_EXAM`.
+- **Điều kiện:** Appointment thuộc bác sĩ và đang `BOOKED`.
 - **Ngoại lệ:** Một bác sĩ không thể có đồng thời hai ca `IN_PROGRESS`.
+- **Tương thích dữ liệu cũ:** Appointment lịch sử đang `CHECKED_IN` vẫn được phép chuyển sang `IN_PROGRESS`, nhưng hệ thống không còn cung cấp API check-in mới.
 
 ### UC21 - Xác nhận bệnh nhân không đến
 
@@ -182,7 +176,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Mục đích:** Đánh dấu bệnh nhân vắng mặt.
 - **Luồng chính:** Sau thời gian chờ, bác sĩ chọn No-show; hệ thống chuyển `BOOKED` sang `NO_SHOW`; ghi lịch sử `NO_SHOW`.
 - **Điều kiện:** Lịch thuộc bác sĩ; vẫn đang `BOOKED`; đã qua giờ hẹn ít nhất 15 phút.
-- **Ngoại lệ:** Không được đánh dấu No-show nếu bệnh nhân đã check-in.
+- **Ngoại lệ:** Không được đánh dấu No-show khi bác sĩ đã bắt đầu khám. Dữ liệu lịch sử đã check-in cũng được bảo vệ.
 
 ### UC22 - Tạo bệnh án
 
@@ -191,7 +185,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Bác sĩ nhập chẩn đoán, điều trị, kế hoạch, ghi chú, đơn thuốc và thông tin tái khám; hệ thống lưu MedicalRecord.
 - **Điều kiện:** Appointment thuộc bác sĩ, đang `IN_PROGRESS` và chưa có bệnh án.
 - **Quy tắc:** Mỗi Appointment có tối đa một MedicalRecord; đơn thuốc được lưu dưới dạng JSONB.
-- **Ngoại lệ:** Nếu yêu cầu tái khám thì phải có ngày đề xuất hoặc ghi chú tái khám.
+- **Ngoại lệ:** Nếu yêu cầu tái khám thì bắt buộc phải có ngày tái khám đề xuất; ghi chú không thay thế ngày đề xuất.
 
 ### UC23 - Cập nhật bệnh án
 
@@ -225,20 +219,20 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Điều kiện:** Có bệnh án hợp lệ; có ít nhất một dịch vụ thực tế; tổng tiền khớp với các item.
 - **Transaction:** Hoàn thành Appointment, chốt Payment và ghi audit trong cùng giao dịch. Nếu một bước lỗi thì toàn bộ thay đổi được rollback.
 
-### UC27 - Xem slot tái khám
+### UC27 - Xem slot để tự đặt tái khám
 
-- **Tác nhân:** Bác sĩ.
-- **Mục đích:** Tìm khung giờ tái khám cho bệnh nhân.
-- **Luồng chính:** Bác sĩ chọn ca khám cũ, dịch vụ và ngày; hệ thống trả các slot phù hợp.
-- **Điều kiện:** Ca cũ thuộc bác sĩ, đang `IN_PROGRESS` hoặc `COMPLETED`; MedicalRecord có `followUpRequired = true`.
+- **Tác nhân:** Bệnh nhân.
+- **Mục đích:** Chọn khung giờ phù hợp sau khi bác sĩ đã khuyến nghị tái khám.
+- **Luồng chính:** Bệnh nhân xem hướng dẫn trong bệnh án; chọn dịch vụ, bác sĩ và ngày; sử dụng API slot công khai giống đặt lịch thường.
+- **Điều kiện:** Lần khám trước đã `COMPLETED` và MedicalRecord có `followUpRequired = true` cùng ngày tái khám đề xuất.
 
-### UC28 - Tạo lịch tái khám
+### UC28 - Bệnh nhân tự đặt lịch tái khám
 
-- **Tác nhân:** Bác sĩ.
-- **Mục đích:** Đặt lịch tái khám cho bệnh nhân sau điều trị.
-- **Luồng chính:** Bác sĩ chọn slot; hệ thống tạo Appointment mới `BOOKED`; liên kết `previous_appointment_id` với lịch cũ; ghi lịch sử `BOOK`.
-- **Điều kiện:** Bệnh án yêu cầu tái khám; slot còn trống; bác sĩ cung cấp dịch vụ; đáp ứng quy tắc đặt trước 120 phút (2 giờ).
-- **Ngoại lệ:** Hai request đặt cùng slot chỉ một request thành công.
+- **Tác nhân:** Bệnh nhân.
+- **Mục đích:** Chủ động đặt lịch tái khám theo khuyến nghị điều trị.
+- **Luồng chính:** Bệnh nhân gửi yêu cầu đặt lịch bình thường kèm `previousAppointmentId`; hệ thống xác minh quyền sở hữu lần khám cũ, trạng thái hoàn thành và khuyến nghị tái khám; tạo Appointment mới `BOOKED`; liên kết `previous_appointment_id`; ghi lịch sử `BOOK`.
+- **Điều kiện:** Slot còn trống; bác sĩ cung cấp dịch vụ; đáp ứng quy tắc đặt trước 120 phút (2 giờ); chưa có lịch tái khám đang hoạt động cho cùng lần khám cũ.
+- **Ngoại lệ:** Không được dùng Appointment của bệnh nhân khác; hai request cho cùng slot hoặc cùng khuyến nghị tái khám chỉ một request thành công.
 
 ## D. CHỨC NĂNG QUẢN TRỊ VIÊN
 
@@ -368,18 +362,18 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 
 ### UC45 - Tra cứu phiếu thanh toán
 
-- **Tác nhân:** Admin.
+- **Tác nhân:** Nhân viên; Admin là vai trò dự phòng.
 - **Mục đích:** Theo dõi các khoản phải thu và đã thu.
 - **Luồng chính:** Admin tìm theo bệnh nhân hoặc bác sĩ; lọc trạng thái và ngày; sắp xếp và phân trang; chọn phiếu để xem chi tiết.
 - **Kết quả:** Hiển thị bệnh nhân, bác sĩ, dịch vụ gốc và dịch vụ bổ sung, tổng tiền, trạng thái và thông tin xác nhận.
 
 ### UC46 - Xác nhận đã thu tiền
 
-- **Tác nhân:** Admin.
+- **Tác nhân:** Nhân viên; Admin là vai trò dự phòng.
 - **Mục đích:** Ghi nhận bệnh nhân đã thanh toán trực tiếp tại phòng khám.
-- **Luồng chính:** Admin chọn Payment `UNPAID`; chọn `CASH` hoặc `BANK_TRANSFER`; hệ thống khóa Payment; kiểm tra tổng tiền; chuyển `UNPAID` sang `PAID`; lưu người xác nhận và `paid_at`.
-- **Điều kiện:** Appointment đã `COMPLETED`; Admin đang hoạt động; Payment đang `UNPAID`.
-- **Concurrency:** Hai Admin xác nhận đồng thời chỉ một request thành công.
+- **Luồng chính:** Nhân viên chọn Payment `UNPAID`; chọn `CASH` hoặc `BANK_TRANSFER`; hệ thống khóa Payment; kiểm tra tổng tiền; chuyển `UNPAID` sang `PAID`; lưu người xác nhận và `paid_at`.
+- **Điều kiện:** Appointment đã `COMPLETED`; tài khoản người thu tiền đang hoạt động; Payment đang `UNPAID`.
+- **Concurrency:** Hai người xác nhận đồng thời chỉ một request thành công.
 - **Lưu ý:** `BANK_TRANSFER` là xác nhận thủ công, không phải cổng thanh toán trực tuyến.
 
 ### UC47 - Xem thống kê doanh thu
@@ -390,24 +384,69 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Kết quả:** Doanh thu hôm nay, doanh thu theo khoảng ngày, doanh thu tháng, số phiếu `PAID`, số phiếu `UNPAID` và tổng tiền chưa thu.
 - **Quy tắc:** Chỉ Payment `PAID` được tính là doanh thu.
 
-## E. LUỒNG TRẠNG THÁI QUAN TRỌNG
+### UC48 - Tạo tài khoản nhân viên
+
+- **Tác nhân:** Admin.
+- **Mục đích:** Cấp tài khoản cho nhân viên lễ tân kiêm thu ngân.
+- **Luồng chính:** Admin nhập email, mật khẩu và họ tên; hệ thống kiểm tra dữ liệu; mã hóa BCrypt; tạo User có vai trò `STAFF` và trạng thái `ACTIVE`.
+- **Điều kiện:** Email chưa tồn tại; mật khẩu từ 8 đến 72 ký tự; Admin đang hoạt động.
+- **Bảo mật:** Không có API công khai để tự đăng ký vai trò `STAFF`.
+
+### UC49 - Quản lý tài khoản nhân viên
+
+- **Tác nhân:** Admin.
+- **Mục đích:** Tra cứu và kích hoạt hoặc vô hiệu hóa nhân viên.
+- **Luồng chính:** Admin xem danh sách, tìm theo email hoặc họ tên, lọc trạng thái, xem chi tiết và cập nhật `ACTIVE`/`INACTIVE`.
+- **Điều kiện:** Endpoint nhân viên chỉ thao tác trên tài khoản có vai trò `STAFF`.
+- **Ảnh hưởng:** Nhân viên `INACTIVE` không thể đăng nhập hoặc sử dụng API nghiệp vụ.
+
+## E. CHỨC NĂNG NHÂN VIÊN
+
+### UC50 - Tra cứu toàn bộ lịch khám để hướng dẫn bệnh nhân
+
+- **Tác nhân:** Nhân viên.
+- **Mục đích:** Tìm lịch hẹn và hướng dẫn bệnh nhân đến đúng bác sĩ.
+- **Luồng chính:** Nhân viên tìm theo tên/số điện thoại bệnh nhân, tên bác sĩ hoặc dịch vụ; lọc trạng thái, bác sĩ, dịch vụ và khoảng ngày; xem kết quả phân trang.
+- **Kết quả:** Trả thông tin lịch hẹn, bệnh nhân, bác sĩ, dịch vụ và thời gian khám của toàn phòng khám.
+- **Bảo mật:** Nhân viên không có quyền đọc hoặc sửa MedicalRecord, đơn thuốc hay thông tin điều trị.
+
+### UC51 - Tra cứu phiếu cần thu và đã thu
+
+- **Tác nhân:** Nhân viên.
+- **Mục đích:** Xác định đúng bệnh nhân và khoản tiền cần thu tại quầy.
+- **Luồng chính:** Nhân viên tìm theo tên/số điện thoại bệnh nhân hoặc tên bác sĩ; lọc `UNPAID`/`PAID`, ngày; xem chi tiết dịch vụ và lịch khám.
+- **Bảo mật:** Payment `DRAFT` không hiển thị cho nhân viên vì ca khám chưa hoàn tất.
+
+### UC52 - Xác nhận thanh toán tại quầy
+
+- **Tác nhân:** Nhân viên.
+- **Mục đích:** Ghi nhận khoản tiền thực nhận.
+- **Luồng chính:** Nhân viên mở Payment `UNPAID`; chọn `CASH` hoặc `BANK_TRANSFER`; xác nhận; hệ thống chuyển sang `PAID`, lưu nhân viên xác nhận và thời điểm thu.
+- **Điều kiện:** Payment có tổng tiền hợp lệ và Appointment đã hoàn tất.
+- **Concurrency:** Khóa bi quan đảm bảo chỉ một người có thể xác nhận thành công cùng một Payment.
+
+## F. LUỒNG TRẠNG THÁI QUAN TRỌNG
 
 ### Luồng Appointment
 
 ```text
-BOOKED ──→ CHECKED_IN ──→ IN_PROGRESS ──→ COMPLETED
+BOOKED ── bác sĩ bắt đầu khám ──→ IN_PROGRESS ──→ COMPLETED
    │
    ├──→ CANCELLED
    └──→ NO_SHOW
 ```
 
+`CHECKED_IN` chỉ còn để đọc và xử lý dữ liệu lịch sử; hệ thống không cung cấp API tạo trạng thái này.
+
 ### Luồng Payment
 
 ```text
-DRAFT ── hoàn thành khám ──→ UNPAID ── Admin thu tiền ──→ PAID
+DRAFT ── hoàn thành khám ──→ UNPAID ── Staff thu tiền ──→ PAID
 ```
 
-## F. CHỨC NĂNG CHƯA CÓ TRONG HỆ THỐNG
+Admin vẫn có endpoint xác nhận thanh toán làm phương án dự phòng.
+
+## G. CHỨC NĂNG CHƯA CÓ TRONG HỆ THỐNG
 
 - Đăng ký tài khoản Doctor hoặc Admin từ trang công khai.
 - Refresh Token và API logout phía server.

@@ -239,7 +239,7 @@ class MedicalRecordServiceTest {
                 .satisfies(exception -> assertThat(
                         ((BusinessException) exception).getErrorCode()
                 ).isEqualTo(ErrorCode.INVALID_REQUEST))
-                .hasMessage("Khi cần tái khám phải có ngày đề xuất hoặc ghi chú tái khám");
+                .hasMessage("Khi cần tái khám phải có ngày tái khám dự kiến");
     }
 
     @Test

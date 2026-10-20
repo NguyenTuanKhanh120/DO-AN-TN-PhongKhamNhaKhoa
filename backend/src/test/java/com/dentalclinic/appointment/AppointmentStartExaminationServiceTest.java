@@ -62,10 +62,10 @@ class AppointmentStartExaminationServiceTest {
     }
 
     @Test
-    void shouldStartOwnedCheckedInAppointmentAndWriteAudit() {
+    void shouldStartOwnedBookedAppointmentAndWriteAudit() {
         UUID authenticatedUserId = UUID.randomUUID();
         Doctor doctor = doctor(authenticatedUserId);
-        Appointment appointment = appointment(AppointmentStatus.CHECKED_IN);
+        Appointment appointment = appointment(AppointmentStatus.BOOKED);
         when(doctorRepository.findForUpdateByUserId(authenticatedUserId))
                 .thenReturn(Optional.of(doctor));
         when(appointmentRepository.findForUpdateByIdAndDoctorId(
@@ -89,8 +89,7 @@ class AppointmentStartExaminationServiceTest {
         assertThat(response.status()).isEqualTo(AppointmentStatus.IN_PROGRESS);
         assertThat(response.scheduledStartAt().toString())
                 .isEqualTo("2026-10-12T09:00+07:00");
-        assertThat(response.checkedInAt().toString())
-                .isEqualTo("2026-10-12T08:55+07:00");
+        assertThat(response.checkedInAt()).isNull();
         assertThat(response.actualStartAt().toString())
                 .isEqualTo("2026-10-12T09:15+07:00");
 
@@ -105,22 +104,21 @@ class AppointmentStartExaminationServiceTest {
         assertThat(history.getChangedBy()).isSameAs(doctor.getUser());
         assertThat(history.getReason()).isNull();
         assertThat(history.getDetails().path("old_status").asText())
-                .isEqualTo("CHECKED_IN");
+                .isEqualTo("BOOKED");
         assertThat(history.getDetails().path("new_status").asText())
                 .isEqualTo("IN_PROGRESS");
         assertThat(history.getDetails().path("scheduled_start_at").asText())
                 .isEqualTo("2026-10-12T09:00+07:00");
-        assertThat(history.getDetails().path("checked_in_at").asText())
-                .isEqualTo("2026-10-12T08:55+07:00");
+        assertThat(history.getDetails().path("checked_in_at").isNull()).isTrue();
         assertThat(history.getDetails().path("actual_start_at").asText())
                 .isEqualTo("2026-10-12T09:15+07:00");
     }
 
     @Test
-    void shouldRejectStartWhenAppointmentIsNotCheckedIn() {
+    void shouldRejectStartWhenAppointmentIsNotEligible() {
         UUID authenticatedUserId = UUID.randomUUID();
         Doctor doctor = doctor(authenticatedUserId);
-        Appointment appointment = appointment(AppointmentStatus.BOOKED);
+        Appointment appointment = appointment(AppointmentStatus.COMPLETED);
         when(doctorRepository.findForUpdateByUserId(authenticatedUserId))
                 .thenReturn(Optional.of(doctor));
         when(appointmentRepository.findForUpdateByIdAndDoctorId(
@@ -133,7 +131,7 @@ class AppointmentStartExaminationServiceTest {
                 appointment.getId()
         )).isInstanceOf(ConflictException.class)
                 .hasMessage(
-                        "Chỉ có thể bắt đầu khám cho lịch hẹn đang ở trạng thái CHECKED_IN"
+                        "Chỉ có thể bắt đầu khám cho lịch hẹn đang ở trạng thái BOOKED"
                 );
 
         verify(appointmentRepository, never()).saveAndFlush(any(Appointment.class));
@@ -144,7 +142,7 @@ class AppointmentStartExaminationServiceTest {
     void shouldRejectStartWhenDoctorHasAnotherExaminationInProgress() {
         UUID authenticatedUserId = UUID.randomUUID();
         Doctor doctor = doctor(authenticatedUserId);
-        Appointment appointment = appointment(AppointmentStatus.CHECKED_IN);
+        Appointment appointment = appointment(AppointmentStatus.BOOKED);
         when(doctorRepository.findForUpdateByUserId(authenticatedUserId))
                 .thenReturn(Optional.of(doctor));
         when(appointmentRepository.findForUpdateByIdAndDoctorId(
@@ -163,7 +161,7 @@ class AppointmentStartExaminationServiceTest {
         )).isInstanceOf(ConflictException.class)
                 .hasMessage("Bác sĩ đang có một ca khám khác chưa hoàn thành");
 
-        assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.CHECKED_IN);
+        assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.BOOKED);
         assertThat(appointment.getActualStartAt()).isNull();
         verify(appointmentRepository, never()).saveAndFlush(any(Appointment.class));
         verify(appointmentHistoryRepository, never()).saveAndFlush(any(AppointmentHistory.class));
@@ -186,6 +184,32 @@ class AppointmentStartExaminationServiceTest {
                 appointmentId
         )).isInstanceOf(NotFoundException.class)
                 .hasMessage("Không tìm thấy lịch hẹn");
+    }
+
+    @Test
+    void shouldAllowLegacyCheckedInAppointmentToContinue() {
+        UUID authenticatedUserId = UUID.randomUUID();
+        Doctor doctor = doctor(authenticatedUserId);
+        Appointment appointment = appointment(AppointmentStatus.CHECKED_IN);
+        when(doctorRepository.findForUpdateByUserId(authenticatedUserId))
+                .thenReturn(Optional.of(doctor));
+        when(appointmentRepository.findForUpdateByIdAndDoctorId(
+                appointment.getId(),
+                doctor.getId()
+        )).thenReturn(Optional.of(appointment));
+        when(appointmentRepository.existsOtherByDoctorIdAndStatus(
+                doctor.getId(),
+                AppointmentStatus.IN_PROGRESS,
+                appointment.getId()
+        )).thenReturn(false);
+
+        StartExaminationResponse response = startExaminationService.start(
+                authenticatedUserId,
+                appointment.getId()
+        );
+
+        assertThat(response.status()).isEqualTo(AppointmentStatus.IN_PROGRESS);
+        assertThat(response.checkedInAt()).isNotNull();
     }
 
     @Test
@@ -219,7 +243,9 @@ class AppointmentStartExaminationServiceTest {
         Appointment appointment = new Appointment();
         appointment.setId(UUID.randomUUID());
         appointment.setScheduledStartAt(Instant.parse("2026-10-12T02:00:00Z"));
-        appointment.setCheckedInAt(Instant.parse("2026-10-12T01:55:00Z"));
+        if (status == AppointmentStatus.CHECKED_IN) {
+            appointment.setCheckedInAt(Instant.parse("2026-10-12T01:55:00Z"));
+        }
         appointment.setStatus(status);
         return appointment;
     }
