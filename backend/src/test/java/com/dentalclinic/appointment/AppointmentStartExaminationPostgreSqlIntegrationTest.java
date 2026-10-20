@@ -115,7 +115,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
     }
 
     @Test
-    void shouldStartOwnedCheckedInAppointmentPersistTimestampAndWriteAudit() throws Exception {
+    void shouldStartOwnedBookedAppointmentPersistTimestampAndWriteAudit() throws Exception {
         String token = login(fixture.firstDoctorEmail());
 
         mockMvc.perform(patch(
@@ -129,8 +129,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.data.scheduledStartAt")
                         .value("2026-10-12T09:00:00+07:00"))
-                .andExpect(jsonPath("$.data.checkedInAt")
-                        .value("2026-10-12T08:55:00+07:00"))
+                .andExpect(jsonPath("$.data.checkedInAt").isEmpty())
                 .andExpect(jsonPath("$.data.actualStartAt")
                         .value("2026-10-12T09:15:00+07:00"));
 
@@ -145,8 +144,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
         assertThat(appointmentRow.get("status")).isEqualTo("IN_PROGRESS");
         assertThat(((Timestamp) appointmentRow.get("scheduled_start_at")).toInstant())
                 .isEqualTo(fixture.checkedInStartAt());
-        assertThat(((Timestamp) appointmentRow.get("checked_in_at")).toInstant())
-                .isEqualTo(CHECKED_IN_AT);
+        assertThat(appointmentRow.get("checked_in_at")).isNull();
         assertThat(((Timestamp) appointmentRow.get("actual_start_at")).toInstant())
                 .isEqualTo(FIXED_NOW);
 
@@ -165,12 +163,11 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
         assertThat(historyRow.get("action")).isEqualTo("START_EXAM");
         assertThat(historyRow.get("changed_by")).isEqualTo(fixture.firstDoctorUserId());
         assertThat(historyRow.get("reason")).isNull();
-        assertThat(historyRow.get("old_status")).isEqualTo("CHECKED_IN");
+        assertThat(historyRow.get("old_status")).isEqualTo("BOOKED");
         assertThat(historyRow.get("new_status")).isEqualTo("IN_PROGRESS");
         assertThat(historyRow.get("scheduled_start_at"))
                 .isEqualTo("2026-10-12T09:00+07:00");
-        assertThat(historyRow.get("checked_in_at"))
-                .isEqualTo("2026-10-12T08:55+07:00");
+        assertThat(historyRow.get("checked_in_at")).isNull();
         assertThat(historyRow.get("actual_start_at"))
                 .isEqualTo("2026-10-12T09:15+07:00");
 
@@ -180,13 +177,13 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 ).header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(
-                        "Chỉ có thể bắt đầu khám cho lịch hẹn đang ở trạng thái CHECKED_IN"
+                        "Chỉ có thể bắt đầu khám cho lịch hẹn đang ở trạng thái BOOKED"
                 ));
         assertThat(startHistoryCount(fixture.checkedInAppointmentId())).isEqualTo(1);
     }
 
     @Test
-    void shouldRejectStartWhenAppointmentIsNotCheckedIn() throws Exception {
+    void shouldRejectStartWhenAppointmentAlreadyCompleted() throws Exception {
         String token = login(fixture.firstDoctorEmail());
 
         mockMvc.perform(patch(
@@ -196,10 +193,10 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("RESOURCE_CONFLICT"))
                 .andExpect(jsonPath("$.message").value(
-                        "Chỉ có thể bắt đầu khám cho lịch hẹn đang ở trạng thái CHECKED_IN"
+                        "Chỉ có thể bắt đầu khám cho lịch hẹn đang ở trạng thái BOOKED"
                 ));
 
-        assertThat(statusOf(fixture.bookedAppointmentId())).isEqualTo("BOOKED");
+        assertThat(statusOf(fixture.bookedAppointmentId())).isEqualTo("COMPLETED");
         assertThat(startHistoryCount(fixture.bookedAppointmentId())).isZero();
     }
 
@@ -214,7 +211,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
-        assertThat(statusOf(fixture.otherDoctorAppointmentId())).isEqualTo("CHECKED_IN");
+        assertThat(statusOf(fixture.otherDoctorAppointmentId())).isEqualTo("BOOKED");
         assertThat(startHistoryCount(fixture.otherDoctorAppointmentId())).isZero();
     }
 
@@ -242,9 +239,26 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                         .value("Bác sĩ đang có một ca khám khác chưa hoàn thành"));
 
         assertThat(statusOf(inProgress.getId())).isEqualTo("IN_PROGRESS");
-        assertThat(statusOf(fixture.checkedInAppointmentId())).isEqualTo("CHECKED_IN");
+        assertThat(statusOf(fixture.checkedInAppointmentId())).isEqualTo("BOOKED");
         assertThat(actualStartAtOf(fixture.checkedInAppointmentId())).isNull();
         assertThat(startHistoryCount(fixture.checkedInAppointmentId())).isZero();
+    }
+
+    @Test
+    void shouldAllowLegacyCheckedInAppointmentToContinue() throws Exception {
+        String token = login(fixture.firstDoctorEmail());
+
+        mockMvc.perform(patch(
+                        "/api/doctor/appointments/{id}/start",
+                        fixture.legacyCheckedInAppointmentId()
+                ).header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.checkedInAt")
+                        .value("2026-10-12T08:55:00+07:00"));
+
+        assertThat(statusOf(fixture.legacyCheckedInAppointmentId()))
+                .isEqualTo("IN_PROGRESS");
     }
 
     private Fixture createFixture() {
@@ -276,15 +290,15 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 patient,
                 firstMapping,
                 checkedInStart,
-                AppointmentStatus.CHECKED_IN,
-                CHECKED_IN_AT,
+                AppointmentStatus.BOOKED,
+                null,
                 null
         );
         Appointment booked = saveAppointment(
                 patient,
                 firstMapping,
                 Instant.parse("2026-10-12T04:00:00Z"),
-                AppointmentStatus.BOOKED,
+                AppointmentStatus.COMPLETED,
                 null,
                 null
         );
@@ -292,6 +306,14 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 patient,
                 secondMapping,
                 Instant.parse("2026-10-12T03:00:00Z"),
+                AppointmentStatus.BOOKED,
+                null,
+                null
+        );
+        Appointment legacyCheckedIn = saveAppointment(
+                patient,
+                firstMapping,
+                Instant.parse("2026-10-12T05:00:00Z"),
                 AppointmentStatus.CHECKED_IN,
                 CHECKED_IN_AT,
                 null
@@ -303,7 +325,8 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 checkedIn.getId(),
                 checkedInStart,
                 booked.getId(),
-                otherDoctor.getId()
+                otherDoctor.getId(),
+                legacyCheckedIn.getId()
         );
     }
 
@@ -424,7 +447,8 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
             UUID checkedInAppointmentId,
             Instant checkedInStartAt,
             UUID bookedAppointmentId,
-            UUID otherDoctorAppointmentId
+            UUID otherDoctorAppointmentId,
+            UUID legacyCheckedInAppointmentId
     ) {
     }
 

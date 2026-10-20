@@ -3,7 +3,6 @@ package com.dentalclinic.payment;
 import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
-import com.dentalclinic.appointment.service.AppointmentCheckInService;
 import com.dentalclinic.appointment.service.AppointmentCompleteExaminationService;
 import com.dentalclinic.appointment.service.AppointmentStartExaminationService;
 import com.dentalclinic.common.exception.ConflictException;
@@ -72,8 +71,6 @@ class PaymentPostgreSqlIntegrationTest {
     private PaymentService paymentService;
     @Autowired
     private PaymentRevenueService paymentRevenueService;
-    @Autowired
-    private AppointmentCheckInService checkInService;
     @Autowired
     private AppointmentStartExaminationService startExaminationService;
     @Autowired
@@ -147,7 +144,6 @@ class PaymentPostgreSqlIntegrationTest {
     void shouldPersistFullCounterPaymentFlowAndJsonSnapshots() throws Exception {
         Fixture fixture = createFixture(AppointmentStatus.BOOKED, null);
 
-        checkInService.checkIn(fixture.doctorUserId(), fixture.appointmentId());
         startExaminationService.start(fixture.doctorUserId(), fixture.appointmentId());
         saveMedicalRecord(fixture.appointmentId());
 
@@ -309,7 +305,7 @@ class PaymentPostgreSqlIntegrationTest {
         String marker = UUID.randomUUID().toString();
         User doctorUser = saveUser("payment-doctor-" + marker + "@example.com", Role.DOCTOR);
         User patientUser = saveUser("payment-patient-" + marker + "@example.com", Role.PATIENT);
-        User adminOne = saveUser("payment-admin-one-" + marker + "@example.com", Role.ADMIN);
+        User adminOne = saveUser("payment-staff-" + marker + "@example.com", Role.STAFF);
         User adminTwo = saveUser("payment-admin-two-" + marker + "@example.com", Role.ADMIN);
 
         Doctor doctor = new Doctor();

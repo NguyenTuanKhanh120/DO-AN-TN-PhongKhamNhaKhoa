@@ -92,7 +92,7 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(loginSuccess.path("data").path("email").asText()).isEqualTo("<EMAIL>");
         assertThat(loginSuccess.path("data").path("fullName").asText()).isEqualTo("<FULL_NAME>");
         assertThat(loginSuccess.path("data").path("role").asText())
-                .isEqualTo("<PATIENT|DOCTOR|ADMIN>");
+                .isEqualTo("<PATIENT|DOCTOR|ADMIN|STAFF>");
         JsonNode protectedDashboard = operation(
                 document,
                 "/api/admin/dashboard/summary",
@@ -157,6 +157,21 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(adminPayment.path("tags").get(0).asText()).isEqualTo("Admin Payments");
         assertThat(adminPayment.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
 
+        JsonNode createStaff = operation(document, "/api/admin/staff", "post");
+        assertThat(createStaff.path("tags").get(0).asText()).isEqualTo("Admin Staff");
+        assertThat(createStaff.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
+        assertOnlyResponses(createStaff, "201");
+
+        JsonNode staffAppointments = operation(document, "/api/staff/appointments", "get");
+        assertThat(staffAppointments.path("tags").get(0).asText())
+                .isEqualTo("Staff Appointments");
+        assertThat(staffAppointments.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
+                .isTrue();
+
+        JsonNode staffPayment = operation(document, "/api/staff/payments/{id}/confirm", "patch");
+        assertThat(staffPayment.path("tags").get(0).asText()).isEqualTo("Staff Payments");
+        assertThat(staffPayment.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
+
         JsonNode patientPayments = operation(document, "/api/patient/payments", "get");
         assertThat(patientPayments.path("tags").get(0).asText()).isEqualTo("Patient Payments");
 
@@ -165,6 +180,7 @@ class OpenApiDocumentationIntegrationTest {
 
         JsonNode schemas = document.path("components").path("schemas");
         assertThat(schemas.has("RegisterRequest")).isTrue();
+        assertThat(schemas.has("CreateStaffRequest")).isTrue();
         assertThat(schemas.has("BookAppointmentRequest")).isTrue();
         assertThat(schemas.has("DashboardSummaryResponse")).isTrue();
         assertThat(schemas.has("CreateDoctorDayOffRequest")).isTrue();
@@ -177,6 +193,12 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(schemas.has("UserPrincipal")).isFalse();
         assertAllSchemaReferencesResolve(document, schemas);
 
+        assertThat(document.path("paths").has("/api/doctor/appointments/{id}/check-in"))
+                .isFalse();
+        assertThat(document.path("paths").has("/api/doctor/appointments/{id}/follow-up"))
+                .isFalse();
+        assertThat(document.path("paths").has("/api/doctor/appointments/{id}/follow-up-slots"))
+                .isFalse();
         assertThat(document.path("paths").has("/api/chat/sessions")).isFalse();
     }
 

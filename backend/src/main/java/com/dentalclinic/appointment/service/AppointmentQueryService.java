@@ -37,12 +37,19 @@ import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class AppointmentQueryService {
 
     private static final char LIKE_ESCAPE = '\\';
+    private static final Set<String> STAFF_SORT_FIELDS = Set.of(
+            "scheduledStartAt",
+            "status",
+            "createdAt",
+            "updatedAt"
+    );
 
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
@@ -187,6 +194,39 @@ public class AppointmentQueryService {
                 page,
                 size,
                 defaultSort()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<AppointmentResponse> getStaffAppointments(
+            String search,
+            AppointmentStatus status,
+            UUID doctorId,
+            UUID serviceId,
+            LocalDate fromDate,
+            LocalDate toDate,
+            int page,
+            int size,
+            String sortBy,
+            Sort.Direction direction
+    ) {
+        String resolvedSortBy = normalizeStaffSortField(sortBy);
+        Sort.Direction resolvedDirection = direction == null ? Sort.Direction.ASC : direction;
+        Sort sort = Sort.by(
+                new Sort.Order(resolvedDirection, resolvedSortBy),
+                Sort.Order.asc("id")
+        );
+        return queryAppointments(
+                search,
+                status,
+                null,
+                doctorId,
+                serviceId,
+                fromDate,
+                toDate,
+                page,
+                size,
+                sort
         );
     }
 
@@ -409,6 +449,19 @@ public class AppointmentQueryService {
 
     private Sort defaultSort() {
         return Sort.by(Sort.Order.desc("scheduledStartAt"), Sort.Order.asc("id"));
+    }
+
+    private String normalizeStaffSortField(String sortBy) {
+        String resolved = sortBy == null || sortBy.isBlank()
+                ? "scheduledStartAt"
+                : sortBy.trim();
+        if (!STAFF_SORT_FIELDS.contains(resolved)) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Trường sắp xếp lịch hẹn không hợp lệ"
+            );
+        }
+        return resolved;
     }
 
     private String normalizeSearch(String search) {

@@ -11,9 +11,32 @@ public record BookAppointmentResponse(
         UUID patientId,
         UUID doctorId,
         UUID serviceId,
+        UUID previousAppointmentId,
         OffsetDateTime scheduledStartAt,
         OffsetDateTime scheduledEndAt,
         AppointmentStatus status,
         Instant createdAt
 ) {
+    public BookAppointmentResponse(
+            UUID id,
+            UUID patientId,
+            UUID doctorId,
+            UUID serviceId,
+            OffsetDateTime scheduledStartAt,
+            OffsetDateTime scheduledEndAt,
+            AppointmentStatus status,
+            Instant createdAt
+    ) {
+        this(
+                id,
+                patientId,
+                doctorId,
+                serviceId,
+                null,
+                scheduledStartAt,
+                scheduledEndAt,
+                status,
+                createdAt
+        );
+    }
 }

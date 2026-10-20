@@ -170,6 +170,17 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     );
 
     @Query("""
+            select (count(appointment) > 0)
+            from Appointment appointment
+            where appointment.previousAppointment.id = :previousAppointmentId
+              and appointment.status in :activeStatuses
+            """)
+    boolean existsActiveFollowUp(
+            @Param("previousAppointmentId") UUID previousAppointmentId,
+            @Param("activeStatuses") List<AppointmentStatus> activeStatuses
+    );
+
+    @Query("""
             select count(appointment) as todayAppointments,
                    coalesce(sum(case when appointment.status = :completedStatus
                                      then 1 else 0 end), 0) as completedToday,

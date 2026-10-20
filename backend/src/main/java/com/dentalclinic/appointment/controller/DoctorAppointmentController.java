@@ -1,25 +1,18 @@
 package com.dentalclinic.appointment.controller;
 
 import com.dentalclinic.appointment.dto.AppointmentResponse;
-import com.dentalclinic.appointment.dto.CheckInAppointmentResponse;
 import com.dentalclinic.appointment.dto.CompleteExaminationResponse;
-import com.dentalclinic.appointment.dto.CreateFollowUpAppointmentRequest;
-import com.dentalclinic.appointment.dto.FollowUpAppointmentResponse;
 import com.dentalclinic.appointment.dto.NoShowAppointmentResponse;
 import com.dentalclinic.appointment.dto.StartExaminationResponse;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
-import com.dentalclinic.appointment.service.AppointmentCheckInService;
 import com.dentalclinic.appointment.service.AppointmentCompleteExaminationService;
 import com.dentalclinic.appointment.service.AppointmentNoShowService;
 import com.dentalclinic.appointment.service.AppointmentQueryService;
 import com.dentalclinic.appointment.service.AppointmentStartExaminationService;
-import com.dentalclinic.appointment.service.FollowUpAppointmentService;
 import com.dentalclinic.auth.security.CurrentUser;
 import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.response.ApiResponse;
 import com.dentalclinic.common.response.PageResponse;
-import com.dentalclinic.schedule.dto.AvailableSlotResponse;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -29,14 +22,11 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
-import java.util.List;
 import java.util.UUID;
 
 @Validated
@@ -46,26 +36,20 @@ import java.util.UUID;
 public class DoctorAppointmentController {
 
     private final AppointmentQueryService appointmentQueryService;
-    private final AppointmentCheckInService appointmentCheckInService;
     private final AppointmentStartExaminationService appointmentStartExaminationService;
     private final AppointmentNoShowService appointmentNoShowService;
     private final AppointmentCompleteExaminationService appointmentCompleteExaminationService;
-    private final FollowUpAppointmentService followUpAppointmentService;
 
     public DoctorAppointmentController(
             AppointmentQueryService appointmentQueryService,
-            AppointmentCheckInService appointmentCheckInService,
             AppointmentStartExaminationService appointmentStartExaminationService,
             AppointmentNoShowService appointmentNoShowService,
-            AppointmentCompleteExaminationService appointmentCompleteExaminationService,
-            FollowUpAppointmentService followUpAppointmentService
+            AppointmentCompleteExaminationService appointmentCompleteExaminationService
     ) {
         this.appointmentQueryService = appointmentQueryService;
-        this.appointmentCheckInService = appointmentCheckInService;
         this.appointmentStartExaminationService = appointmentStartExaminationService;
         this.appointmentNoShowService = appointmentNoShowService;
         this.appointmentCompleteExaminationService = appointmentCompleteExaminationService;
-        this.followUpAppointmentService = followUpAppointmentService;
     }
 
     @GetMapping
@@ -132,17 +116,6 @@ public class DoctorAppointmentController {
         ));
     }
 
-    @PatchMapping("/{id}/check-in")
-    public ApiResponse<CheckInAppointmentResponse> checkInAppointment(
-            @CurrentUser UserPrincipal currentUser,
-            @PathVariable UUID id
-    ) {
-        return ApiResponse.success(
-                "Check-in bệnh nhân thành công",
-                appointmentCheckInService.checkIn(currentUser.getId(), id)
-        );
-    }
-
     @PatchMapping("/{id}/start")
     public ApiResponse<StartExaminationResponse> startExamination(
             @CurrentUser UserPrincipal currentUser,
@@ -176,32 +149,4 @@ public class DoctorAppointmentController {
         );
     }
 
-    @GetMapping("/{id}/follow-up-slots")
-    public ApiResponse<List<AvailableSlotResponse>> getFollowUpSlots(
-            @CurrentUser UserPrincipal currentUser,
-            @PathVariable UUID id,
-            @RequestParam UUID serviceId,
-            @RequestParam
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate date
-    ) {
-        return ApiResponse.success(followUpAppointmentService.getFollowUpSlots(
-                currentUser.getId(),
-                id,
-                serviceId,
-                date
-        ));
-    }
-
-    @PostMapping("/{id}/follow-up")
-    public ApiResponse<FollowUpAppointmentResponse> createFollowUpAppointment(
-            @CurrentUser UserPrincipal currentUser,
-            @PathVariable UUID id,
-            @Valid @RequestBody CreateFollowUpAppointmentRequest request
-    ) {
-        return ApiResponse.success(
-                "Đặt lịch tái khám thành công",
-                followUpAppointmentService.createFollowUp(currentUser.getId(), id, request)
-        );
-    }
 }

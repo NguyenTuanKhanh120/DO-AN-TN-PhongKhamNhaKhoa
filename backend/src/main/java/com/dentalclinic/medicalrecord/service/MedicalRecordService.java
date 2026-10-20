@@ -112,10 +112,10 @@ public class MedicalRecordService {
         boolean followUpRequired = Boolean.TRUE.equals(request.followUpRequired());
         boolean hasFollowUpDate = request.recommendedFollowUpDate() != null;
         boolean hasFollowUpNote = hasText(request.followUpNote());
-        if (followUpRequired && !hasFollowUpDate && !hasFollowUpNote) {
+        if (followUpRequired && !hasFollowUpDate) {
             throw new BusinessException(
                     ErrorCode.INVALID_REQUEST,
-                    "Khi cần tái khám phải có ngày đề xuất hoặc ghi chú tái khám"
+                    "Khi cần tái khám phải có ngày tái khám dự kiến"
             );
         }
         if (!followUpRequired && (hasFollowUpDate || hasFollowUpNote)) {

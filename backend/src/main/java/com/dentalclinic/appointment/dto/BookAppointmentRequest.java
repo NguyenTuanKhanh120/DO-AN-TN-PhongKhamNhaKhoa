@@ -13,6 +13,15 @@ public record BookAppointmentRequest(
         UUID serviceId,
 
         @NotNull(message = "Thời gian bắt đầu không được để trống")
-        OffsetDateTime scheduledStartAt
+        OffsetDateTime scheduledStartAt,
+
+        UUID previousAppointmentId
 ) {
+    public BookAppointmentRequest(
+            UUID doctorId,
+            UUID serviceId,
+            OffsetDateTime scheduledStartAt
+    ) {
+        this(doctorId, serviceId, scheduledStartAt, null);
+    }
 }

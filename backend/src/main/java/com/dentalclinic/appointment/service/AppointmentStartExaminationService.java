@@ -52,9 +52,11 @@ public class AppointmentStartExaminationService {
                 .findForUpdateByIdAndDoctorId(appointmentId, doctor.getId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch hẹn"));
 
-        if (appointment.getStatus() != AppointmentStatus.CHECKED_IN) {
+        AppointmentStatus oldStatus = appointment.getStatus();
+        if (oldStatus != AppointmentStatus.BOOKED
+                && oldStatus != AppointmentStatus.CHECKED_IN) {
             throw new ConflictException(
-                    "Chỉ có thể bắt đầu khám cho lịch hẹn đang ở trạng thái CHECKED_IN"
+                    "Chỉ có thể bắt đầu khám cho lịch hẹn đang ở trạng thái BOOKED"
             );
         }
         if (appointmentRepository.existsOtherByDoctorIdAndStatus(
@@ -76,7 +78,7 @@ public class AppointmentStartExaminationService {
         history.setAppointment(appointment);
         history.setAction(AppointmentAction.START_EXAM);
         history.setChangedBy(doctor.getUser());
-        history.setDetails(startDetails(appointment, actualStartAt));
+        history.setDetails(startDetails(appointment, oldStatus, actualStartAt));
         appointmentHistoryRepository.saveAndFlush(history);
 
         return new StartExaminationResponse(
@@ -88,9 +90,13 @@ public class AppointmentStartExaminationService {
         );
     }
 
-    private ObjectNode startDetails(Appointment appointment, Instant actualStartAt) {
+    private ObjectNode startDetails(
+            Appointment appointment,
+            AppointmentStatus oldStatus,
+            Instant actualStartAt
+    ) {
         ObjectNode details = JsonNodeFactory.instance.objectNode();
-        details.put("old_status", AppointmentStatus.CHECKED_IN.name());
+        details.put("old_status", oldStatus.name());
         details.put("new_status", AppointmentStatus.IN_PROGRESS.name());
         details.put(
                 "scheduled_start_at",

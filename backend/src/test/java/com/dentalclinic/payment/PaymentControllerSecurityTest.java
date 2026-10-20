@@ -13,6 +13,7 @@ import com.dentalclinic.payment.controller.AdminPaymentController;
 import com.dentalclinic.payment.controller.AdminRevenueController;
 import com.dentalclinic.payment.controller.DoctorPaymentController;
 import com.dentalclinic.payment.controller.PatientPaymentController;
+import com.dentalclinic.payment.controller.StaffPaymentController;
 import com.dentalclinic.payment.dto.PaymentResponse;
 import com.dentalclinic.payment.dto.RevenueSummaryResponse;
 import com.dentalclinic.payment.dto.UpdatePaymentItemsRequest;
@@ -29,6 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -56,6 +58,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest({
         DoctorPaymentController.class,
         AdminPaymentController.class,
+        StaffPaymentController.class,
         PatientPaymentController.class,
         AdminRevenueController.class
 })
@@ -99,6 +102,8 @@ class PaymentControllerSecurityTest {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/admin/dashboard/revenue"))
                 .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/staff/payments"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -112,6 +117,14 @@ class PaymentControllerSecurityTest {
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/patient/payments")
                         .with(user(principal(Role.ADMIN))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/staff/payments")
+                        .with(user(principal(Role.DOCTOR))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/doctor/appointments/{id}/payment/items", id)
+                        .with(user(principal(Role.STAFF)))
+                        .contentType("application/json")
+                        .content("{\"items\":[]}"))
                 .andExpect(status().isForbidden());
     }
 
@@ -183,6 +196,51 @@ class PaymentControllerSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PAID"))
                 .andExpect(jsonPath("$.message").value("Xác nhận thanh toán thành công"));
+    }
+
+    @Test
+    void shouldAllowStaffToListAndConfirmFinalizedPayments() throws Exception {
+        UserPrincipal staff = principal(Role.STAFF);
+        PaymentResponse unpaid = response(PaymentStatus.UNPAID);
+        PaymentResponse paid = response(PaymentStatus.PAID);
+        PageResponse<PaymentResponse> page = new PageResponse<>(
+                List.of(unpaid), 0, 20, 1, 1, true, true, false, false
+        );
+        when(paymentService.getStaffPayments(
+                null,
+                PaymentStatus.UNPAID,
+                null,
+                null,
+                0,
+                20,
+                "createdAt",
+                Sort.Direction.DESC
+        )).thenReturn(page);
+        when(paymentService.confirmPayment(
+                staff.getId(),
+                unpaid.id(),
+                PaymentMethod.BANK_TRANSFER
+        )).thenReturn(paid);
+
+        mockMvc.perform(get("/api/staff/payments")
+                        .with(user(staff))
+                        .param("status", "UNPAID"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].status").value("UNPAID"));
+
+        mockMvc.perform(patch("/api/staff/payments/{id}/confirm", unpaid.id())
+                        .with(user(staff))
+                        .contentType("application/json")
+                        .content("{\"paymentMethod\":\"BANK_TRANSFER\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PAID"));
+    }
+
+    @Test
+    void shouldRejectStaffFromAdminRevenueDashboard() throws Exception {
+        mockMvc.perform(get("/api/admin/dashboard/revenue")
+                        .with(user(principal(Role.STAFF))))
+                .andExpect(status().isForbidden());
     }
 
     @Test

@@ -33,6 +33,7 @@ public class OpenApiConfig {
     private static final String REGISTER_ENDPOINT = "/api/auth/register";
     private static final Set<String> CREATED_ENDPOINTS = Set.of(
             "POST /api/auth/register",
+            "POST /api/admin/staff",
             "POST /api/admin/doctors",
             "POST /api/admin/services",
             "POST /api/admin/doctors/{doctorId}/schedules",
@@ -63,6 +64,7 @@ public class OpenApiConfig {
                         new Tag().name("Authentication").description("Đăng ký bệnh nhân và đăng nhập"),
                         new Tag().name("Patient Profile").description("Hồ sơ cá nhân của bệnh nhân"),
                         new Tag().name("Admin Users").description("Quản lý tài khoản bởi quản trị viên"),
+                        new Tag().name("Admin Staff").description("Quản lý tài khoản nhân viên lễ tân - thu ngân"),
                         new Tag().name("Doctors").description("Tra cứu và quản lý bác sĩ"),
                         new Tag().name("Dental Services").description("Tra cứu và quản lý dịch vụ nha khoa"),
                         new Tag().name("Doctor Services").description("Phân công dịch vụ cho bác sĩ"),
@@ -75,7 +77,9 @@ public class OpenApiConfig {
                         new Tag().name("Doctor Appointments").description("Quy trình khám của bác sĩ"),
                         new Tag().name("Doctor Payments").description("Bác sĩ ghi nhận dịch vụ thực tế"),
                         new Tag().name("Patient Payments").description("Bệnh nhân xem phiếu thanh toán"),
-                        new Tag().name("Admin Payments").description("Thu tiền trực tiếp tại quầy"),
+                        new Tag().name("Staff Appointments").description("Nhân viên tra cứu lịch khám toàn phòng khám"),
+                        new Tag().name("Staff Payments").description("Nhân viên thu tiền trực tiếp tại quầy"),
+                        new Tag().name("Admin Payments").description("Admin tra cứu và xác nhận thanh toán dự phòng"),
                         new Tag().name("Patient Medical History").description("Lịch sử bệnh án của bệnh nhân"),
                         new Tag().name("Admin Appointments").description("Tra cứu và audit lịch hẹn"),
                         new Tag().name("Admin Dashboard").description("Thống kê tổng quan phòng khám")
@@ -179,7 +183,7 @@ public class OpenApiConfig {
         data.put("userId", login ? "<USER_ID>" : "00000000-0000-0000-0000-000000000000");
         data.put("email", login ? "<EMAIL>" : "patient@example.com");
         data.put("fullName", login ? "<FULL_NAME>" : "Nguyễn Văn A");
-        data.put("role", login ? "<PATIENT|DOCTOR|ADMIN>" : "PATIENT");
+        data.put("role", login ? "<PATIENT|DOCTOR|ADMIN|STAFF>" : "PATIENT");
         return data;
     }
 
@@ -236,6 +240,9 @@ public class OpenApiConfig {
         if (path.startsWith("/api/admin/payments")) {
             return "Admin Payments";
         }
+        if (path.startsWith("/api/admin/staff")) {
+            return "Admin Staff";
+        }
         if (path.startsWith("/api/admin/users")) {
             return "Admin Users";
         }
@@ -262,6 +269,12 @@ public class OpenApiConfig {
         }
         if (path.startsWith("/api/patient/appointments")) {
             return "Patient Appointments";
+        }
+        if (path.startsWith("/api/staff/appointments")) {
+            return "Staff Appointments";
+        }
+        if (path.startsWith("/api/staff/payments")) {
+            return "Staff Payments";
         }
         if (path.startsWith("/api/doctor/appointments")) {
             return path.contains("/payment") ? "Doctor Payments" : "Doctor Appointments";

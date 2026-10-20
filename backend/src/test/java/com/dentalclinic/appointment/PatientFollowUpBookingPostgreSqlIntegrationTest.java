@@ -1,11 +1,11 @@
 package com.dentalclinic.appointment;
 
-import com.dentalclinic.appointment.dto.CreateFollowUpAppointmentRequest;
-import com.dentalclinic.appointment.dto.FollowUpAppointmentResponse;
+import com.dentalclinic.appointment.dto.BookAppointmentRequest;
+import com.dentalclinic.appointment.dto.BookAppointmentResponse;
 import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
-import com.dentalclinic.appointment.service.FollowUpAppointmentService;
+import com.dentalclinic.appointment.service.AppointmentBookingService;
 import com.dentalclinic.common.exception.ConflictException;
 import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.doctor.entity.Doctor;
@@ -19,7 +19,6 @@ import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
-import com.dentalclinic.schedule.dto.AvailableSlotResponse;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
@@ -55,7 +54,6 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -65,41 +63,34 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 @ActiveProfiles("development")
 @Transactional
-@Import(FollowUpAppointmentPostgreSqlIntegrationTest.FixedClockConfiguration.class)
-class FollowUpAppointmentPostgreSqlIntegrationTest {
+@Import(PatientFollowUpBookingPostgreSqlIntegrationTest.FixedClockConfiguration.class)
+class PatientFollowUpBookingPostgreSqlIntegrationTest {
 
-    private static final String TEST_JWT_SECRET = generateSecret();
+    private static final String TEST_JWT_SECRET = Encoders.BASE64.encode(
+            Jwts.SIG.HS256.key().build().getEncoded()
+    );
     private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final Instant FIXED_NOW = Instant.parse("2026-10-12T03:00:00Z");
     private static final LocalDate FOLLOW_UP_DATE = LocalDate.of(2026, 10, 20);
 
     @Autowired
-    private FollowUpAppointmentService followUpAppointmentService;
-
+    private AppointmentBookingService bookingService;
     @Autowired
     private UserRepository userRepository;
-
     @Autowired
     private PatientRepository patientRepository;
-
     @Autowired
     private DoctorRepository doctorRepository;
-
     @Autowired
     private DentalServiceRepository dentalServiceRepository;
-
     @Autowired
     private DoctorServiceRepository doctorServiceRepository;
-
     @Autowired
     private DoctorScheduleRepository doctorScheduleRepository;
-
     @Autowired
     private AppointmentRepository appointmentRepository;
-
     @Autowired
     private MedicalRecordRepository medicalRecordRepository;
-
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -108,7 +99,7 @@ class FollowUpAppointmentPostgreSqlIntegrationTest {
     @DynamicPropertySource
     static void testProperties(DynamicPropertyRegistry registry) {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
-        registry.add("security.jwt.issuer", () -> "follow-up-integration-test");
+        registry.add("security.jwt.issuer", () -> "patient-follow-up-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
         registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
         registry.add("clinic.appointment.booking-min-advance-minutes", () -> 120);
@@ -120,50 +111,19 @@ class FollowUpAppointmentPostgreSqlIntegrationTest {
     }
 
     @Test
-    void shouldReturnAvailableFollowUpSlotsAndExcludeOccupiedSlot() {
-        List<AvailableSlotResponse> slots = followUpAppointmentService.getFollowUpSlots(
-                fixture.doctorUserId(),
-                fixture.previousAppointmentId(),
-                fixture.serviceId(),
-                FOLLOW_UP_DATE
-        );
-
-        assertThat(slots).extracting(AvailableSlotResponse::startTime)
-                .containsExactly(
-                        LocalTime.of(8, 0),
-                        LocalTime.of(9, 0),
-                        LocalTime.of(11, 0)
-                );
-        assertThat(slots).extracting(slot -> slot.startAt().toString())
-                .containsExactly(
-                        "2026-10-20T08:00+07:00",
-                        "2026-10-20T09:00+07:00",
-                        "2026-10-20T11:00+07:00"
-                );
-    }
-
-    @Test
-    void shouldCreateBookedFollowUpWithPreviousAppointmentAndDoctorAudit() {
+    void shouldCreatePatientOwnedFollowUpAndPatientAudit() {
         OffsetDateTime scheduledStartAt = OffsetDateTime.parse(
                 "2026-10-20T09:00:00+07:00"
         );
 
-        FollowUpAppointmentResponse response = followUpAppointmentService.createFollowUp(
-                fixture.doctorUserId(),
-                fixture.previousAppointmentId(),
-                new CreateFollowUpAppointmentRequest(
-                        fixture.serviceId(),
-                        scheduledStartAt
-                )
+        BookAppointmentResponse response = bookingService.book(
+                fixture.patientUserId(),
+                request(scheduledStartAt)
         );
 
         assertThat(response.previousAppointmentId()).isEqualTo(fixture.previousAppointmentId());
         assertThat(response.patientId()).isEqualTo(fixture.patientId());
-        assertThat(response.doctorId()).isEqualTo(fixture.doctorId());
-        assertThat(response.serviceId()).isEqualTo(fixture.serviceId());
         assertThat(response.status()).isEqualTo(AppointmentStatus.BOOKED);
-        assertThat(response.scheduledStartAt()).isEqualTo(scheduledStartAt);
-        assertThat(response.scheduledEndAt()).isEqualTo(scheduledStartAt.plusHours(1));
 
         Map<String, Object> appointmentRow = jdbcTemplate.queryForMap("""
                 select patient_id,
@@ -185,43 +145,47 @@ class FollowUpAppointmentPostgreSqlIntegrationTest {
         assertThat(appointmentRow.get("status")).isEqualTo("BOOKED");
 
         Map<String, Object> historyRow = jdbcTemplate.queryForMap("""
-                select action::text as action,
-                       changed_by,
+                select changed_by,
                        details ->> 'booking_type' as booking_type,
-                       details ->> 'previous_appointment_id' as previous_appointment_id,
-                       details ->> 'scheduled_start_at' as scheduled_start_at
+                       details ->> 'previous_appointment_id' as previous_appointment_id
                 from appointment_histories
-                where appointment_id = ?
+                where appointment_id = ? and action = 'BOOK'
                 """, response.id());
-        assertThat(historyRow.get("action")).isEqualTo("BOOK");
-        assertThat(historyRow.get("changed_by")).isEqualTo(fixture.doctorUserId());
+        assertThat(historyRow.get("changed_by")).isEqualTo(fixture.patientUserId());
         assertThat(historyRow.get("booking_type")).isEqualTo("FOLLOW_UP");
         assertThat(historyRow.get("previous_appointment_id"))
                 .isEqualTo(fixture.previousAppointmentId().toString());
-        assertThat(historyRow.get("scheduled_start_at"))
-                .isEqualTo("2026-10-20T09:00+07:00");
     }
 
     @Test
-    void shouldRejectOccupiedFollowUpSlotAndCreateNoAppointment() {
-        long countBefore = appointmentCount();
+    void shouldRejectASecondActiveFollowUpFromSameRecommendation() {
+        bookingService.book(
+                fixture.patientUserId(),
+                request(OffsetDateTime.parse("2026-10-20T09:00:00+07:00"))
+        );
 
-        assertThatThrownBy(() -> followUpAppointmentService.createFollowUp(
-                fixture.doctorUserId(),
-                fixture.previousAppointmentId(),
-                new CreateFollowUpAppointmentRequest(
-                        fixture.serviceId(),
-                        OffsetDateTime.parse("2026-10-20T10:00:00+07:00")
-                )
+        assertThatThrownBy(() -> bookingService.book(
+                fixture.patientUserId(),
+                request(OffsetDateTime.parse("2026-10-20T11:00:00+07:00"))
         )).isInstanceOf(ConflictException.class)
-                .hasMessage("Khung giờ vừa được người khác đặt. Vui lòng chọn khung giờ khác");
+                .hasMessage("Chỉ định tái khám đã có một lịch hẹn đang hoạt động");
 
-        assertThat(appointmentCount()).isEqualTo(countBefore);
-        assertThat(followUpCount(fixture.previousAppointmentId())).isZero();
+        assertThat(followUpCount()).isEqualTo(1);
     }
 
     @Test
-    void shouldRejectFollowUpWhenMedicalRecordDoesNotRequireIt() {
+    void shouldRejectAnotherPatientsPreviousAppointmentId() {
+        assertThatThrownBy(() -> bookingService.book(
+                fixture.otherPatientUserId(),
+                request(OffsetDateTime.parse("2026-10-20T09:00:00+07:00"))
+        )).isInstanceOf(NotFoundException.class)
+                .hasMessage("Không tìm thấy lịch khám trước");
+
+        assertThat(followUpCount()).isZero();
+    }
+
+    @Test
+    void shouldRejectFollowUpWhenMedicalRecordNoLongerRequiresIt() {
         MedicalRecord medicalRecord = medicalRecordRepository
                 .findByAppointmentId(fixture.previousAppointmentId())
                 .orElseThrow();
@@ -230,84 +194,69 @@ class FollowUpAppointmentPostgreSqlIntegrationTest {
         medicalRecord.setFollowUpNote(null);
         medicalRecordRepository.saveAndFlush(medicalRecord);
 
-        assertThatThrownBy(() -> followUpAppointmentService.createFollowUp(
-                fixture.doctorUserId(),
-                fixture.previousAppointmentId(),
-                new CreateFollowUpAppointmentRequest(
-                        fixture.serviceId(),
-                        OffsetDateTime.parse("2026-10-20T09:00:00+07:00")
-                )
+        assertThatThrownBy(() -> bookingService.book(
+                fixture.patientUserId(),
+                request(OffsetDateTime.parse("2026-10-20T09:00:00+07:00"))
         )).isInstanceOf(ConflictException.class)
                 .hasMessage("Bệnh án không yêu cầu tái khám");
-
-        assertThat(followUpCount(fixture.previousAppointmentId())).isZero();
-    }
-
-    @Test
-    void shouldNotAllowAnotherDoctorToCreateFollowUp() {
-        assertThatThrownBy(() -> followUpAppointmentService.createFollowUp(
-                fixture.otherDoctorUserId(),
-                fixture.previousAppointmentId(),
-                new CreateFollowUpAppointmentRequest(
-                        fixture.serviceId(),
-                        OffsetDateTime.parse("2026-10-20T09:00:00+07:00")
-                )
-        )).isInstanceOf(NotFoundException.class)
-                .hasMessage("Không tìm thấy lịch hẹn");
-
-        assertThat(followUpCount(fixture.previousAppointmentId())).isZero();
     }
 
     private Fixture createFixture() {
         String marker = UUID.randomUUID().toString();
         User doctorUser = saveUser(
-                "phase21-doctor-" + marker + "@example.com",
-                "Bác sĩ Phase 21",
+                "phase263-doctor-" + marker + "@example.com",
+                "Bác sĩ Phase 26.3",
                 Role.DOCTOR
         );
-        Doctor doctor = saveDoctor(doctorUser, "PHASE21-A-" + marker);
-        User otherDoctorUser = saveUser(
-                "phase21-other-doctor-" + marker + "@example.com",
-                "Bác sĩ khác Phase 21",
-                Role.DOCTOR
-        );
-        saveDoctor(otherDoctorUser, "PHASE21-B-" + marker);
+        Doctor doctor = saveDoctor(doctorUser, "PHASE263-" + marker);
         User patientUser = saveUser(
-                "phase21-patient-" + marker + "@example.com",
-                "Bệnh nhân Phase 21",
+                "phase263-patient-" + marker + "@example.com",
+                "Bệnh nhân Phase 26.3",
                 Role.PATIENT
         );
         Patient patient = savePatient(patientUser);
-        DentalService service = saveService("Điều trị tủy Phase 21 " + marker);
+        User otherPatientUser = saveUser(
+                "phase263-other-patient-" + marker + "@example.com",
+                "Bệnh nhân khác Phase 26.3",
+                Role.PATIENT
+        );
+        savePatient(otherPatientUser);
+        DentalService service = saveService("Điều trị tái khám Phase 26.3 " + marker);
         DoctorService mapping = saveMapping(doctor, service);
         saveSchedule(doctor);
 
-        Appointment previousAppointment = saveAppointment(
+        Appointment previous = saveAppointment(
                 patient,
                 mapping,
                 Instant.parse("2026-10-12T00:00:00Z"),
                 AppointmentStatus.COMPLETED
         );
-        previousAppointment.setCheckedInAt(Instant.parse("2026-10-11T23:55:00Z"));
-        previousAppointment.setActualStartAt(Instant.parse("2026-10-12T00:05:00Z"));
-        previousAppointment.setActualEndAt(Instant.parse("2026-10-12T00:45:00Z"));
-        appointmentRepository.saveAndFlush(previousAppointment);
-        saveMedicalRecord(previousAppointment);
-
-        saveAppointment(
-                patient,
-                mapping,
-                toInstant(FOLLOW_UP_DATE, LocalTime.of(10, 0)),
-                AppointmentStatus.BOOKED
-        );
+        MedicalRecord medicalRecord = new MedicalRecord();
+        medicalRecord.setAppointment(previous);
+        medicalRecord.setDiagnosis("Chẩn đoán cần tái khám");
+        medicalRecord.setTreatment("Điều trị lần đầu");
+        medicalRecord.setPrescription(JsonNodeFactory.instance.arrayNode());
+        medicalRecord.setFollowUpRequired(true);
+        medicalRecord.setRecommendedFollowUpDate(FOLLOW_UP_DATE);
+        medicalRecord.setFollowUpNote("Tái khám theo lịch phù hợp");
+        medicalRecordRepository.saveAndFlush(medicalRecord);
 
         return new Fixture(
-                doctorUser.getId(),
-                otherDoctorUser.getId(),
+                patientUser.getId(),
+                otherPatientUser.getId(),
                 doctor.getId(),
                 patient.getId(),
                 service.getId(),
-                previousAppointment.getId()
+                previous.getId()
+        );
+    }
+
+    private BookAppointmentRequest request(OffsetDateTime startAt) {
+        return new BookAppointmentRequest(
+                fixture.doctorId(),
+                fixture.serviceId(),
+                startAt,
+                fixture.previousAppointmentId()
         );
     }
 
@@ -342,7 +291,7 @@ class FollowUpAppointmentPostgreSqlIntegrationTest {
     private DentalService saveService(String name) {
         DentalService service = new DentalService();
         service.setName(name);
-        service.setDescription("Dịch vụ kiểm thử lịch tái khám");
+        service.setDescription("Dịch vụ kiểm thử Patient tự đặt tái khám");
         service.setPrice(new BigDecimal("500000"));
         service.setActive(true);
         return dentalServiceRepository.saveAndFlush(service);
@@ -380,45 +329,18 @@ class FollowUpAppointmentPostgreSqlIntegrationTest {
         return appointmentRepository.saveAndFlush(appointment);
     }
 
-    private void saveMedicalRecord(Appointment appointment) {
-        MedicalRecord medicalRecord = new MedicalRecord();
-        medicalRecord.setAppointment(appointment);
-        medicalRecord.setDiagnosis("Viêm tủy");
-        medicalRecord.setTreatment("Điều trị tủy lần 1");
-        medicalRecord.setTreatmentPlan("Điều trị tủy lần 2");
-        medicalRecord.setPrescription(JsonNodeFactory.instance.arrayNode());
-        medicalRecord.setFollowUpRequired(true);
-        medicalRecord.setRecommendedFollowUpDate(FOLLOW_UP_DATE);
-        medicalRecord.setFollowUpNote("Tiếp tục điều trị tủy");
-        medicalRecordRepository.saveAndFlush(medicalRecord);
-    }
-
-    private long appointmentCount() {
-        Long count = jdbcTemplate.queryForObject("select count(*) from appointments", Long.class);
-        return count == null ? 0 : count;
-    }
-
-    private int followUpCount(UUID previousAppointmentId) {
+    private int followUpCount() {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*)
                 from appointments
                 where previous_appointment_id = ?
-                """, Integer.class, previousAppointmentId);
+                """, Integer.class, fixture.previousAppointmentId());
         return count == null ? 0 : count;
     }
 
-    private Instant toInstant(LocalDate date, LocalTime time) {
-        return date.atTime(time).atZone(CLINIC_ZONE).toInstant();
-    }
-
-    private static String generateSecret() {
-        SecretKey key = Jwts.SIG.HS256.key().build();
-        return Encoders.BASE64.encode(key.getEncoded());
-    }
-
     private record Fixture(
-            UUID doctorUserId,
-            UUID otherDoctorUserId,
+            UUID patientUserId,
+            UUID otherPatientUserId,
             UUID doctorId,
             UUID patientId,
             UUID serviceId,

@@ -396,6 +396,46 @@ class PaymentServiceTest {
     }
 
     @Test
+    void shouldAllowActiveStaffToConfirmUnpaidPayment() {
+        Fixture fixture = fixture();
+        fixture.appointment().setStatus(AppointmentStatus.COMPLETED);
+        Payment payment = draftPayment(fixture.appointment(), List.of(
+                snapshot(fixture.originalService(), "100000.00", 1, false)
+        ));
+        payment.setStatus(PaymentStatus.UNPAID);
+        User staff = user(Role.STAFF, "Nhân viên thu ngân");
+        when(userRepository.findById(staff.getId())).thenReturn(Optional.of(staff));
+        when(paymentRepository.findForUpdateDetailedById(payment.getId()))
+                .thenReturn(Optional.of(payment));
+        when(paymentRepository.saveAndFlush(payment)).thenReturn(payment);
+
+        PaymentResponse response = paymentService.confirmPayment(
+                staff.getId(),
+                payment.getId(),
+                PaymentMethod.BANK_TRANSFER
+        );
+
+        assertThat(response.status()).isEqualTo(PaymentStatus.PAID);
+        assertThat(response.confirmedById()).isEqualTo(staff.getId());
+        assertThat(payment.getConfirmedBy()).isSameAs(staff);
+    }
+
+    @Test
+    void shouldHideDraftPaymentsFromStaff() {
+        assertThatThrownBy(() -> paymentService.getStaffPayments(
+                null,
+                PaymentStatus.DRAFT,
+                null,
+                null,
+                0,
+                20,
+                "createdAt",
+                null
+        )).isInstanceOf(BusinessException.class)
+                .hasMessage("Nhân viên không được xem phiếu thanh toán DRAFT");
+    }
+
+    @Test
     void shouldRejectDraftAndAlreadyPaidConfirmation() {
         Fixture fixture = fixture();
         User admin = admin();
