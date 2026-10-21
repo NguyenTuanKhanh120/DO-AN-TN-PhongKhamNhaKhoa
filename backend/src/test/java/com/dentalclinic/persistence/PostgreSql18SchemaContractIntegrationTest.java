@@ -97,6 +97,7 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(businessTables).containsExactly(
                 "appointment_histories",
                 "appointments",
+                "auth_sessions",
                 "chat_messages",
                 "chat_sessions",
                 "dental_services",
@@ -104,9 +105,11 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "doctor_schedules",
                 "doctor_services",
                 "doctors",
+                "medical_record_drafts",
                 "medical_records",
                 "patients",
                 "payments",
+                "refresh_tokens",
                 "users",
                 "vector_store"
         );
@@ -207,6 +210,40 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(phase263MigrationSucceeded).isTrue();
         assertThat(roles).containsExactly("ADMIN", "DOCTOR", "PATIENT", "STAFF");
         assertThat(activeFollowUpIndex).isEqualTo(1);
+
+        Boolean phase264MigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '5'",
+                Boolean.class
+        );
+        List<String> sessionStatuses = jdbcTemplate.queryForList(
+                "select unnest(enum_range(null::auth_session_status_enum))::text",
+                String.class
+        );
+        Integer currentRefreshTokenIndex = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_class index_relation
+                        join pg_index index_metadata
+                          on index_metadata.indexrelid = index_relation.oid
+                        where index_relation.relname = 'ux_refresh_tokens_session_current'
+                          and index_metadata.indisunique
+                          and index_metadata.indpred is not null
+                        """,
+                Integer.class
+        );
+        Integer draftObjectConstraint = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_constraint
+                        where conname = 'ck_medical_record_drafts_object'
+                          and contype = 'c'
+                        """,
+                Integer.class
+        );
+        assertThat(phase264MigrationSucceeded).isTrue();
+        assertThat(sessionStatuses).containsExactly("ACTIVE", "LOCKED", "REVOKED");
+        assertThat(currentRefreshTokenIndex).isEqualTo(1);
+        assertThat(draftObjectConstraint).isEqualTo(1);
     }
 
     @Test

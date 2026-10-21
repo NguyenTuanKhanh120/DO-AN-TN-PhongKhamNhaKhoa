@@ -43,7 +43,7 @@ class OpenApiDocumentationIntegrationTest {
     static void testProperties(DynamicPropertyRegistry registry) {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "openapi-integration-test");
-        registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
+        registry.add("security.jwt.access-token-expiration-minutes", () -> 15);
         registry.add("app.cors.allowed-origins", () -> ALLOWED_ORIGIN);
         registry.add("springdoc.api-docs.enabled", () -> true);
         registry.add("springdoc.swagger-ui.enabled", () -> true);
@@ -89,6 +89,8 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(loginSuccess.path("data").path("accessToken").asText())
                 .isEqualTo("<JWT_ACCESS_TOKEN>");
         assertThat(loginSuccess.path("data").path("tokenType").asText()).isEqualTo("Bearer");
+        assertThat(loginSuccess.path("data").path("expiresInSeconds").asLong()).isEqualTo(900);
+        assertThat(loginSuccess.path("data").has("refreshToken")).isFalse();
         assertThat(loginSuccess.path("data").path("email").asText()).isEqualTo("<EMAIL>");
         assertThat(loginSuccess.path("data").path("fullName").asText()).isEqualTo("<FULL_NAME>");
         assertThat(loginSuccess.path("data").path("role").asText())
@@ -109,6 +111,24 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(registrationSuccess.path("code").asText()).isEqualTo("SUCCESS");
         assertThat(registrationSuccess.has("errors")).isFalse();
         assertThat(registrationSuccess.has("path")).isFalse();
+
+        JsonNode refresh = operation(document, "/api/auth/refresh", "post");
+        assertThat(refresh.has("security")).isFalse();
+        assertThat(refresh.path("parameters").toString()).contains("X-XSRF-TOKEN");
+        assertThat(refresh.path("description").asText()).contains("refresh_token", "double-submit CSRF");
+        assertThat(responseExample(refresh, "200").path("data").has("refreshToken")).isFalse();
+
+        JsonNode session = operation(document, "/api/auth/session", "get");
+        assertThat(session.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
+        JsonNode activity = operation(document, "/api/auth/activity", "post");
+        assertThat(activity.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
+
+        JsonNode draft = operation(
+                document,
+                "/api/doctor/appointments/{id}/medical-record/draft",
+                "put"
+        );
+        assertThat(draft.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
 
         JsonNode createDayOff = operation(
                 document,
@@ -189,6 +209,9 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(schemas.has("PaymentResponse")).isTrue();
         assertThat(schemas.has("ConfirmPaymentRequest")).isTrue();
         assertThat(schemas.has("RevenueSummaryResponse")).isTrue();
+        assertThat(schemas.has("AuthSessionResponse")).isTrue();
+        assertThat(schemas.has("MedicalRecordDraftRequest")).isTrue();
+        assertThat(schemas.has("MedicalRecordDraftResponse")).isTrue();
         assertThat(schemas.has("ErrorResponse")).isTrue();
         assertThat(schemas.has("UserPrincipal")).isFalse();
         assertAllSchemaReferencesResolve(document, schemas);
@@ -213,6 +236,7 @@ class OpenApiDocumentationIntegrationTest {
                         ))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED_ORIGIN))
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"))
                 .andExpect(header().string(
                         HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS,
                         org.hamcrest.Matchers.containsString("POST")

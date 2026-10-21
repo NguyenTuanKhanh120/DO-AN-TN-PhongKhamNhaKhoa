@@ -10,6 +10,7 @@ import io.swagger.v3.oas.models.media.BooleanSchema;
 import io.swagger.v3.oas.models.media.ObjectSchema;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.media.StringSchema;
+import io.swagger.v3.oas.models.parameters.HeaderParameter;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.tags.Tag;
@@ -31,6 +32,21 @@ public class OpenApiConfig {
     private static final String ERROR_SCHEMA = "ErrorResponse";
     private static final String LOGIN_ENDPOINT = "/api/auth/login";
     private static final String REGISTER_ENDPOINT = "/api/auth/register";
+    private static final String REFRESH_ENDPOINT = "/api/auth/refresh";
+    private static final String LOGOUT_ENDPOINT = "/api/auth/logout";
+    private static final String UNLOCK_ENDPOINT = "/api/auth/unlock";
+    private static final Set<String> PUBLIC_AUTH_ENDPOINTS = Set.of(
+            REGISTER_ENDPOINT,
+            LOGIN_ENDPOINT,
+            REFRESH_ENDPOINT,
+            LOGOUT_ENDPOINT,
+            UNLOCK_ENDPOINT
+    );
+    private static final Set<String> COOKIE_CSRF_ENDPOINTS = Set.of(
+            REFRESH_ENDPOINT,
+            LOGOUT_ENDPOINT,
+            UNLOCK_ENDPOINT
+    );
     private static final Set<String> CREATED_ENDPOINTS = Set.of(
             "POST /api/auth/register",
             "POST /api/admin/staff",
@@ -61,7 +77,9 @@ public class OpenApiConfig {
                         .contact(new Contact().name("Dental Clinic Backend Team")))
                 .components(components)
                 .tags(List.of(
-                        new Tag().name("Authentication").description("Đăng ký bệnh nhân và đăng nhập"),
+                        new Tag().name("Authentication").description(
+                                "Đăng ký, đăng nhập và quản lý phiên bằng Refresh Token rotation"
+                        ),
                         new Tag().name("Patient Profile").description("Hồ sơ cá nhân của bệnh nhân"),
                         new Tag().name("Admin Users").description("Quản lý tài khoản bởi quản trị viên"),
                         new Tag().name("Admin Staff").description("Quản lý tài khoản nhân viên lễ tân - thu ngân"),
@@ -93,11 +111,12 @@ public class OpenApiConfig {
             openApi.getPaths().forEach((path, pathItem) ->
                     pathItem.readOperationsMap().forEach((method, operation) -> {
                         operation.setTags(List.of(resolveTag(path)));
-                        boolean protectedEndpoint = !isPublicEndpoint(path);
+                        boolean protectedEndpoint = !isPublicEndpoint(path, method.name());
                         if (protectedEndpoint) {
                             operation.addSecurityItem(new SecurityRequirement().addList(BEARER_AUTH));
                         }
                         addExecutionResultNote(path, operation);
+                        addCookieCsrfDocumentation(path, operation);
 
                         normalizeCreatedResponse(path, method.name(), operation);
                         addSuccessExample(path, method.name(), operation);
@@ -161,11 +180,8 @@ public class OpenApiConfig {
         Map<String, Object> example = new LinkedHashMap<>();
         example.put("success", true);
         example.put("code", ErrorCode.SUCCESS.name());
-        if (path.equals(LOGIN_ENDPOINT) || path.equals(REGISTER_ENDPOINT)) {
-            boolean login = path.equals(LOGIN_ENDPOINT);
-            example.put("message", login
-                    ? "Đăng nhập thành công"
-                    : "Đăng ký tài khoản thành công");
+        if (returnsAuthentication(path)) {
+            example.put("message", authenticationSuccessMessage(path));
             example.put("data", authResponseExample(path));
         } else {
             example.put("message", ErrorCode.SUCCESS.getDefaultMessage());
@@ -175,16 +191,55 @@ public class OpenApiConfig {
     }
 
     private Map<String, Object> authResponseExample(String path) {
-        boolean login = path.equals(LOGIN_ENDPOINT);
+        boolean registration = path.equals(REGISTER_ENDPOINT);
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("accessToken", "<JWT_ACCESS_TOKEN>");
         data.put("tokenType", "Bearer");
-        data.put("expiresInSeconds", 3600);
-        data.put("userId", login ? "<USER_ID>" : "00000000-0000-0000-0000-000000000000");
-        data.put("email", login ? "<EMAIL>" : "patient@example.com");
-        data.put("fullName", login ? "<FULL_NAME>" : "Nguyễn Văn A");
-        data.put("role", login ? "<PATIENT|DOCTOR|ADMIN|STAFF>" : "PATIENT");
+        data.put("expiresInSeconds", 900);
+        data.put("userId", registration
+                ? "00000000-0000-0000-0000-000000000000"
+                : "<USER_ID>");
+        data.put("email", registration ? "patient@example.com" : "<EMAIL>");
+        data.put("fullName", registration ? "Nguyễn Văn A" : "<FULL_NAME>");
+        data.put("role", registration ? "PATIENT" : "<PATIENT|DOCTOR|ADMIN|STAFF>");
         return data;
+    }
+
+    private boolean returnsAuthentication(String path) {
+        return path.equals(REGISTER_ENDPOINT)
+                || path.equals(LOGIN_ENDPOINT)
+                || path.equals(REFRESH_ENDPOINT)
+                || path.equals(UNLOCK_ENDPOINT);
+    }
+
+    private String authenticationSuccessMessage(String path) {
+        return switch (path) {
+            case REGISTER_ENDPOINT -> "Đăng ký tài khoản thành công";
+            case REFRESH_ENDPOINT -> "Làm mới Access Token thành công";
+            case UNLOCK_ENDPOINT -> "Mở khóa phiên thành công";
+            default -> "Đăng nhập thành công";
+        };
+    }
+
+    private void addCookieCsrfDocumentation(
+            String path,
+            io.swagger.v3.oas.models.Operation operation
+    ) {
+        if (!COOKIE_CSRF_ENDPOINTS.contains(path)) {
+            return;
+        }
+        operation.addParametersItem(new HeaderParameter()
+                .name("X-XSRF-TOKEN")
+                .required(true)
+                .description("Giá trị lấy từ cookie XSRF-TOKEN của phiên hiện tại")
+                .schema(new StringSchema()));
+        String currentDescription = operation.getDescription() == null
+                ? ""
+                : operation.getDescription() + "\n\n";
+        operation.setDescription(currentDescription + """
+                Refresh Token được trình duyệt gửi bằng cookie `refresh_token` HttpOnly. Endpoint yêu cầu
+                double-submit CSRF: cookie `XSRF-TOKEN` và header `X-XSRF-TOKEN` phải trùng khớp.
+                """);
     }
 
     private Schema<?> errorResponseSchema() {
@@ -205,6 +260,8 @@ public class OpenApiConfig {
                 Backend modular monolith cho hệ thống quản lý phòng khám nha khoa.
 
                 Các API bảo vệ sử dụng header `Authorization: Bearer <access-token>`.
+                Access Token có hiệu lực 15 phút. Refresh Token không xuất hiện trong JSON mà được gửi bằng
+                cookie HttpOnly; các API dùng cookie yêu cầu header `X-XSRF-TOKEN`.
                 Thời gian nghiệp vụ sử dụng múi giờ `Asia/Ho_Chi_Minh`; timestamp trao đổi theo ISO-8601.
 
                 ### Error codes
@@ -219,12 +276,14 @@ public class OpenApiConfig {
         return description.toString();
     }
 
-    private boolean isPublicEndpoint(String path) {
-        return path.startsWith("/api/auth/")
-                || path.equals("/api/doctors")
-                || path.startsWith("/api/doctors/")
-                || path.equals("/api/services")
-                || path.startsWith("/api/services/");
+    private boolean isPublicEndpoint(String path, String method) {
+        return ("POST".equals(method) && PUBLIC_AUTH_ENDPOINTS.contains(path))
+                || ("GET".equals(method) && (
+                        path.equals("/api/doctors")
+                                || path.startsWith("/api/doctors/")
+                                || path.equals("/api/services")
+                                || path.startsWith("/api/services/")
+                ));
     }
 
     private String resolveTag(String path) {

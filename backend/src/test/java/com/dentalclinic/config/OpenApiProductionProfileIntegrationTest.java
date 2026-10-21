@@ -33,7 +33,7 @@ class OpenApiProductionProfileIntegrationTest {
     static void testProperties(DynamicPropertyRegistry registry) {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "openapi-production-profile-test");
-        registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
+        registry.add("security.jwt.access-token-expiration-minutes", () -> 15);
     }
 
     @Test

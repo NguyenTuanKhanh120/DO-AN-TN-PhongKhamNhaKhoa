@@ -1,5 +1,7 @@
 package com.dentalclinic.auth.security;
 
+import com.dentalclinic.auth.exception.SessionException;
+import com.dentalclinic.auth.service.AuthSessionService;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -7,7 +9,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,24 +17,22 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.UUID;
-
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtTokenProvider jwtTokenProvider;
-    private final CustomUserDetailsService userDetailsService;
+    private final AuthSessionService authSessionService;
     private final RestSecurityExceptionHandler securityExceptionHandler;
 
     public JwtAuthenticationFilter(
             JwtTokenProvider jwtTokenProvider,
-            CustomUserDetailsService userDetailsService,
+            AuthSessionService authSessionService,
             RestSecurityExceptionHandler securityExceptionHandler
     ) {
         this.jwtTokenProvider = jwtTokenProvider;
-        this.userDetailsService = userDetailsService;
+        this.authSessionService = authSessionService;
         this.securityExceptionHandler = securityExceptionHandler;
     }
 
@@ -50,11 +49,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         try {
-            UUID userId = jwtTokenProvider.extractUserId(token);
-            UserPrincipal principal = userDetailsService.loadUserById(userId);
-            if (!principal.isEnabled()) {
-                throw new DisabledException("User account is inactive");
-            }
+            AccessTokenClaims claims = jwtTokenProvider.extractAccessTokenClaims(token);
+            UserPrincipal principal = authSessionService.authenticateAccessToken(claims);
 
             UsernamePasswordAuthenticationToken authentication =
                     UsernamePasswordAuthenticationToken.authenticated(
@@ -65,6 +61,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authentication);
             filterChain.doFilter(request, response);
+        } catch (SessionException exception) {
+            SecurityContextHolder.clearContext();
+            securityExceptionHandler.writeError(
+                    response,
+                    request,
+                    exception.getErrorCode()
+            );
         } catch (JwtException | AuthenticationException exception) {
             SecurityContextHolder.clearContext();
             securityExceptionHandler.commence(

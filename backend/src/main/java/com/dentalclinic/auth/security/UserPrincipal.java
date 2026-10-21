@@ -19,6 +19,7 @@ public final class UserPrincipal implements UserDetails {
     private final String fullName;
     private final Role role;
     private final UserStatus status;
+    private final UUID sessionId;
     private final List<GrantedAuthority> authorities;
 
     private UserPrincipal(
@@ -27,7 +28,8 @@ public final class UserPrincipal implements UserDetails {
             String passwordHash,
             String fullName,
             Role role,
-            UserStatus status
+            UserStatus status,
+            UUID sessionId
     ) {
         this.id = id;
         this.email = email;
@@ -35,6 +37,7 @@ public final class UserPrincipal implements UserDetails {
         this.fullName = fullName;
         this.role = role;
         this.status = status;
+        this.sessionId = sessionId;
         this.authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
@@ -45,7 +48,20 @@ public final class UserPrincipal implements UserDetails {
                 user.getPasswordHash(),
                 user.getFullName(),
                 user.getRole(),
-                user.getStatus()
+                user.getStatus(),
+                null
+        );
+    }
+
+    public UserPrincipal withSessionId(UUID authenticatedSessionId) {
+        return new UserPrincipal(
+                id,
+                email,
+                passwordHash,
+                fullName,
+                role,
+                status,
+                authenticatedSessionId
         );
     }
 
@@ -63,6 +79,10 @@ public final class UserPrincipal implements UserDetails {
 
     public Role getRole() {
         return role;
+    }
+
+    public UUID getSessionId() {
+        return sessionId;
     }
 
     @Override

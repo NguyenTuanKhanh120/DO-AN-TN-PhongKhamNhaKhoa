@@ -127,8 +127,8 @@ class AdminUserManagementPostgreSqlIntegrationTest {
 
         mockMvc.perform(get("/api/patients/me")
                         .header(HttpHeaders.AUTHORIZATION, bearer(patientToken)))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_INACTIVE"));
 
         mockMvc.perform(get("/api/admin/users/{id}", UUID.randomUUID())
                         .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))

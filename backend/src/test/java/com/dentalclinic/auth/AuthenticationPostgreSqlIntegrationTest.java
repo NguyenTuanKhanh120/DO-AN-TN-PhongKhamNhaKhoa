@@ -69,7 +69,7 @@ class AuthenticationPostgreSqlIntegrationTest {
     static void jwtProperties(DynamicPropertyRegistry registry) {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "dental-clinic-integration-test");
-        registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
+        registry.add("security.jwt.access-token-expiration-minutes", () -> 15);
     }
 
     @Test
@@ -148,8 +148,8 @@ class AuthenticationPostgreSqlIntegrationTest {
 
         mockMvc.perform(get("/api/test/current")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_INACTIVE"));
 
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -1,5 +1,7 @@
 package com.dentalclinic.config;
 
+import com.dentalclinic.auth.config.AuthCookieProperties;
+import com.dentalclinic.auth.config.AuthSessionProperties;
 import com.dentalclinic.auth.security.CustomUserDetailsService;
 import com.dentalclinic.auth.security.JwtAuthenticationFilter;
 import com.dentalclinic.auth.security.JwtProperties;
@@ -28,7 +30,12 @@ import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties({JwtProperties.class, CorsProperties.class})
+@EnableConfigurationProperties({
+        JwtProperties.class,
+        CorsProperties.class,
+        AuthSessionProperties.class,
+        AuthCookieProperties.class
+})
 public class SecurityConfig {
 
     @Bean
@@ -65,7 +72,14 @@ public class SecurityConfig {
                         .accessDeniedHandler(securityExceptionHandler))
                 .authorizeHttpRequests(authorize -> authorize
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/auth/register",
+                                "/api/auth/login",
+                                "/api/auth/refresh",
+                                "/api/auth/logout",
+                                "/api/auth/unlock"
+                        ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/doctors", "/api/doctors/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/services", "/api/services/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
@@ -85,8 +99,13 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(corsProperties.allowedOrigins());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
-        configuration.setAllowCredentials(false);
+        configuration.setAllowedHeaders(List.of(
+                "Authorization",
+                "Content-Type",
+                "Accept",
+                "X-XSRF-TOKEN"
+        ));
+        configuration.setAllowCredentials(true);
         configuration.setMaxAge(3_600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

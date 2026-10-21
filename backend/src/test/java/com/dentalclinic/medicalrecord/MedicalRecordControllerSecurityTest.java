@@ -1,6 +1,7 @@
 package com.dentalclinic.medicalrecord;
 
 import com.dentalclinic.auth.security.CustomUserDetailsService;
+import com.dentalclinic.auth.service.AuthSessionService;
 import com.dentalclinic.auth.security.JwtAuthenticationFilter;
 import com.dentalclinic.auth.security.JwtTokenProvider;
 import com.dentalclinic.auth.security.RestSecurityExceptionHandler;
@@ -8,6 +9,8 @@ import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.exception.GlobalExceptionHandler;
 import com.dentalclinic.config.SecurityConfig;
 import com.dentalclinic.medicalrecord.controller.MedicalRecordController;
+import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftRequest;
+import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftResponse;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordRequest;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordResponse;
 import com.dentalclinic.medicalrecord.dto.PrescriptionItem;
@@ -36,6 +39,7 @@ import java.util.UUID;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -63,6 +67,9 @@ class MedicalRecordControllerSecurityTest {
 
     @MockitoBean
     private CustomUserDetailsService userDetailsService;
+
+    @MockitoBean
+    private AuthSessionService authSessionService;
 
     @DynamicPropertySource
     static void jwtProperties(DynamicPropertyRegistry registry) {
@@ -167,6 +174,66 @@ class MedicalRecordControllerSecurityTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors.length()").value(8));
+    }
+
+    @Test
+    void shouldAllowDoctorToSaveAndRestoreIncompleteDraft() throws Exception {
+        UserPrincipal principal = principal();
+        UUID appointmentId = UUID.randomUUID();
+        MedicalRecordDraftRequest request = new MedicalRecordDraftRequest(
+                "Chẩn đoán đang nhập",
+                null,
+                null,
+                null,
+                List.of(),
+                null,
+                null,
+                null
+        );
+        MedicalRecordDraftResponse response = new MedicalRecordDraftResponse(
+                UUID.randomUUID(),
+                appointmentId,
+                request.diagnosis(),
+                null,
+                null,
+                null,
+                List.of(),
+                null,
+                null,
+                null,
+                Instant.parse("2026-10-21T08:00:00Z"),
+                Instant.parse("2026-10-21T08:00:00Z")
+        );
+        when(medicalRecordService.saveDraft(principal.getId(), appointmentId, request))
+                .thenReturn(response);
+        when(medicalRecordService.getDraft(principal.getId(), appointmentId))
+                .thenReturn(response);
+
+        mockMvc.perform(put(
+                        "/api/doctor/appointments/{id}/medical-record/draft",
+                        appointmentId
+                ).with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "diagnosis": "Chẩn đoán đang nhập",
+                                  "prescription": []
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Lưu bản nháp bệnh án thành công"))
+                .andExpect(jsonPath("$.data.diagnosis").value("Chẩn đoán đang nhập"));
+
+        mockMvc.perform(get(
+                        "/api/doctor/appointments/{id}/medical-record/draft",
+                        appointmentId
+                ).with(user(principal)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.appointmentId").value(appointmentId.toString()))
+                .andExpect(jsonPath("$.data.treatment").doesNotExist());
+
+        verify(medicalRecordService).saveDraft(principal.getId(), appointmentId, request);
+        verify(medicalRecordService).getDraft(principal.getId(), appointmentId);
     }
 
     private String validRequestJson() {

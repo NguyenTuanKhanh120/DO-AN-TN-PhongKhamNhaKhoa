@@ -14,6 +14,8 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
 
+import com.dentalclinic.user.entity.Role;
+
 @Component
 public class JwtTokenProvider {
 
@@ -31,7 +33,7 @@ public class JwtTokenProvider {
         this.accessTokenLifetime = Duration.ofMinutes(properties.accessTokenExpirationMinutes());
     }
 
-    public String generateAccessToken(UserPrincipal principal) {
+    public String generateAccessToken(UserPrincipal principal, UUID sessionId) {
         Instant issuedAt = clock.instant();
         Instant expiresAt = issuedAt.plus(accessTokenLifetime);
 
@@ -39,6 +41,7 @@ public class JwtTokenProvider {
                 .subject(principal.getId().toString())
                 .issuer(properties.issuer())
                 .claim("role", principal.getRole().name())
+                .claim("sid", sessionId.toString())
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(expiresAt))
                 .signWith(signingKey)
@@ -46,11 +49,18 @@ public class JwtTokenProvider {
     }
 
     public UUID extractUserId(String token) {
-        String subject = parseClaims(token).getSubject();
+        return extractAccessTokenClaims(token).userId();
+    }
+
+    public AccessTokenClaims extractAccessTokenClaims(String token) {
+        Claims claims = parseClaims(token);
         try {
-            return UUID.fromString(subject);
+            UUID userId = UUID.fromString(claims.getSubject());
+            UUID sessionId = UUID.fromString(claims.get("sid", String.class));
+            Role role = Role.valueOf(claims.get("role", String.class));
+            return new AccessTokenClaims(userId, sessionId, role);
         } catch (RuntimeException exception) {
-            throw new MalformedJwtException("JWT subject is not a valid user identifier", exception);
+            throw new MalformedJwtException("JWT session claims are invalid", exception);
         }
     }
 

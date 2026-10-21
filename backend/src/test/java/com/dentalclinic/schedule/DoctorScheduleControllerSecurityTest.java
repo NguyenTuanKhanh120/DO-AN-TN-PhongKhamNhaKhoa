@@ -1,6 +1,7 @@
 package com.dentalclinic.schedule;
 
 import com.dentalclinic.auth.security.CustomUserDetailsService;
+import com.dentalclinic.auth.service.AuthSessionService;
 import com.dentalclinic.auth.security.JwtAuthenticationFilter;
 import com.dentalclinic.auth.security.JwtTokenProvider;
 import com.dentalclinic.auth.security.RestSecurityExceptionHandler;
@@ -73,6 +74,9 @@ class DoctorScheduleControllerSecurityTest {
 
     @MockitoBean
     private CustomUserDetailsService userDetailsService;
+
+    @MockitoBean
+    private AuthSessionService authSessionService;
 
     @DynamicPropertySource
     static void jwtProperties(DynamicPropertyRegistry registry) {

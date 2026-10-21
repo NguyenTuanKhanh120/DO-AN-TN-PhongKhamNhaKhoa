@@ -1,10 +1,8 @@
 package com.dentalclinic.auth.service;
 
-import com.dentalclinic.auth.dto.AuthResponse;
 import com.dentalclinic.auth.dto.LoginRequest;
 import com.dentalclinic.auth.dto.RegisterRequest;
 import com.dentalclinic.auth.security.BcryptPasswordValidator;
-import com.dentalclinic.auth.security.JwtTokenProvider;
 import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.constant.ErrorCode;
 import com.dentalclinic.common.exception.BusinessException;
@@ -35,24 +33,24 @@ public class AuthService {
     private final PatientRepository patientRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
-    private final JwtTokenProvider jwtTokenProvider;
+    private final AuthSessionService authSessionService;
 
     public AuthService(
             UserRepository userRepository,
             PatientRepository patientRepository,
             PasswordEncoder passwordEncoder,
             AuthenticationManager authenticationManager,
-            JwtTokenProvider jwtTokenProvider
+            AuthSessionService authSessionService
     ) {
         this.userRepository = userRepository;
         this.patientRepository = patientRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
-        this.jwtTokenProvider = jwtTokenProvider;
+        this.authSessionService = authSessionService;
     }
 
     @Transactional
-    public AuthResponse registerPatient(RegisterRequest request) {
+    public SessionAuthenticationResult registerPatient(RegisterRequest request) {
         BcryptPasswordValidator.validate(request.password());
         String normalizedEmail = normalizeEmail(request.email());
         if (userRepository.existsByEmail(normalizedEmail)) {
@@ -77,11 +75,11 @@ public class AuthService {
         patient.setGender(Gender.UNSPECIFIED);
         patientRepository.save(patient);
 
-        return createAuthResponse(UserPrincipal.from(user));
+        return authSessionService.startSession(UserPrincipal.from(user));
     }
 
-    @Transactional(readOnly = true)
-    public AuthResponse login(LoginRequest request) {
+    @Transactional
+    public SessionAuthenticationResult login(LoginRequest request) {
         BcryptPasswordValidator.validate(request.password());
         Authentication authentication;
         try {
@@ -98,18 +96,7 @@ public class AuthService {
         }
 
         UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
-        return createAuthResponse(principal);
-    }
-
-    private AuthResponse createAuthResponse(UserPrincipal principal) {
-        return new AuthResponse(
-                jwtTokenProvider.generateAccessToken(principal),
-                jwtTokenProvider.getAccessTokenExpirationSeconds(),
-                principal.getId(),
-                principal.getEmail(),
-                principal.getFullName(),
-                principal.getRole()
-        );
+        return authSessionService.startSession(principal);
     }
 
     private String normalizeEmail(String email) {

@@ -54,7 +54,23 @@ security:
     # Required Base64-encoded secret containing at least 256 bits.
     secret: ${JWT_SECRET}
     issuer: ${JWT_ISSUER:dental-clinic-backend}
-    access-token-expiration-minutes: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES:60}
+    access-token-expiration-minutes: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES:15}
+  session:
+    admin:
+      absolute-lifetime: ${ADMIN_SESSION_ABSOLUTE_LIFETIME:8h}
+      idle-timeout: ${ADMIN_SESSION_IDLE_TIMEOUT:15m}
+    doctor:
+      absolute-lifetime: ${DOCTOR_SESSION_ABSOLUTE_LIFETIME:12h}
+      idle-timeout: ${DOCTOR_SESSION_IDLE_TIMEOUT:20m}
+    staff:
+      absolute-lifetime: ${STAFF_SESSION_ABSOLUTE_LIFETIME:12h}
+      idle-timeout: ${STAFF_SESSION_IDLE_TIMEOUT:20m}
+    patient:
+      absolute-lifetime: ${PATIENT_SESSION_ABSOLUTE_LIFETIME:7d}
+  auth-cookie:
+    secure: ${AUTH_COOKIE_SECURE:false}
+    same-site: ${AUTH_COOKIE_SAME_SITE:Lax}
+    domain: ${AUTH_COOKIE_DOMAIN:}
 
 logging:
   level:

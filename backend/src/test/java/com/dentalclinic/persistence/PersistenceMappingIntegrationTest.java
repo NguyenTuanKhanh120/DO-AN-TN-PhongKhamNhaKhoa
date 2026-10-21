@@ -6,6 +6,11 @@ import com.dentalclinic.appointment.entity.AppointmentHistory;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
 import com.dentalclinic.appointment.repository.AppointmentHistoryRepository;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
+import com.dentalclinic.auth.entity.AuthSession;
+import com.dentalclinic.auth.entity.AuthSessionStatus;
+import com.dentalclinic.auth.entity.RefreshToken;
+import com.dentalclinic.auth.repository.AuthSessionRepository;
+import com.dentalclinic.auth.repository.RefreshTokenRepository;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.doctor.entity.DoctorServiceId;
@@ -13,7 +18,9 @@ import com.dentalclinic.doctor.entity.DoctorStatus;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.medicalrecord.entity.MedicalRecord;
+import com.dentalclinic.medicalrecord.entity.MedicalRecordDraft;
 import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
+import com.dentalclinic.medicalrecord.repository.MedicalRecordDraftRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
@@ -65,6 +72,9 @@ class PersistenceMappingIntegrationTest {
     private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final MedicalRecordRepository medicalRecordRepository;
     private final PaymentRepository paymentRepository;
+    private final AuthSessionRepository authSessionRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final MedicalRecordDraftRepository medicalRecordDraftRepository;
     private final EntityManager entityManager;
 
     @Autowired
@@ -80,6 +90,9 @@ class PersistenceMappingIntegrationTest {
             AppointmentHistoryRepository appointmentHistoryRepository,
             MedicalRecordRepository medicalRecordRepository,
             PaymentRepository paymentRepository,
+            AuthSessionRepository authSessionRepository,
+            RefreshTokenRepository refreshTokenRepository,
+            MedicalRecordDraftRepository medicalRecordDraftRepository,
             EntityManager entityManager
     ) {
         this.userRepository = userRepository;
@@ -93,11 +106,14 @@ class PersistenceMappingIntegrationTest {
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.medicalRecordRepository = medicalRecordRepository;
         this.paymentRepository = paymentRepository;
+        this.authSessionRepository = authSessionRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
+        this.medicalRecordDraftRepository = medicalRecordDraftRepository;
         this.entityManager = entityManager;
     }
 
     @Test
-    void persistsElevenBusinessEntitiesWithPostgreSqlSpecificMappings() {
+    void persistsPhase264EntitiesWithPostgreSqlSpecificMappings() {
         String testId = UUID.randomUUID().toString();
 
         User patientUser = createUser("patient-" + testId + "@example.com", "Phase 02 Patient", Role.PATIENT);
@@ -167,6 +183,12 @@ class PersistenceMappingIntegrationTest {
         history.setDetails(JsonNodeFactory.instance.objectNode().put("source", "phase02-test"));
         appointmentHistoryRepository.saveAndFlush(history);
 
+        MedicalRecordDraft medicalRecordDraft = new MedicalRecordDraft();
+        medicalRecordDraft.setAppointment(appointment);
+        medicalRecordDraft.setDraftData(JsonNodeFactory.instance.objectNode()
+                .put("diagnosis", "Draft diagnosis"));
+        medicalRecordDraftRepository.saveAndFlush(medicalRecordDraft);
+
         MedicalRecord medicalRecord = new MedicalRecord();
         medicalRecord.setAppointment(appointment);
         medicalRecord.setDiagnosis("Persistence test diagnosis");
@@ -193,10 +215,32 @@ class PersistenceMappingIntegrationTest {
         payment.setStatus(PaymentStatus.DRAFT);
         paymentRepository.saveAndFlush(payment);
 
+        Instant loggedInAt = Instant.parse("2030-01-01T00:00:00Z");
+        AuthSession authSession = new AuthSession();
+        authSession.setUserId(patientUser.getId());
+        authSession.setRole(Role.PATIENT);
+        authSession.setStatus(AuthSessionStatus.ACTIVE);
+        authSession.setLoggedInAt(loggedInAt);
+        authSession.setAbsoluteExpiresAt(loggedInAt.plusSeconds(7 * 24 * 60 * 60));
+        authSession.setLastActivityAt(loggedInAt);
+        authSession.setIdleTimeoutSeconds(null);
+        authSession.setCsrfTokenHash("a".repeat(64));
+        authSessionRepository.saveAndFlush(authSession);
+
+        RefreshToken refreshToken = new RefreshToken();
+        refreshToken.setSession(authSession);
+        refreshToken.setTokenHash("b".repeat(64));
+        refreshToken.setIssuedAt(loggedInAt);
+        refreshToken.setExpiresAt(authSession.getAbsoluteExpiresAt());
+        refreshTokenRepository.saveAndFlush(refreshToken);
+
         UUID appointmentId = appointment.getId();
         UUID historyId = history.getId();
         UUID medicalRecordId = medicalRecord.getId();
         UUID paymentId = payment.getId();
+        UUID medicalRecordDraftId = medicalRecordDraft.getId();
+        UUID authSessionId = authSession.getId();
+        UUID refreshTokenId = refreshToken.getId();
         entityManager.clear();
 
         Appointment persistedAppointment = appointmentRepository.findById(appointmentId).orElseThrow();
@@ -205,6 +249,13 @@ class PersistenceMappingIntegrationTest {
         DoctorSchedule persistedSchedule = doctorScheduleRepository.findById(schedule.getId()).orElseThrow();
         DoctorDayOff persistedDayOff = doctorDayOffRepository.findById(dayOff.getId()).orElseThrow();
         Payment persistedPayment = paymentRepository.findById(paymentId).orElseThrow();
+        MedicalRecordDraft persistedDraft = medicalRecordDraftRepository
+                .findById(medicalRecordDraftId)
+                .orElseThrow();
+        AuthSession persistedSession = authSessionRepository.findById(authSessionId).orElseThrow();
+        RefreshToken persistedRefreshToken = refreshTokenRepository
+                .findById(refreshTokenId)
+                .orElseThrow();
 
         assertThat(persistedAppointment.getStatus()).isEqualTo(AppointmentStatus.BOOKED);
         assertThat(persistedAppointment.getScheduledStartAt()).isEqualTo(Instant.parse("2030-01-07T01:00:00Z"));
@@ -236,6 +287,15 @@ class PersistenceMappingIntegrationTest {
         assertThat(persistedPayment.getCreatedAt()).isNotNull();
         assertThat(persistedPayment.getUpdatedAt()).isNotNull();
         assertThat(persistedAppointment.getPatient().getGender()).isEqualTo(Gender.FEMALE);
+        assertThat(persistedDraft.getDraftData().path("diagnosis").asText())
+                .isEqualTo("Draft diagnosis");
+        assertThat(persistedDraft.getUpdatedAt()).isNotNull();
+        assertThat(persistedSession.getStatus()).isEqualTo(AuthSessionStatus.ACTIVE);
+        assertThat(persistedSession.getAbsoluteExpiresAt())
+                .isEqualTo(loggedInAt.plusSeconds(7 * 24 * 60 * 60));
+        assertThat(persistedRefreshToken.getSession().getId()).isEqualTo(authSessionId);
+        assertThat(persistedRefreshToken.getExpiresAt())
+                .isEqualTo(persistedSession.getAbsoluteExpiresAt());
     }
 
     private User createUser(String email, String fullName, Role role) {
