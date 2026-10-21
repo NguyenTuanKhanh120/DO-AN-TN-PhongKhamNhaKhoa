@@ -5,9 +5,13 @@ import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordResponse;
+import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftPrescriptionItem;
+import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftRequest;
+import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftResponse;
 import com.dentalclinic.medicalrecord.dto.PatientMedicalRecordResponse;
 import com.dentalclinic.medicalrecord.dto.PrescriptionItem;
 import com.dentalclinic.medicalrecord.entity.MedicalRecord;
+import com.dentalclinic.medicalrecord.entity.MedicalRecordDraft;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -15,6 +19,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -97,6 +102,91 @@ public class MedicalRecordMapper {
                 item.path("instructions").asText()
         )));
         return List.copyOf(items);
+    }
+
+    public JsonNode toDraftJson(MedicalRecordDraftRequest request) {
+        var draft = JsonNodeFactory.instance.objectNode();
+        putNullable(draft, "diagnosis", request.diagnosis());
+        putNullable(draft, "treatment", request.treatment());
+        putNullable(draft, "treatmentPlan", request.treatmentPlan());
+        putNullable(draft, "notes", request.notes());
+
+        ArrayNode prescription = draft.putArray("prescription");
+        if (request.prescription() != null) {
+            request.prescription().forEach(item -> {
+                var itemNode = prescription.addObject();
+                putNullable(itemNode, "medicationName", item.medicationName());
+                putNullable(itemNode, "dosage", item.dosage());
+                if (item.quantity() == null) {
+                    itemNode.putNull("quantity");
+                } else {
+                    itemNode.put("quantity", item.quantity());
+                }
+                putNullable(itemNode, "instructions", item.instructions());
+            });
+        }
+
+        if (request.followUpRequired() == null) {
+            draft.putNull("followUpRequired");
+        } else {
+            draft.put("followUpRequired", request.followUpRequired());
+        }
+        putNullable(
+                draft,
+                "recommendedFollowUpDate",
+                request.recommendedFollowUpDate() == null
+                        ? null
+                        : request.recommendedFollowUpDate().toString()
+        );
+        putNullable(draft, "followUpNote", request.followUpNote());
+        return draft;
+    }
+
+    public MedicalRecordDraftResponse toDraftResponse(MedicalRecordDraft draft) {
+        JsonNode data = draft.getDraftData();
+        List<MedicalRecordDraftPrescriptionItem> prescription = new ArrayList<>();
+        JsonNode items = data.path("prescription");
+        if (items.isArray()) {
+            items.forEach(item -> prescription.add(new MedicalRecordDraftPrescriptionItem(
+                    nullableText(item.get("medicationName")),
+                    nullableText(item.get("dosage")),
+                    item.path("quantity").canConvertToInt() ? item.path("quantity").intValue() : null,
+                    nullableText(item.get("instructions"))
+            )));
+        }
+        String recommendedDate = nullableText(data.get("recommendedFollowUpDate"));
+        return new MedicalRecordDraftResponse(
+                draft.getId(),
+                draft.getAppointment().getId(),
+                nullableText(data.get("diagnosis")),
+                nullableText(data.get("treatment")),
+                nullableText(data.get("treatmentPlan")),
+                nullableText(data.get("notes")),
+                List.copyOf(prescription),
+                data.path("followUpRequired").isBoolean()
+                        ? data.path("followUpRequired").booleanValue()
+                        : null,
+                recommendedDate == null ? null : LocalDate.parse(recommendedDate),
+                nullableText(data.get("followUpNote")),
+                draft.getCreatedAt(),
+                draft.getUpdatedAt()
+        );
+    }
+
+    private void putNullable(
+            com.fasterxml.jackson.databind.node.ObjectNode node,
+            String field,
+            String value
+    ) {
+        if (value == null) {
+            node.putNull(field);
+        } else {
+            node.put(field, value);
+        }
+    }
+
+    private String nullableText(JsonNode node) {
+        return node == null || node.isNull() ? null : node.asText();
     }
 
     private OffsetDateTime toClinicOffset(Instant instant) {

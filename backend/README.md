@@ -1,14 +1,18 @@
 # Dental Clinic Backend
 
-Spring Boot backend for the dental clinic management system. The repository currently includes **PHASE 26.3 — Staff Management, Simplified Examination and Patient Follow-up Booking**.
+Spring Boot backend for the dental clinic management system. The repository currently includes **PHASE 26.4 — Refresh Token, Server-side Sessions and Medical Record Autosave**.
 
 ## Implemented
 
 - Java 21, Spring Boot 3.5, Maven and PostgreSQL 18.
-- Flyway V1–V4 migrations for the 14-table schema.
+- Flyway V1–V5 migrations for the 17-table schema.
 - JPA entities and repositories for the first nine business tables.
 - Common API response, pagination and exception handling.
-- Patient registration and login with BCrypt and JWT access tokens.
+- Patient registration and login with BCrypt, 15-minute JWT access tokens and rotating Refresh Tokens.
+- PostgreSQL-backed login sessions for ADMIN, DOCTOR, STAFF and PATIENT; Refresh Tokens are stored only as SHA-256 hashes.
+- Fixed absolute session limits: ADMIN 8 hours, DOCTOR/STAFF 12 hours and PATIENT 7 days; refresh never extends the original deadline.
+- Idle lock applies only to ADMIN (15 minutes) and DOCTOR/STAFF (20 minutes), with password unlock inside the original absolute lifetime.
+- Cookie-based refresh/logout/unlock use HttpOnly Refresh Token cookies and double-submit CSRF validation.
 - Role-based authorization for ADMIN, STAFF, DOCTOR and PATIENT.
 - Patient self-service profile APIs.
 - Admin user search, filtering, pagination, detail and status management.
@@ -41,6 +45,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Per-doctor transactional locking prevents a second appointment from entering `IN_PROGRESS` before the current examination is completed.
 - Doctor-owned NO_SHOW confirmation after the configured 15-minute grace period, with checked-in protection and NO_SHOW audit history.
 - Doctor-owned medical-record creation and update while an appointment is `IN_PROGRESS`.
+- PostgreSQL-backed incomplete MedicalRecord drafts can be saved and restored only by the responsible doctor; a draft neither completes an examination nor replaces the validated final record.
 - Typed prescription DTOs persisted as a JSONB array, one medical record per appointment and mandatory recommended date when follow-up is required.
 - Doctors record only services actually performed while an appointment is `IN_PROGRESS`; names and catalog prices are persisted as immutable JSONB snapshots in a DRAFT payment.
 - Payment item prices are always loaded from PostgreSQL, quantities are validated, duplicate services are rejected and additional services must be active and assigned to the responsible doctor.
@@ -57,10 +62,10 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Admins can inspect each appointment's chronological audit timeline with action, actor, reason, JSONB details and timestamp.
 - Admin dashboard summary reports patient and doctor totals plus today's appointment status counts using the clinic timezone.
 - PostgreSQL integration tests cover the appointment lifecycle, transaction rollback and concurrent booking/rescheduling races.
-- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V4, all 14 tables, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
+- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V5, all 17 tables, session/token/draft constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
 - OpenAPI 3 documentation exposes typed request/response schemas, reusable error responses and JWT Bearer authorization.
 - Swagger UI and OpenAPI JSON are public in development and disabled by default in production.
-- React clients are supported through an environment-controlled CORS allowlist without cookie credentials.
+- React clients are supported through an exact-origin CORS allowlist with credentialed requests for auth cookies.
 - Unit, security and PostgreSQL integration tests run without H2, Docker or an alternate database.
 
 Frontend and AI chatbot features are not implemented yet.
@@ -85,6 +90,8 @@ Copy the names from `.env.example` into the terminal or the deployment environme
 | `SPRING_PROFILES_ACTIVE` | No | `development` by default; use `production` when deploying |
 | `CLINIC_TIMEZONE` | No | Business timezone, defaults to `Asia/Ho_Chi_Minh` |
 | `CORS_ALLOWED_ORIGINS` | Frontend | Comma-separated exact origins, for example `http://localhost:5173` |
+| `AUTH_COOKIE_SECURE` | No | `false` for local HTTP development; must be `true` on production HTTPS |
+| `AUTH_COOKIE_SAME_SITE` | No | Refresh/CSRF cookie SameSite policy; defaults to `Lax` |
 | `OPENAPI_ENABLED` | No | Enables `/v3/api-docs`; defaults to `false` in production |
 | `SWAGGER_UI_ENABLED` | No | Enables Swagger UI; defaults to `false` in production |
 
@@ -104,7 +111,7 @@ FROM pg_available_extensions
 WHERE name IN ('vector', 'uuid-ossp');
 ```
 
-Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql), [V2__add_doctor_days_off.sql](./src/main/resources/db/migration/V2__add_doctor_days_off.sql), [V3__add_payments.sql](./src/main/resources/db/migration/V3__add_payments.sql) and [V4__phase_26_3_staff_and_follow_up.sql](./src/main/resources/db/migration/V4__phase_26_3_staff_and_follow_up.sql). Hibernate only validates the schema through `ddl-auto=validate`.
+Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql), [V2__add_doctor_days_off.sql](./src/main/resources/db/migration/V2__add_doctor_days_off.sql), [V3__add_payments.sql](./src/main/resources/db/migration/V3__add_payments.sql), [V4__phase_26_3_staff_and_follow_up.sql](./src/main/resources/db/migration/V4__phase_26_3_staff_and_follow_up.sql) and [V5__auth_sessions_and_medical_record_drafts.sql](./src/main/resources/db/migration/V5__auth_sessions_and_medical_record_drafts.sql). Hibernate only validates the schema through `ddl-auto=validate`.
 
 ## Run
 
@@ -130,7 +137,7 @@ With the development profile running:
 - Swagger UI: `http://localhost:8081/swagger-ui.html`
 - OpenAPI JSON: `http://localhost:8081/v3/api-docs`
 
-Use `POST /api/auth/login`, copy `data.accessToken`, select **Authorize** in Swagger UI and enter the token. Swagger adds the `Bearer` prefix through the configured HTTP security scheme.
+Use `POST /api/auth/login`, copy `data.accessToken`, select **Authorize** in Swagger UI and enter the token. Swagger adds the `Bearer` prefix through the configured HTTP security scheme. The browser receives `refresh_token` (HttpOnly) and `XSRF-TOKEN` cookies; refresh/logout/unlock additionally require the `X-XSRF-TOKEN` header.
 
 Public endpoints do not require a token. Patient, doctor, staff and admin endpoints document the JWT requirement and return `401` for missing/invalid authentication or `403` for insufficient role permissions.
 
@@ -171,8 +178,9 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 | HTTP | Codes |
 |---:|---|
 | 400 | `INVALID_REQUEST`, `VALIDATION_FAILED`, `MALFORMED_REQUEST`, `PASSWORD_TOO_LONG` |
-| 401 | `AUTHENTICATION_REQUIRED`, `INVALID_CREDENTIALS` |
-| 403 | `ACCOUNT_INACTIVE`, `ACCESS_DENIED` |
+| 401 | `AUTHENTICATION_REQUIRED`, `INVALID_CREDENTIALS`, `SESSION_EXPIRED`, `SESSION_REVOKED`, `REFRESH_TOKEN_INVALID`, `REFRESH_TOKEN_REUSED` |
+| 403 | `ACCOUNT_INACTIVE`, `ACCESS_DENIED`, `CSRF_VALIDATION_FAILED` |
+| 423 | `SESSION_LOCKED` |
 | 404 | `RESOURCE_NOT_FOUND` |
 | 405 | `METHOD_NOT_ALLOWED` |
 | 409 | `RESOURCE_CONFLICT`, `EMAIL_ALREADY_EXISTS`, `LICENSE_NUMBER_ALREADY_EXISTS`, `SERVICE_NAME_ALREADY_EXISTS`, `SCHEDULE_ALREADY_EXISTS` |
@@ -182,6 +190,11 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 
 - `POST /api/auth/register`
 - `POST /api/auth/login`
+- `POST /api/auth/refresh`
+- `POST /api/auth/logout`
+- `POST /api/auth/activity`
+- `POST /api/auth/unlock`
+- `GET /api/auth/session`
 - `GET /api/patients/me`
 - `PUT /api/patients/me`
 - `GET /api/admin/users`
@@ -220,6 +233,8 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `PATCH /api/doctor/appointments/{id}/no-show`
 - `POST /api/doctor/appointments/{id}/medical-record`
 - `PUT /api/doctor/appointments/{id}/medical-record`
+- `PUT /api/doctor/appointments/{id}/medical-record/draft`
+- `GET /api/doctor/appointments/{id}/medical-record/draft`
 - `PATCH /api/doctor/appointments/{id}/complete`
 - `GET /api/doctor/appointments/{id}/payment`
 - `PUT /api/doctor/appointments/{id}/payment/items`
@@ -249,7 +264,10 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 ## React integration notes
 
 - Configure the frontend API base URL as `http://localhost:8081` in development.
-- Send access tokens with `Authorization: Bearer <token>`; this demo intentionally has no refresh-token endpoint.
+- Keep the Access Token in React memory and send it with `Authorization: Bearer <token>`; do not place either token in `localStorage`.
+- Send auth-cookie requests with credentials. Read `XSRF-TOKEN` and mirror it in `X-XSRF-TOKEN` for refresh, logout and unlock.
+- If React and the API use different subdomains, configure `AUTH_COOKIE_DOMAIN` for their shared parent domain; prefer a same-origin reverse proxy in production.
+- Only explicit user interaction should call `/api/auth/activity`; background refresh and MedicalRecord autosave must not keep an idle ADMIN/DOCTOR/STAFF session active.
 - Configure `CORS_ALLOWED_ORIGINS` with exact React origins. Wildcard origins are not used.
 - Treat `401` as an expired/missing session, `403` as insufficient permission and `409` as a recoverable business conflict.
 - A cancelled appointment may include `cancellationReason`, `cancellationSource` and `cancelledAt`. `DOCTOR_DAY_OFF` identifies a clinic cancellation; the public response never exposes the doctor's internal day-off reason.
@@ -294,6 +312,7 @@ Staff/Admin confirmation example:
 - Swagger UI and `/v3/api-docs` are disabled by default under the `production` profile. Enable them only with `SWAGGER_UI_ENABLED=true` and `OPENAPI_ENABLED=true` when operationally required.
 - Set a new Base64 JWT secret with at least 256 bits and keep it outside source control.
 - Set `CORS_ALLOWED_ORIGINS` to the exact HTTPS frontend origins; an empty production value denies cross-origin browser requests.
+- Keep `AUTH_COOKIE_SECURE=true` in production and terminate traffic over HTTPS.
 - Keep PostgreSQL SCRAM authentication enabled and provide database credentials through environment variables.
 
 ## Test

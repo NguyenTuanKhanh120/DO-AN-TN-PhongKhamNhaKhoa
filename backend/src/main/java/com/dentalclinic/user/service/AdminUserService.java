@@ -1,6 +1,7 @@
 package com.dentalclinic.user.service;
 
 import com.dentalclinic.auth.security.BcryptPasswordValidator;
+import com.dentalclinic.auth.service.AuthSessionService;
 import com.dentalclinic.common.constant.ErrorCode;
 import com.dentalclinic.common.exception.BusinessException;
 import com.dentalclinic.common.exception.ConflictException;
@@ -36,15 +37,18 @@ public class AdminUserService {
     private final UserRepository userRepository;
     private final AdminAccountLockRepository adminAccountLockRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuthSessionService authSessionService;
 
     public AdminUserService(
             UserRepository userRepository,
             AdminAccountLockRepository adminAccountLockRepository,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            AuthSessionService authSessionService
     ) {
         this.userRepository = userRepository;
         this.adminAccountLockRepository = adminAccountLockRepository;
         this.passwordEncoder = passwordEncoder;
+        this.authSessionService = authSessionService;
     }
 
     @Transactional
@@ -141,6 +145,9 @@ public class AdminUserService {
             throw new NotFoundException("Không tìm thấy tài khoản nhân viên");
         }
         if (target.getStatus() == status) {
+            if (status == UserStatus.INACTIVE) {
+                authSessionService.revokeAllForUser(target.getId());
+            }
             return toResponse(target);
         }
         if (status == UserStatus.INACTIVE && target.getRole() == Role.ADMIN) {
@@ -162,6 +169,9 @@ public class AdminUserService {
 
         target.setStatus(status);
         userRepository.saveAndFlush(target);
+        if (status == UserStatus.INACTIVE) {
+            authSessionService.revokeAllForUser(target.getId());
+        }
         return toResponse(target);
     }
 

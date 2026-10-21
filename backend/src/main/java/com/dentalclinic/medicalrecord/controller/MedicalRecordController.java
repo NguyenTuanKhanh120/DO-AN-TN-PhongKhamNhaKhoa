@@ -3,6 +3,8 @@ package com.dentalclinic.medicalrecord.controller;
 import com.dentalclinic.auth.security.CurrentUser;
 import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.response.ApiResponse;
+import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftRequest;
+import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftResponse;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordRequest;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordResponse;
 import com.dentalclinic.medicalrecord.service.MedicalRecordService;
@@ -10,6 +12,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -53,5 +56,25 @@ public class MedicalRecordController {
                 "Cập nhật bệnh án thành công",
                 medicalRecordService.update(currentUser.getId(), id, request)
         );
+    }
+
+    @PutMapping("/{id}/medical-record/draft")
+    public ApiResponse<MedicalRecordDraftResponse> saveDraft(
+            @CurrentUser UserPrincipal currentUser,
+            @PathVariable UUID id,
+            @Valid @RequestBody MedicalRecordDraftRequest request
+    ) {
+        return ApiResponse.success(
+                "Lưu bản nháp bệnh án thành công",
+                medicalRecordService.saveDraft(currentUser.getId(), id, request)
+        );
+    }
+
+    @GetMapping("/{id}/medical-record/draft")
+    public ApiResponse<MedicalRecordDraftResponse> getDraft(
+            @CurrentUser UserPrincipal currentUser,
+            @PathVariable UUID id
+    ) {
+        return ApiResponse.success(medicalRecordService.getDraft(currentUser.getId(), id));
     }
 }

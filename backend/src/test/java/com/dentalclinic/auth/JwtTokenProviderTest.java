@@ -31,18 +31,20 @@ class JwtTokenProviderTest {
         JwtTokenProvider provider = provider(properties, ISSUED_AT);
         UserPrincipal principal = principal();
 
-        String token = provider.generateAccessToken(principal);
+        UUID sessionId = UUID.randomUUID();
+        String token = provider.generateAccessToken(principal, sessionId);
 
         assertThat(provider.extractUserId(token)).isEqualTo(principal.getId());
-        assertThat(provider.getAccessTokenExpirationSeconds()).isEqualTo(3600L);
+        assertThat(provider.extractAccessTokenClaims(token).sessionId()).isEqualTo(sessionId);
+        assertThat(provider.getAccessTokenExpirationSeconds()).isEqualTo(900L);
     }
 
     @Test
     void shouldRejectExpiredTokenUsingInjectedClock() {
         JwtProperties properties = properties(generateSecret());
         JwtTokenProvider issuer = provider(properties, ISSUED_AT);
-        String token = issuer.generateAccessToken(principal());
-        JwtTokenProvider verifier = provider(properties, ISSUED_AT.plusSeconds(3601));
+        String token = issuer.generateAccessToken(principal(), UUID.randomUUID());
+        JwtTokenProvider verifier = provider(properties, ISSUED_AT.plusSeconds(901));
 
         assertThatThrownBy(() -> verifier.extractUserId(token))
                 .isInstanceOf(ExpiredJwtException.class);
@@ -51,7 +53,7 @@ class JwtTokenProviderTest {
     @Test
     void shouldRejectTokenSignedWithAnotherKey() {
         JwtTokenProvider issuer = provider(properties(generateSecret()), ISSUED_AT);
-        String token = issuer.generateAccessToken(principal());
+        String token = issuer.generateAccessToken(principal(), UUID.randomUUID());
         JwtTokenProvider verifier = provider(properties(generateSecret()), ISSUED_AT);
 
         assertThatThrownBy(() -> verifier.extractUserId(token))
@@ -72,7 +74,7 @@ class JwtTokenProviderTest {
     }
 
     private JwtProperties properties(String secret) {
-        return new JwtProperties(secret, "dental-clinic-test", 60);
+        return new JwtProperties(secret, "dental-clinic-test", 15);
     }
 
     private String generateSecret() {

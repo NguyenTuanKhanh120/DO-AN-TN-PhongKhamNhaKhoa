@@ -1,5 +1,6 @@
 package com.dentalclinic.user;
 
+import com.dentalclinic.auth.service.AuthSessionService;
 import com.dentalclinic.common.exception.ConflictException;
 import com.dentalclinic.common.exception.ForbiddenException;
 import com.dentalclinic.common.exception.NotFoundException;
@@ -49,6 +50,9 @@ class AdminUserServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private AuthSessionService authSessionService;
+
     private AdminUserService adminUserService;
 
     @BeforeEach
@@ -56,7 +60,8 @@ class AdminUserServiceTest {
         adminUserService = new AdminUserService(
                 userRepository,
                 adminAccountLockRepository,
-                passwordEncoder
+                passwordEncoder,
+                authSessionService
         );
     }
 
@@ -164,6 +169,7 @@ class AdminUserServiceTest {
         assertThat(response.status()).isEqualTo(UserStatus.INACTIVE);
         verify(adminAccountLockRepository).acquireTransactionLock();
         verify(userRepository).saveAndFlush(user);
+        verify(authSessionService).revokeAllForUser(user.getId());
     }
 
     @Test
@@ -181,6 +187,7 @@ class AdminUserServiceTest {
 
         assertThat(response.status()).isEqualTo(UserStatus.INACTIVE);
         verify(userRepository).saveAndFlush(doctor);
+        verify(authSessionService).revokeAllForUser(doctor.getId());
     }
 
     @Test
@@ -234,6 +241,7 @@ class AdminUserServiceTest {
 
         assertThat(response.status()).isEqualTo(UserStatus.INACTIVE);
         verify(userRepository).saveAndFlush(target);
+        verify(authSessionService).revokeAllForUser(target.getId());
     }
 
     @Test
@@ -268,6 +276,7 @@ class AdminUserServiceTest {
         assertThat(response.status()).isEqualTo(UserStatus.INACTIVE);
         verify(userRepository, never()).saveAndFlush(any(User.class));
         verify(userRepository, never()).countByRoleAndStatus(any(), any());
+        verify(authSessionService).revokeAllForUser(target.getId());
     }
 
     @Test

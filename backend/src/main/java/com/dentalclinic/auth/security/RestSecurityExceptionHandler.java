@@ -41,7 +41,7 @@ public class RestSecurityExceptionHandler implements AuthenticationEntryPoint, A
         writeError(response, request, ErrorCode.ACCESS_DENIED);
     }
 
-    private void writeError(
+    public void writeError(
             HttpServletResponse response,
             HttpServletRequest request,
             ErrorCode errorCode

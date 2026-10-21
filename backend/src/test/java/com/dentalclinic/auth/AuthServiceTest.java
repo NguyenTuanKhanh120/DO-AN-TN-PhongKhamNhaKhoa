@@ -3,9 +3,10 @@ package com.dentalclinic.auth;
 import com.dentalclinic.auth.dto.AuthResponse;
 import com.dentalclinic.auth.dto.LoginRequest;
 import com.dentalclinic.auth.dto.RegisterRequest;
-import com.dentalclinic.auth.security.JwtTokenProvider;
 import com.dentalclinic.auth.security.UserPrincipal;
+import com.dentalclinic.auth.service.AuthSessionService;
 import com.dentalclinic.auth.service.AuthService;
+import com.dentalclinic.auth.service.SessionAuthenticationResult;
 import com.dentalclinic.common.constant.ErrorCode;
 import com.dentalclinic.common.exception.BusinessException;
 import com.dentalclinic.patient.entity.Gender;
@@ -51,7 +52,7 @@ class AuthServiceTest {
     private AuthenticationManager authenticationManager;
 
     @Mock
-    private JwtTokenProvider jwtTokenProvider;
+    private AuthSessionService authSessionService;
 
     private PasswordEncoder passwordEncoder;
     private AuthService authService;
@@ -64,7 +65,7 @@ class AuthServiceTest {
                 patientRepository,
                 passwordEncoder,
                 authenticationManager,
-                jwtTokenProvider
+                authSessionService
         );
     }
 
@@ -77,14 +78,14 @@ class AuthServiceTest {
             user.setId(userId);
             return user;
         });
-        when(jwtTokenProvider.generateAccessToken(any(UserPrincipal.class))).thenReturn("access-token");
-        when(jwtTokenProvider.getAccessTokenExpirationSeconds()).thenReturn(3600L);
+        when(authSessionService.startSession(any(UserPrincipal.class)))
+                .thenAnswer(invocation -> authenticationResult(invocation.getArgument(0)));
 
         AuthResponse response = authService.registerPatient(new RegisterRequest(
                 " Patient@Example.com ",
                 "StrongPassword123!",
                 "  Nguyễn   Văn   An  "
-        ));
+        )).response();
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).saveAndFlush(userCaptor.capture());
@@ -103,7 +104,7 @@ class AuthServiceTest {
 
         assertThat(response.accessToken()).isEqualTo("access-token");
         assertThat(response.tokenType()).isEqualTo("Bearer");
-        assertThat(response.expiresInSeconds()).isEqualTo(3600L);
+        assertThat(response.expiresInSeconds()).isEqualTo(900L);
         assertThat(response.userId()).isEqualTo(userId);
         assertThat(response.role()).isEqualTo(Role.PATIENT);
     }
@@ -163,13 +164,12 @@ class AuthServiceTest {
         Authentication authentication = org.mockito.Mockito.mock(Authentication.class);
         when(authentication.getPrincipal()).thenReturn(principal);
         when(authenticationManager.authenticate(any(Authentication.class))).thenReturn(authentication);
-        when(jwtTokenProvider.generateAccessToken(principal)).thenReturn("access-token");
-        when(jwtTokenProvider.getAccessTokenExpirationSeconds()).thenReturn(3600L);
+        when(authSessionService.startSession(principal)).thenReturn(authenticationResult(principal));
 
         AuthResponse response = authService.login(new LoginRequest(
                 " Patient@Example.com ",
                 "StrongPassword123!"
-        ));
+        )).response();
 
         assertThat(response.accessToken()).isEqualTo("access-token");
         assertThat(response.email()).isEqualTo("patient@example.com");
@@ -213,5 +213,21 @@ class AuthServiceTest {
         user.setRole(Role.PATIENT);
         user.setStatus(status);
         return UserPrincipal.from(user);
+    }
+
+    private SessionAuthenticationResult authenticationResult(UserPrincipal principal) {
+        return new SessionAuthenticationResult(
+                new AuthResponse(
+                        "access-token",
+                        900,
+                        principal.getId(),
+                        principal.getEmail(),
+                        principal.getFullName(),
+                        principal.getRole()
+                ),
+                "refresh-token",
+                "csrf-token",
+                604800
+        );
     }
 }

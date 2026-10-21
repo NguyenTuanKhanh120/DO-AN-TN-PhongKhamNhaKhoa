@@ -449,9 +449,67 @@ Admin vẫn có endpoint xác nhận thanh toán làm phương án dự phòng.
 ## G. CHỨC NĂNG CHƯA CÓ TRONG HỆ THỐNG
 
 - Đăng ký tài khoản Doctor hoặc Admin từ trang công khai.
-- Refresh Token và API logout phía server.
 - Thanh toán trực tuyến và tích hợp cổng thanh toán.
 - Webhook ngân hàng, hoàn tiền hoặc trả góp.
 - Hóa đơn kế toán.
 - Frontend React.
 - AI Chatbot, Google Gemini, RAG và tư vấn triệu chứng.
+
+## H. QUẢN LÝ PHIÊN ĐĂNG NHẬP VÀ BẢN NHÁP BỆNH ÁN
+
+### UC53 - Đăng nhập và tạo phiên phía Backend
+
+- **Tác nhân:** Admin, Bác sĩ, Nhân viên, Bệnh nhân.
+- **Mục đích:** Tạo phiên đăng nhập có thể bị khóa, hết hạn hoặc thu hồi độc lập với Access Token.
+- **Luồng chính:** Người dùng đăng nhập bằng email và mật khẩu; Backend kiểm tra tài khoản; tạo `auth_sessions`; phát Access Token 15 phút; gửi Refresh Token bằng cookie HttpOnly và CSRF token bằng cookie riêng.
+- **Thời hạn tuyệt đối:** Admin 8 giờ; Doctor/Staff 12 giờ; Patient 7 ngày, tính từ lần đăng nhập ban đầu.
+- **Bảo mật:** PostgreSQL chỉ lưu hash Refresh Token; Refresh Token không xuất hiện trong JSON response.
+
+### UC54 - Làm mới Access Token
+
+- **Tác nhân:** Admin, Bác sĩ, Nhân viên, Bệnh nhân.
+- **Mục đích:** Tiếp tục phiên hợp lệ mà không nhập lại mật khẩu sau mỗi 15 phút.
+- **Luồng chính:** Client gửi cookie Refresh Token, cookie `XSRF-TOKEN` và header `X-XSRF-TOKEN`; Backend khóa phiên và token; kiểm tra trạng thái/tài khoản/thời hạn; đánh dấu token cũ đã dùng; phát token mới.
+- **Quy tắc:** Refresh Token Rotation bắt buộc; refresh không thay đổi thời hạn tuyệt đối hoặc `last_activity_at`.
+- **Concurrency:** Khóa bi quan theo phiên đảm bảo hai refresh đồng thời không tạo hai token hiện hành.
+- **Ngoại lệ:** Tái sử dụng token đã tiêu thụ sẽ thu hồi toàn bộ phiên.
+
+### UC55 - Ghi nhận hoạt động thực sự và khóa phiên
+
+- **Tác nhân:** Admin, Bác sĩ, Nhân viên.
+- **Mục đích:** Khóa màn hình khi người dùng rời máy nhưng chưa hết ca làm việc.
+- **Luồng chính:** Frontend chỉ gọi `/api/auth/activity` khi có tương tác thực sự; Backend cập nhật thời điểm hoạt động cuối.
+- **Ngưỡng:** Admin 15 phút; Doctor/Staff 20 phút; Patient không áp dụng.
+- **Quy tắc:** Request nền, refresh token và autosave bệnh án không tự cập nhật hoạt động.
+- **Kết quả:** Khi quá ngưỡng, API nghiệp vụ trả `SESSION_LOCKED` và không thực thi nghiệp vụ.
+
+### UC56 - Mở khóa phiên
+
+- **Tác nhân:** Admin, Bác sĩ, Nhân viên.
+- **Mục đích:** Tiếp tục phiên đang bị khóa mà không tạo phiên đăng nhập mới.
+- **Luồng chính:** Người dùng nhập lại mật khẩu; Backend kiểm tra Refresh Token, CSRF, tài khoản và thời hạn tuyệt đối; xác minh BCrypt; kích hoạt lại phiên và rotation token.
+- **Quy tắc:** Mở khóa không kéo dài thời hạn tuyệt đối ban đầu.
+- **Ngoại lệ:** Phiên đã hết hạn hoặc bị thu hồi bắt buộc đăng nhập lại.
+
+### UC57 - Đăng xuất và thu hồi phiên
+
+- **Tác nhân:** Admin, Bác sĩ, Nhân viên, Bệnh nhân.
+- **Mục đích:** Chấm dứt phiên ở Backend, không chỉ xóa dữ liệu phía trình duyệt.
+- **Luồng chính:** Client gửi Refresh Token và CSRF hợp lệ; Backend chuyển phiên sang `REVOKED`, thu hồi các token liên quan và xóa cookie ở response.
+- **Ảnh hưởng:** Access Token chưa hết 15 phút cũng bị từ chối vì mỗi request bảo vệ đều kiểm tra phiên phía Backend.
+- **Tài khoản vô hiệu hóa:** Mọi phiên còn hoạt động của tài khoản bị thu hồi.
+
+### UC58 - Xem trạng thái phiên hiện tại
+
+- **Tác nhân:** Admin, Bác sĩ, Nhân viên, Bệnh nhân.
+- **Mục đích:** Cho client biết role, trạng thái, thời hạn tuyệt đối, hoạt động gần nhất và chính sách Idle Lock của phiên.
+- **Bảo mật:** Endpoint yêu cầu Access Token và chỉ trả phiên gắn với chính token đó.
+
+### UC59 - Lưu và khôi phục bản nháp bệnh án
+
+- **Tác nhân:** Bác sĩ phụ trách Appointment.
+- **Mục đích:** Lưu nội dung khám chưa hoàn chỉnh lên PostgreSQL để tiếp tục sau khi mở khóa hoặc tải lại trang.
+- **Luồng chính:** Bác sĩ đang khám gửi dữ liệu có thể chưa đầy đủ; hệ thống upsert `medical_record_drafts`; bác sĩ đọc lại qua Appointment tương ứng.
+- **Điều kiện:** Appointment thuộc bác sĩ đăng nhập và đang `IN_PROGRESS`.
+- **Bảo mật:** Patient, Staff và bác sĩ khác không được đọc hoặc sửa bản nháp.
+- **Quy tắc:** Bản nháp không được dùng để tự động hoàn thành khám; khi lưu bệnh án chính thức thành công, bản nháp tương ứng bị xóa.

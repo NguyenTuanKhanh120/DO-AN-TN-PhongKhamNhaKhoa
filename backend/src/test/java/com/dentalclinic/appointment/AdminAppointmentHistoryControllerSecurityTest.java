@@ -6,6 +6,7 @@ import com.dentalclinic.appointment.entity.AppointmentAction;
 import com.dentalclinic.appointment.service.AppointmentHistoryService;
 import com.dentalclinic.appointment.service.AppointmentQueryService;
 import com.dentalclinic.auth.security.CustomUserDetailsService;
+import com.dentalclinic.auth.service.AuthSessionService;
 import com.dentalclinic.auth.security.JwtAuthenticationFilter;
 import com.dentalclinic.auth.security.JwtTokenProvider;
 import com.dentalclinic.auth.security.RestSecurityExceptionHandler;
@@ -64,6 +65,9 @@ class AdminAppointmentHistoryControllerSecurityTest {
 
     @MockitoBean
     private CustomUserDetailsService userDetailsService;
+
+    @MockitoBean
+    private AuthSessionService authSessionService;
 
     @DynamicPropertySource
     static void jwtProperties(DynamicPropertyRegistry registry) {
