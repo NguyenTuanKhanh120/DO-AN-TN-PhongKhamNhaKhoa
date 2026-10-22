@@ -11,13 +11,9 @@ import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordRequest;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordResponse;
-import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftRequest;
-import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftResponse;
 import com.dentalclinic.medicalrecord.entity.MedicalRecord;
-import com.dentalclinic.medicalrecord.entity.MedicalRecordDraft;
 import com.dentalclinic.medicalrecord.mapper.MedicalRecordMapper;
 import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
-import com.dentalclinic.medicalrecord.repository.MedicalRecordDraftRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,20 +25,17 @@ public class MedicalRecordService {
     private final DoctorRepository doctorRepository;
     private final AppointmentRepository appointmentRepository;
     private final MedicalRecordRepository medicalRecordRepository;
-    private final MedicalRecordDraftRepository medicalRecordDraftRepository;
     private final MedicalRecordMapper medicalRecordMapper;
 
     public MedicalRecordService(
             DoctorRepository doctorRepository,
             AppointmentRepository appointmentRepository,
             MedicalRecordRepository medicalRecordRepository,
-            MedicalRecordDraftRepository medicalRecordDraftRepository,
             MedicalRecordMapper medicalRecordMapper
     ) {
         this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
         this.medicalRecordRepository = medicalRecordRepository;
-        this.medicalRecordDraftRepository = medicalRecordDraftRepository;
         this.medicalRecordMapper = medicalRecordMapper;
     }
 
@@ -66,7 +59,6 @@ public class MedicalRecordService {
         medicalRecord.setAppointment(appointment);
         applyRequest(medicalRecord, request);
         MedicalRecord saved = medicalRecordRepository.saveAndFlush(medicalRecord);
-        medicalRecordDraftRepository.deleteByAppointmentId(appointmentId);
         return medicalRecordMapper.toResponse(saved);
     }
 
@@ -87,32 +79,11 @@ public class MedicalRecordService {
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy bệnh án"));
         applyRequest(medicalRecord, request);
         MedicalRecord saved = medicalRecordRepository.saveAndFlush(medicalRecord);
-        medicalRecordDraftRepository.deleteByAppointmentId(appointmentId);
         return medicalRecordMapper.toResponse(saved);
     }
 
-    @Transactional
-    public MedicalRecordDraftResponse saveDraft(
-            UUID authenticatedUserId,
-            UUID appointmentId,
-            MedicalRecordDraftRequest request
-    ) {
-        Appointment appointment = findOwnedAppointmentForUpdate(authenticatedUserId, appointmentId);
-        requireInProgress(appointment);
-        MedicalRecordDraft draft = medicalRecordDraftRepository.findByAppointmentId(appointmentId)
-                .orElseGet(() -> {
-                    MedicalRecordDraft created = new MedicalRecordDraft();
-                    created.setAppointment(appointment);
-                    return created;
-                });
-        draft.setDraftData(medicalRecordMapper.toDraftJson(request));
-        return medicalRecordMapper.toDraftResponse(
-                medicalRecordDraftRepository.saveAndFlush(draft)
-        );
-    }
-
     @Transactional(readOnly = true)
-    public MedicalRecordDraftResponse getDraft(
+    public MedicalRecordResponse get(
             UUID authenticatedUserId,
             UUID appointmentId
     ) {
@@ -122,10 +93,9 @@ public class MedicalRecordService {
                 .findDetailedByIdAndDoctorId(appointmentId, doctor.getId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch hẹn"));
         requireInProgress(appointment);
-        return medicalRecordMapper.toDraftResponse(
-                medicalRecordDraftRepository.findByAppointmentId(appointmentId)
-                        .orElseThrow(() -> new NotFoundException("Không tìm thấy bản nháp bệnh án"))
-        );
+        MedicalRecord medicalRecord = medicalRecordRepository.findByAppointmentId(appointmentId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy bệnh án"));
+        return medicalRecordMapper.toResponse(medicalRecord);
     }
 
     private Appointment findOwnedAppointmentForUpdate(

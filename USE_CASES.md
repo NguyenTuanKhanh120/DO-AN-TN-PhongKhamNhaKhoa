@@ -185,14 +185,16 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Bác sĩ nhập chẩn đoán, điều trị, kế hoạch, ghi chú, đơn thuốc và thông tin tái khám; hệ thống lưu MedicalRecord.
 - **Điều kiện:** Appointment thuộc bác sĩ, đang `IN_PROGRESS` và chưa có bệnh án.
 - **Quy tắc:** Mỗi Appointment có tối đa một MedicalRecord; đơn thuốc được lưu dưới dạng JSONB.
+- **Lưu ý:** Đây là bệnh án chính thức; hệ thống không có bản nháp hoặc autosave bệnh án.
 - **Ngoại lệ:** Nếu yêu cầu tái khám thì bắt buộc phải có ngày tái khám đề xuất; ghi chú không thay thế ngày đề xuất.
 
-### UC23 - Cập nhật bệnh án
+### UC23 - Xem và cập nhật bệnh án
 
 - **Tác nhân:** Bác sĩ.
 - **Mục đích:** Chỉnh sửa bệnh án trước khi hoàn thành khám.
-- **Luồng chính:** Bác sĩ mở bệnh án; sửa thông tin; hệ thống kiểm tra và cập nhật.
+- **Luồng chính:** Bác sĩ tải MedicalRecord chính thức của Appointment; sửa thông tin; hệ thống kiểm tra và cập nhật.
 - **Điều kiện:** Appointment thuộc bác sĩ, đang `IN_PROGRESS` và đã có MedicalRecord.
+- **Bảo mật:** Bác sĩ khác không được đọc hoặc cập nhật bệnh án của Appointment này.
 - **Ngoại lệ:** Không sửa bệnh án sau khi ca khám đã hoàn thành.
 
 ### UC24 - Ghi nhận dịch vụ thực tế
@@ -432,7 +434,7 @@ Admin vẫn có endpoint xác nhận thanh toán làm phương án dự phòng.
 - Frontend React.
 - AI Chatbot, Google Gemini, RAG và tư vấn triệu chứng.
 
-## H. QUẢN LÝ PHIÊN ĐĂNG NHẬP VÀ BẢN NHÁP BỆNH ÁN
+## H. QUẢN LÝ PHIÊN ĐĂNG NHẬP
 
 ### UC53 - Đăng nhập và tạo phiên phía Backend
 
@@ -457,7 +459,7 @@ Admin vẫn có endpoint xác nhận thanh toán làm phương án dự phòng.
 - **Mục đích:** Khóa màn hình khi người dùng rời máy nhưng chưa hết ca làm việc.
 - **Luồng chính:** Frontend chỉ gọi `/api/auth/activity` khi có tương tác thực sự; Backend cập nhật thời điểm hoạt động cuối.
 - **Ngưỡng:** Admin 15 phút; Doctor/Staff 20 phút; Patient không áp dụng.
-- **Quy tắc:** Request nền, refresh token và autosave bệnh án không tự cập nhật hoạt động.
+- **Quy tắc:** Request nền và refresh token không tự cập nhật hoạt động.
 - **Kết quả:** Khi quá ngưỡng, API nghiệp vụ trả `SESSION_LOCKED` và không thực thi nghiệp vụ.
 
 ### UC56 - Mở khóa phiên
@@ -481,12 +483,3 @@ Admin vẫn có endpoint xác nhận thanh toán làm phương án dự phòng.
 - **Tác nhân:** Admin, Bác sĩ, Nhân viên, Bệnh nhân.
 - **Mục đích:** Cho client biết role, trạng thái, thời hạn tuyệt đối, hoạt động gần nhất và chính sách Idle Lock của phiên.
 - **Bảo mật:** Endpoint yêu cầu Access Token và chỉ trả phiên gắn với chính token đó.
-
-### UC59 - Lưu và khôi phục bản nháp bệnh án
-
-- **Tác nhân:** Bác sĩ phụ trách Appointment.
-- **Mục đích:** Lưu nội dung khám chưa hoàn chỉnh lên PostgreSQL để tiếp tục sau khi mở khóa hoặc tải lại trang.
-- **Luồng chính:** Bác sĩ đang khám gửi dữ liệu có thể chưa đầy đủ; hệ thống upsert `medical_record_drafts`; bác sĩ đọc lại qua Appointment tương ứng.
-- **Điều kiện:** Appointment thuộc bác sĩ đăng nhập và đang `IN_PROGRESS`.
-- **Bảo mật:** Patient, Staff và bác sĩ khác không được đọc hoặc sửa bản nháp.
-- **Quy tắc:** Bản nháp không được dùng để tự động hoàn thành khám; khi lưu bệnh án chính thức thành công, bản nháp tương ứng bị xóa.

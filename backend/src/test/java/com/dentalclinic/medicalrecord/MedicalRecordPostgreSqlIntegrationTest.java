@@ -303,59 +303,8 @@ class MedicalRecordPostgreSqlIntegrationTest {
     }
 
     @Test
-    void shouldPersistRestoreAndProtectMedicalRecordDraftThenDeleteItOnFinalSave() throws Exception {
+    void shouldReadOfficialMedicalRecordAndProtectDoctorOwnership() throws Exception {
         String ownerToken = login(fixture.firstDoctorEmail());
-
-        mockMvc.perform(put(
-                        "/api/doctor/appointments/{id}/medical-record/draft",
-                        fixture.inProgressAppointmentId()
-                ).header(HttpHeaders.AUTHORIZATION, bearer(ownerToken))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "diagnosis": "Chẩn đoán đang nhập",
-                                  "treatment": null,
-                                  "prescription": [
-                                    {
-                                      "medicationName": "Paracetamol",
-                                      "quantity": null
-                                    }
-                                  ]
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.diagnosis").value("Chẩn đoán đang nhập"))
-                .andExpect(jsonPath("$.data.treatment").isEmpty())
-                .andExpect(jsonPath("$.data.prescription[0].medicationName")
-                        .value("Paracetamol"));
-
-        Map<String, Object> draftRow = jdbcTemplate.queryForMap("""
-                select jsonb_typeof(draft_data) as draft_type,
-                       draft_data ->> 'diagnosis' as diagnosis,
-                       draft_data -> 'prescription' -> 0 ->> 'medicationName' as medication_name
-                from medical_record_drafts
-                where appointment_id = ?
-                """, fixture.inProgressAppointmentId());
-        assertThat(draftRow.get("draft_type")).isEqualTo("object");
-        assertThat(draftRow.get("diagnosis")).isEqualTo("Chẩn đoán đang nhập");
-        assertThat(draftRow.get("medication_name")).isEqualTo("Paracetamol");
-        assertThat(appointmentRepository.findById(fixture.inProgressAppointmentId())
-                .orElseThrow().getStatus()).isEqualTo(AppointmentStatus.IN_PROGRESS);
-
-        mockMvc.perform(get(
-                        "/api/doctor/appointments/{id}/medical-record/draft",
-                        fixture.inProgressAppointmentId()
-                ).header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.diagnosis").value("Chẩn đoán đang nhập"));
-
-        String otherDoctorToken = login(fixture.secondDoctorEmail());
-        mockMvc.perform(get(
-                        "/api/doctor/appointments/{id}/medical-record/draft",
-                        fixture.inProgressAppointmentId()
-                ).header(HttpHeaders.AUTHORIZATION, bearer(otherDoctorToken)))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
         mockMvc.perform(post(
                         "/api/doctor/appointments/{id}/medical-record",
@@ -364,12 +313,34 @@ class MedicalRecordPostgreSqlIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validRequestJson()))
                 .andExpect(status().isCreated());
-        Integer remainingDrafts = jdbcTemplate.queryForObject(
-                "select count(*) from medical_record_drafts where appointment_id = ?",
-                Integer.class,
-                fixture.inProgressAppointmentId()
-        );
-        assertThat(remainingDrafts).isZero();
+
+        mockMvc.perform(get(
+                        "/api/doctor/appointments/{id}/medical-record",
+                        fixture.inProgressAppointmentId()
+                ).header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.appointmentId")
+                        .value(fixture.inProgressAppointmentId().toString()))
+                .andExpect(jsonPath("$.data.diagnosis").value("Viêm tủy răng 36"))
+                .andExpect(jsonPath("$.data.followUpRequired").value(true));
+
+        String otherDoctorToken = login(fixture.secondDoctorEmail());
+        mockMvc.perform(get(
+                        "/api/doctor/appointments/{id}/medical-record",
+                        fixture.inProgressAppointmentId()
+                ).header(HttpHeaders.AUTHORIZATION, bearer(otherDoctorToken)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+
+        mockMvc.perform(get(
+                        "/api/doctor/appointments/{id}/medical-record",
+                        fixture.otherDoctorAppointmentId()
+                ).header(HttpHeaders.AUTHORIZATION, bearer(otherDoctorToken)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Không tìm thấy bệnh án"));
+
+        assertThat(appointmentRepository.findById(fixture.inProgressAppointmentId())
+                .orElseThrow().getStatus()).isEqualTo(AppointmentStatus.IN_PROGRESS);
     }
 
     private Fixture createFixture() {

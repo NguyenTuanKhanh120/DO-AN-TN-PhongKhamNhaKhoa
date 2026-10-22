@@ -18,9 +18,7 @@ import com.dentalclinic.doctor.entity.DoctorStatus;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.medicalrecord.entity.MedicalRecord;
-import com.dentalclinic.medicalrecord.entity.MedicalRecordDraft;
 import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
-import com.dentalclinic.medicalrecord.repository.MedicalRecordDraftRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
@@ -71,7 +69,6 @@ class PersistenceMappingIntegrationTest {
     private final PaymentRepository paymentRepository;
     private final AuthSessionRepository authSessionRepository;
     private final RefreshTokenRepository refreshTokenRepository;
-    private final MedicalRecordDraftRepository medicalRecordDraftRepository;
     private final EntityManager entityManager;
 
     @Autowired
@@ -88,7 +85,6 @@ class PersistenceMappingIntegrationTest {
             PaymentRepository paymentRepository,
             AuthSessionRepository authSessionRepository,
             RefreshTokenRepository refreshTokenRepository,
-            MedicalRecordDraftRepository medicalRecordDraftRepository,
             EntityManager entityManager
     ) {
         this.userRepository = userRepository;
@@ -103,12 +99,11 @@ class PersistenceMappingIntegrationTest {
         this.paymentRepository = paymentRepository;
         this.authSessionRepository = authSessionRepository;
         this.refreshTokenRepository = refreshTokenRepository;
-        this.medicalRecordDraftRepository = medicalRecordDraftRepository;
         this.entityManager = entityManager;
     }
 
     @Test
-    void persistsPhase264EntitiesWithPostgreSqlSpecificMappings() {
+    void persistsBusinessEntitiesWithPostgreSqlSpecificMappings() {
         String testId = UUID.randomUUID().toString();
 
         User patientUser = createUser("patient-" + testId + "@example.com", "Phase 02 Patient", Role.PATIENT);
@@ -168,12 +163,6 @@ class PersistenceMappingIntegrationTest {
         history.setDetails(JsonNodeFactory.instance.objectNode().put("source", "phase02-test"));
         appointmentHistoryRepository.saveAndFlush(history);
 
-        MedicalRecordDraft medicalRecordDraft = new MedicalRecordDraft();
-        medicalRecordDraft.setAppointment(appointment);
-        medicalRecordDraft.setDraftData(JsonNodeFactory.instance.objectNode()
-                .put("diagnosis", "Draft diagnosis"));
-        medicalRecordDraftRepository.saveAndFlush(medicalRecordDraft);
-
         MedicalRecord medicalRecord = new MedicalRecord();
         medicalRecord.setAppointment(appointment);
         medicalRecord.setDiagnosis("Persistence test diagnosis");
@@ -223,7 +212,6 @@ class PersistenceMappingIntegrationTest {
         UUID historyId = history.getId();
         UUID medicalRecordId = medicalRecord.getId();
         UUID paymentId = payment.getId();
-        UUID medicalRecordDraftId = medicalRecordDraft.getId();
         UUID authSessionId = authSession.getId();
         UUID refreshTokenId = refreshToken.getId();
         entityManager.clear();
@@ -233,9 +221,6 @@ class PersistenceMappingIntegrationTest {
         MedicalRecord persistedRecord = medicalRecordRepository.findById(medicalRecordId).orElseThrow();
         DoctorSchedule persistedSchedule = doctorScheduleRepository.findById(schedule.getId()).orElseThrow();
         Payment persistedPayment = paymentRepository.findById(paymentId).orElseThrow();
-        MedicalRecordDraft persistedDraft = medicalRecordDraftRepository
-                .findById(medicalRecordDraftId)
-                .orElseThrow();
         AuthSession persistedSession = authSessionRepository.findById(authSessionId).orElseThrow();
         RefreshToken persistedRefreshToken = refreshTokenRepository
                 .findById(refreshTokenId)
@@ -268,9 +253,6 @@ class PersistenceMappingIntegrationTest {
         assertThat(persistedPayment.getCreatedAt()).isNotNull();
         assertThat(persistedPayment.getUpdatedAt()).isNotNull();
         assertThat(persistedAppointment.getPatient().getGender()).isEqualTo(Gender.FEMALE);
-        assertThat(persistedDraft.getDraftData().path("diagnosis").asText())
-                .isEqualTo("Draft diagnosis");
-        assertThat(persistedDraft.getUpdatedAt()).isNotNull();
         assertThat(persistedSession.getStatus()).isEqualTo(AuthSessionStatus.ACTIVE);
         assertThat(persistedSession.getAbsoluteExpiresAt())
                 .isEqualTo(loggedInAt.plusSeconds(7 * 24 * 60 * 60));

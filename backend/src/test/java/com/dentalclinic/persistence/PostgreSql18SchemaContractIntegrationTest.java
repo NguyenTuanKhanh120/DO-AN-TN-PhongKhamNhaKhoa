@@ -5,12 +5,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.jdbc.JdbcTest;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -104,7 +107,6 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "doctor_schedules",
                 "doctor_services",
                 "doctors",
-                "medical_record_drafts",
                 "medical_records",
                 "patients",
                 "payments",
@@ -221,25 +223,53 @@ class PostgreSql18SchemaContractIntegrationTest {
                         """,
                 Integer.class
         );
-        Integer draftObjectConstraint = jdbcTemplate.queryForObject(
-                """
-                        select count(*)
-                        from pg_constraint
-                        where conname = 'ck_medical_record_drafts_object'
-                          and contype = 'c'
-                        """,
-                Integer.class
-        );
         assertThat(phase264MigrationSucceeded).isTrue();
         assertThat(sessionStatuses).containsExactly("ACTIVE", "LOCKED", "REVOKED");
         assertThat(currentRefreshTokenIndex).isEqualTo(1);
-        assertThat(draftObjectConstraint).isEqualTo(1);
 
         Boolean defaultScheduleBackfillSucceeded = jdbcTemplate.queryForObject(
                 "select success from flyway_schema_history where version = '6'",
                 Boolean.class
         );
         assertThat(defaultScheduleBackfillSucceeded).isTrue();
+
+        Boolean draftRemovalMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '8'",
+                Boolean.class
+        );
+        Integer draftTableCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from information_schema.tables
+                        where table_schema = 'public'
+                          and table_name = 'medical_record_drafts'
+                        """,
+                Integer.class
+        );
+        assertThat(draftRemovalMigrationSucceeded).isTrue();
+        assertThat(draftTableCount).isZero();
+    }
+
+    @Test
+    void shouldRefuseDraftRemovalWhenTableContainsUnfinalizedData() throws Exception {
+        jdbcTemplate.execute("""
+                create temporary table medical_record_drafts (
+                    id integer primary key
+                ) on commit drop
+                """);
+        jdbcTemplate.update("insert into medical_record_drafts (id) values (1)");
+        String migrationSql = new ClassPathResource(
+                "db/migration/V8__remove_medical_record_drafts.sql"
+        ).getContentAsString(StandardCharsets.UTF_8);
+
+        Throwable failure = catchThrowable(() -> jdbcTemplate.execute(migrationSql));
+
+        assertThat(failure).isInstanceOf(DataAccessException.class);
+        SQLException sqlException = findSqlException(failure);
+        assertThat(sqlException.getSQLState()).isEqualTo("P0001");
+        assertThat(sqlException.getMessage()).contains(
+                "Refusing to drop medical_record_drafts because it contains unfinalized patient data"
+        );
     }
 
     @Test

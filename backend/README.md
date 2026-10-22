@@ -1,11 +1,11 @@
 # Dental Clinic Backend
 
-Spring Boot backend for the dental clinic management system. The repository currently includes **PHASE 26.4 — Refresh Token, Server-side Sessions and Medical Record Autosave**.
+Spring Boot backend for the dental clinic management system. The repository currently includes **PHASE 26.4 — Refresh Token and Server-side Sessions**.
 
 ## Implemented
 
 - Java 21, Spring Boot 3.5, Maven and PostgreSQL 18.
-- Flyway V1–V7 migrations for the 16-table active schema.
+- Flyway V1–V8 migrations for the 15-table active schema.
 - JPA entities and repositories for the first nine business tables.
 - Common API response, pagination and exception handling.
 - Patient registration and login with BCrypt, 15-minute JWT access tokens and rotating Refresh Tokens.
@@ -46,7 +46,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Per-doctor transactional locking prevents a second appointment from entering `IN_PROGRESS` before the current examination is completed.
 - Doctor-owned NO_SHOW confirmation after the configured 15-minute grace period, with checked-in protection and NO_SHOW audit history.
 - Doctor-owned medical-record creation and update while an appointment is `IN_PROGRESS`.
-- PostgreSQL-backed incomplete MedicalRecord drafts can be saved and restored only by the responsible doctor; a draft neither completes an examination nor replaces the validated final record.
+- The responsible doctor can read the official MedicalRecord after saving it and continue editing it with `PUT` while the Appointment remains `IN_PROGRESS`; no draft or autosave workflow is exposed.
 - Typed prescription DTOs persisted as a JSONB array, one medical record per appointment and mandatory recommended date when follow-up is required.
 - Doctors record only services actually performed while an appointment is `IN_PROGRESS`; names and catalog prices are persisted as immutable JSONB snapshots in a DRAFT payment.
 - Payment item prices are always loaded from PostgreSQL, quantities are validated, duplicate services are rejected and additional services must be active and assigned to the responsible doctor.
@@ -63,7 +63,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Admins can inspect each appointment's chronological audit timeline with action, actor, reason, JSONB details and timestamp.
 - Admin dashboard summary reports patient and doctor totals plus today's appointment status counts using the clinic timezone.
 - PostgreSQL integration tests cover the appointment lifecycle, transaction rollback and concurrent booking/rescheduling races.
-- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V6, all 17 tables, session/token/draft constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
+- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V8, all 15 active tables, session/token constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
 - OpenAPI 3 documentation exposes typed request/response schemas, reusable error responses and JWT Bearer authorization.
 - Swagger UI and OpenAPI JSON are public in development and disabled by default in production.
 - React clients are supported through an exact-origin CORS allowlist with credentialed requests for auth cookies.
@@ -112,7 +112,7 @@ FROM pg_available_extensions
 WHERE name IN ('vector', 'uuid-ossp');
 ```
 
-Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql) through [V7__remove_doctor_days_off.sql](./src/main/resources/db/migration/V7__remove_doctor_days_off.sql). V6 only backfills doctors with no weekly schedule and never overwrites partial/customized schedules. V7 removes the obsolete doctor-day-off table only when it is empty; if historical rows exist, migration stops without dropping the table so the data can be preserved or archived explicitly. Hibernate only validates the schema through `ddl-auto=validate`.
+Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql) through [V8__remove_medical_record_drafts.sql](./src/main/resources/db/migration/V8__remove_medical_record_drafts.sql). V6 only backfills doctors with no weekly schedule and never overwrites partial/customized schedules. V7 removes the obsolete doctor-day-off table only when it is empty. V8 similarly removes `medical_record_drafts` only when it is empty; if historical rows exist, migration stops so the unfinalized patient data can be reviewed or archived explicitly. Hibernate only validates the schema through `ddl-auto=validate`.
 
 ## Run
 
@@ -229,9 +229,8 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `PATCH /api/doctor/appointments/{id}/start`
 - `PATCH /api/doctor/appointments/{id}/no-show`
 - `POST /api/doctor/appointments/{id}/medical-record`
+- `GET /api/doctor/appointments/{id}/medical-record`
 - `PUT /api/doctor/appointments/{id}/medical-record`
-- `PUT /api/doctor/appointments/{id}/medical-record/draft`
-- `GET /api/doctor/appointments/{id}/medical-record/draft`
 - `PATCH /api/doctor/appointments/{id}/complete`
 - `GET /api/doctor/appointments/{id}/payment`
 - `PUT /api/doctor/appointments/{id}/payment/items`
@@ -310,7 +309,7 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - Keep the Access Token in React memory and send it with `Authorization: Bearer <token>`; do not place either token in `localStorage`.
 - Send auth-cookie requests with credentials. Read `XSRF-TOKEN` and mirror it in `X-XSRF-TOKEN` for refresh, logout and unlock.
 - If React and the API use different subdomains, configure `AUTH_COOKIE_DOMAIN` for their shared parent domain; prefer a same-origin reverse proxy in production.
-- Only explicit user interaction should call `/api/auth/activity`; background refresh and MedicalRecord autosave must not keep an idle ADMIN/DOCTOR/STAFF session active.
+- Only explicit user interaction should call `/api/auth/activity`; background refresh and other background requests must not keep an idle ADMIN/DOCTOR/STAFF session active.
 - Configure `CORS_ALLOWED_ORIGINS` with exact React origins. Wildcard origins are not used.
 - Treat `401` as an expired/missing session, `403` as insufficient permission and `409` as a recoverable business conflict.
 - A cancelled appointment may include `cancellationReason`, `cancellationSource` and `cancelledAt`. Treat an existing `cancellationSource` as immutable historical audit data; it does not affect current slot availability.
@@ -326,11 +325,12 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 ## Direct payment workflow
 
 1. The doctor starts a booked appointment directly, changing `BOOKED` to `IN_PROGRESS`. Starting the examination is the operational evidence that the patient arrived.
-2. While the Appointment is `IN_PROGRESS`, the responsible doctor calls `PUT /api/doctor/appointments/{id}/payment/items` with the services actually performed.
-3. The backend validates doctor-service assignments, loads current catalog prices and stores name/price snapshots in a DRAFT Payment.
-4. `PATCH /api/doctor/appointments/{id}/complete` requires a valid MedicalRecord and a non-empty valid DRAFT Payment; both Appointment and Payment are finalized atomically as `COMPLETED` and `UNPAID`.
-5. After receiving money at the counter, Staff calls `PATCH /api/staff/payments/{id}/confirm` with `CASH` or `BANK_TRANSFER`. Admin may use the equivalent Admin endpoint as backup.
-6. Patients can then read their own UNPAID/PAID records. No payment gateway, webhook, installment, refund or accounting invoice is implemented.
+2. While the Appointment is `IN_PROGRESS`, the responsible doctor explicitly saves the official MedicalRecord with `POST /api/doctor/appointments/{id}/medical-record`. After saving, the doctor can reload it with `GET` and edit it with `PUT`; there is no draft or autosave endpoint.
+3. The doctor calls `PUT /api/doctor/appointments/{id}/payment/items` with the services actually performed.
+4. The backend validates doctor-service assignments, loads current catalog prices and stores name/price snapshots in a DRAFT Payment.
+5. `PATCH /api/doctor/appointments/{id}/complete` requires a valid MedicalRecord and a non-empty valid DRAFT Payment; both Appointment and Payment are finalized atomically as `COMPLETED` and `UNPAID`.
+6. After receiving money at the counter, Staff calls `PATCH /api/staff/payments/{id}/confirm` with `CASH` or `BANK_TRANSFER`. Admin may use the equivalent Admin endpoint as backup.
+7. Patients can then read their own UNPAID/PAID records. No payment gateway, webhook, installment, refund or accounting invoice is implemented.
 
 Doctor item request example:
 

@@ -123,12 +123,13 @@ class OpenApiDocumentationIntegrationTest {
         JsonNode activity = operation(document, "/api/auth/activity", "post");
         assertThat(activity.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
 
-        JsonNode draft = operation(
+        JsonNode officialMedicalRecord = operation(
                 document,
-                "/api/doctor/appointments/{id}/medical-record/draft",
-                "put"
+                "/api/doctor/appointments/{id}/medical-record",
+                "get"
         );
-        assertThat(draft.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
+        assertThat(officialMedicalRecord.path("security").get(0)
+                .has(OpenApiConfig.BEARER_AUTH)).isTrue();
 
         JsonNode adminDoctorSchedule = operation(
                 document,
@@ -203,8 +204,9 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(schemas.has("ConfirmPaymentRequest")).isTrue();
         assertThat(schemas.has("RevenueSummaryResponse")).isTrue();
         assertThat(schemas.has("AuthSessionResponse")).isTrue();
-        assertThat(schemas.has("MedicalRecordDraftRequest")).isTrue();
-        assertThat(schemas.has("MedicalRecordDraftResponse")).isTrue();
+        assertThat(schemas.has("MedicalRecordResponse")).isTrue();
+        assertThat(schemas.has("MedicalRecordDraftRequest")).isFalse();
+        assertThat(schemas.has("MedicalRecordDraftResponse")).isFalse();
         assertThat(schemas.has("ErrorResponse")).isTrue();
         assertThat(schemas.has("UserPrincipal")).isFalse();
         assertAllSchemaReferencesResolve(document, schemas);
@@ -222,6 +224,9 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(document.path("paths").has("/api/admin/doctors/{doctorId}/days-off/{dayOffId}"))
                 .isFalse();
         assertThat(document.path("paths").has("/api/doctors/{doctorId}/days-off"))
+                .isFalse();
+        assertThat(document.path("paths")
+                .has("/api/doctor/appointments/{id}/medical-record/draft"))
                 .isFalse();
         assertThat(document.path("paths").has("/api/chat/sessions")).isFalse();
     }
