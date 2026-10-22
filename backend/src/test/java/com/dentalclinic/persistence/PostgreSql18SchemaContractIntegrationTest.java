@@ -101,7 +101,6 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "chat_messages",
                 "chat_sessions",
                 "dental_services",
-                "doctor_days_off",
                 "doctor_schedules",
                 "doctor_services",
                 "doctors",
@@ -122,31 +121,22 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "select success from flyway_schema_history where version = '2'",
                 Boolean.class
         );
-        Integer dayOffUniqueConstraint = jdbcTemplate.queryForObject(
+        Boolean dayOffRemovalMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '7'",
+                Boolean.class
+        );
+        Integer dayOffTableCount = jdbcTemplate.queryForObject(
                 """
                         select count(*)
-                        from pg_constraint
-                        where conname = 'uq_doctor_days_off_doctor_date_session'
-                          and contype = 'u'
+                        from information_schema.tables
+                        where table_schema = 'public'
+                          and table_name = 'doctor_days_off'
                         """,
                 Integer.class
         );
-        String dayOffSessionType = jdbcTemplate.queryForObject(
-                """
-                        select format_type(attribute.atttypid, attribute.atttypmod)
-                        from pg_attribute attribute
-                        join pg_class relation on relation.oid = attribute.attrelid
-                        join pg_namespace namespace on namespace.oid = relation.relnamespace
-                        where namespace.nspname = 'public'
-                          and relation.relname = 'doctor_days_off'
-                          and attribute.attname = 'session'
-                          and not attribute.attisdropped
-                        """,
-                String.class
-        );
         assertThat(dayOffMigrationSucceeded).isTrue();
-        assertThat(dayOffUniqueConstraint).isEqualTo(1);
-        assertThat(dayOffSessionType).isEqualTo("session_enum");
+        assertThat(dayOffRemovalMigrationSucceeded).isTrue();
+        assertThat(dayOffTableCount).isZero();
 
         Boolean paymentMigrationSucceeded = jdbcTemplate.queryForObject(
                 "select success from flyway_schema_history where version = '3'",

@@ -61,13 +61,12 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Người dùng chọn bác sĩ; hệ thống trả danh sách dịch vụ được gán cho bác sĩ.
 - **Điều kiện:** Bác sĩ phải tồn tại và có tài khoản đang hoạt động.
 
-### UC07 - Xem lịch làm việc và ngày nghỉ của bác sĩ
+### UC07 - Xem lịch làm việc của bác sĩ
 
 - **Tác nhân:** Khách hoặc người dùng đã đăng nhập.
-- **Mục đích:** Xem lịch cố định và các ngày bác sĩ không làm việc.
-- **Luồng chính:** Người dùng chọn bác sĩ; xem lịch theo thứ trong tuần; xem ngày nghỉ theo khoảng ngày.
+- **Mục đích:** Xem lịch làm việc lặp lại theo tuần của bác sĩ.
+- **Luồng chính:** Người dùng chọn bác sĩ; hệ thống trả các buổi làm việc theo thứ trong tuần.
 - **Điều kiện:** Bác sĩ phải tồn tại.
-- **Bảo mật:** API công khai ngày nghỉ chỉ trả ngày và buổi nghỉ, không công khai lý do nội bộ.
 
 ### UC08 - Xem khung giờ còn trống
 
@@ -75,8 +74,8 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Mục đích:** Tìm thời gian có thể đặt lịch.
 - **Luồng chính:** Người dùng chọn dịch vụ và bác sĩ; hệ thống trả lịch khả dụng dạng rolling 30 ngày hoặc sinh slot 60 phút cho một ngày cụ thể.
 - **Điều kiện:** Bác sĩ và dịch vụ đang hoạt động; bác sĩ được phân công dịch vụ; ngày được chọn có lịch làm việc.
-- **Quy tắc:** Hệ thống loại ngày nghỉ, slot đã có lịch và slot cách thời điểm hiện tại dưới 120 phút.
-- **Trạng thái calendar:** Phân biệt `AVAILABLE`, `FULL`, `DAY_OFF`, `NOT_WORKING` và `UNAVAILABLE`; không trả thông tin bệnh nhân đã đặt lịch.
+- **Quy tắc:** Hệ thống loại slot đã có lịch và slot cách thời điểm hiện tại dưới 120 phút.
+- **Trạng thái calendar:** Phân biệt `AVAILABLE`, `FULL`, `NOT_WORKING` và `UNAVAILABLE`; không trả thông tin bệnh nhân đã đặt lịch.
 
 ## B. CHỨC NĂNG BỆNH NHÂN
 
@@ -101,7 +100,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Tác nhân:** Bệnh nhân.
 - **Mục đích:** Đặt lịch với bác sĩ và dịch vụ đã chọn.
 - **Luồng chính:** Bệnh nhân chọn bác sĩ, dịch vụ và slot; hệ thống khóa dữ liệu bác sĩ; kiểm tra lại slot; tạo Appointment `BOOKED`; ghi lịch sử `BOOK`.
-- **Điều kiện:** Slot thuộc lịch làm việc; không rơi vào ngày nghỉ; phải đặt trước ít nhất 120 phút (2 giờ).
+- **Điều kiện:** Slot thuộc lịch làm việc và phải được đặt trước ít nhất 120 phút (2 giờ).
 - **Ngoại lệ:** Nếu người khác vừa đặt cùng slot, request thua nhận HTTP 409 Conflict.
 - **Kết quả:** Chỉ một bệnh nhân có thể đặt thành công cùng một slot.
 
@@ -283,7 +282,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Admin chọn bác sĩ; xem, tạo lại buổi đã xóa, cập nhật hoặc xóa lịch tuần của bác sĩ đó.
 - **Điều kiện:** Chỉ Thứ Hai-Thứ Bảy; `MORNING` nằm trong `08:00-11:00`; `AFTERNOON` nằm trong `13:00-17:00`; thời gian khớp ranh giới slot 60 phút.
 - **Ngoại lệ:** Không được có hai lịch trùng cùng thứ và cùng buổi; lịch phải thuộc đúng bác sĩ; không được sửa/xóa nếu làm mất Appointment tương lai đang hoạt động.
-- **Ngày nghỉ:** Nghỉ một ngày hoặc một buổi cụ thể phải dùng `doctor_days_off`, không xóa lịch tuần.
+- **Mô hình lịch:** Khả năng đặt lịch chỉ dựa trên lịch tuần, Appointment hiện có và trạng thái hoạt động của bác sĩ/dịch vụ; không có ngoại lệ lịch riêng theo ngày.
 - **Bảo mật:** Chỉ Admin được tạo, cập nhật và xóa lịch tuần; bác sĩ chỉ được xem lịch của mình.
 
 ### UC35 - Tạo dịch vụ nha khoa
@@ -316,31 +315,6 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Admin gửi toàn bộ danh sách Service ID; hệ thống thay thế mapping hiện tại trong `doctor_services`.
 - **Điều kiện:** Bác sĩ và tất cả dịch vụ phải tồn tại; danh sách không chứa ID trùng.
 - **Ngoại lệ:** Không xóa mapping nếu việc xóa vi phạm dữ liệu lịch hẹn đang tham chiếu.
-
-### UC39 - Xem trước ảnh hưởng ngày nghỉ
-
-- **Tác nhân:** Admin.
-- **Mục đích:** Kiểm tra các lịch hẹn bị ảnh hưởng trước khi đăng ký ngày nghỉ.
-- **Luồng chính:** Admin chọn bác sĩ, ngày, buổi nghỉ và lý do; hệ thống phân loại lịch sẽ hủy, lịch đang khám gây chặn và lịch cần xem xét thủ công.
-- **Điều kiện:** Ngày nghỉ và buổi nghỉ chưa tồn tại.
-- **Kết quả:** Chỉ xem trước, chưa thay đổi dữ liệu.
-
-### UC40 - Đăng ký ngày nghỉ bác sĩ
-
-- **Tác nhân:** Admin.
-- **Mục đích:** Ngăn đặt lịch vào ngày bác sĩ nghỉ.
-- **Luồng chính:** Admin xác nhận ngày nghỉ; hệ thống khóa bác sĩ và lịch liên quan; tạo ngày nghỉ; tự động hủy các lịch `BOOKED` trong tương lai; ghi lịch sử `CANCEL`.
-- **Buổi nghỉ:** `MORNING`, `AFTERNOON` hoặc `FULL_DAY`.
-- **Ngoại lệ:** Không tạo ngày nghỉ nếu có Appointment `CHECKED_IN` hoặc `IN_PROGRESS`.
-- **Lưu ý:** Chỉ Admin quản lý ngày nghỉ; bác sĩ không có API tự đăng ký ngày nghỉ.
-
-### UC41 - Xem và xóa ngày nghỉ bác sĩ
-
-- **Tác nhân:** Admin.
-- **Mục đích:** Theo dõi hoặc gỡ ngày nghỉ đã khai báo.
-- **Luồng chính:** Admin xem danh sách ngày nghỉ theo khoảng ngày; chọn bản ghi; xóa ngày nghỉ.
-- **Điều kiện:** Ngày nghỉ phải thuộc đúng bác sĩ.
-- **Lưu ý:** Xóa ngày nghỉ không tự khôi phục những Appointment đã bị hủy trước đó.
 
 ### UC42 - Tra cứu toàn bộ lịch hẹn
 

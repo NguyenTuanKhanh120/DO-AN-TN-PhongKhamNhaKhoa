@@ -130,23 +130,6 @@ class OpenApiDocumentationIntegrationTest {
         );
         assertThat(draft.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
 
-        JsonNode createDayOff = operation(
-                document,
-                "/api/admin/doctors/{doctorId}/days-off",
-                "post"
-        );
-        assertThat(createDayOff.path("tags").get(0).asText()).isEqualTo("Doctor Days Off");
-        assertThat(createDayOff.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
-        assertOnlyResponses(createDayOff, "201");
-
-        JsonNode publicDaysOff = operation(
-                document,
-                "/api/doctors/{doctorId}/days-off",
-                "get"
-        );
-        assertThat(publicDaysOff.path("tags").get(0).asText()).isEqualTo("Doctor Days Off");
-        assertThat(publicDaysOff.has("security")).isFalse();
-
         JsonNode adminDoctorSchedule = operation(
                 document,
                 "/api/admin/doctors/{doctorId}/schedules",
@@ -211,8 +194,10 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(schemas.has("CreateStaffRequest")).isTrue();
         assertThat(schemas.has("BookAppointmentRequest")).isTrue();
         assertThat(schemas.has("DashboardSummaryResponse")).isTrue();
-        assertThat(schemas.has("CreateDoctorDayOffRequest")).isTrue();
-        assertThat(schemas.has("CreateDoctorDayOffResponse")).isTrue();
+        assertThat(schemas.has("CreateDoctorDayOffRequest")).isFalse();
+        assertThat(schemas.has("CreateDoctorDayOffResponse")).isFalse();
+        assertThat(schemas.path("CalendarAvailabilityStatus").toString())
+                .doesNotContain("DAY_OFF");
         assertThat(schemas.has("UpdatePaymentItemsRequest")).isTrue();
         assertThat(schemas.has("PaymentResponse")).isTrue();
         assertThat(schemas.has("ConfirmPaymentRequest")).isTrue();
@@ -229,6 +214,14 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(document.path("paths").has("/api/doctor/appointments/{id}/follow-up"))
                 .isFalse();
         assertThat(document.path("paths").has("/api/doctor/appointments/{id}/follow-up-slots"))
+                .isFalse();
+        assertThat(document.path("paths").has("/api/admin/doctors/{doctorId}/days-off"))
+                .isFalse();
+        assertThat(document.path("paths").has("/api/admin/doctors/{doctorId}/days-off/preview"))
+                .isFalse();
+        assertThat(document.path("paths").has("/api/admin/doctors/{doctorId}/days-off/{dayOffId}"))
+                .isFalse();
+        assertThat(document.path("paths").has("/api/doctors/{doctorId}/days-off"))
                 .isFalse();
         assertThat(document.path("paths").has("/api/chat/sessions")).isFalse();
     }

@@ -5,7 +5,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 ## Implemented
 
 - Java 21, Spring Boot 3.5, Maven and PostgreSQL 18.
-- Flyway V1–V6 migrations for the 17-table schema.
+- Flyway V1–V7 migrations for the 16-table active schema.
 - JPA entities and repositories for the first nine business tables.
 - Common API response, pagination and exception handling.
 - Patient registration and login with BCrypt, 15-minute JWT access tokens and rotating Refresh Tokens.
@@ -27,11 +27,10 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Public weekly doctor-schedule lookup.
 - Admin-owned weekly doctor-schedule CRUD for Monday-Saturday, hourly boundaries inside `08:00-11:00` and `13:00-17:00`; doctors have read-only access to their own schedules.
 - Weekly schedule updates/deletes take the same Doctor lock as booking and reject changes that would invalidate future active appointments.
-- Admin-managed date-specific doctor days off with preview, morning/afternoon/full-day support and no mutation of recurring weekly schedules.
-- Creating a day off transactionally cancels affected future `BOOKED` appointments, writes clinic-safe CANCEL history and rejects active `CHECKED_IN`/`IN_PROGRESS` examinations.
-- Booking, rescheduling and patient follow-up creation share a pessimistic Doctor lock and recheck days off before writing.
+- Doctor availability is derived only from weekly schedules, active doctor/service mappings, current time and existing appointments.
+- Booking, rescheduling and patient follow-up creation share a pessimistic Doctor lock and recheck weekly schedule availability before writing.
 - Public available-slot calculation from weekly schedules and appointments.
-- Public rolling 30-day doctor calendar calculated with one schedule query, one day-off query and one occupied-slot query for the requested range.
+- Public rolling 30-day doctor calendar calculated with one schedule query and one occupied-slot query for the requested range.
 - Fixed 60-minute slots with active doctor/service/mapping checks and a 120-minute booking lead time.
 - Transactional patient appointment booking with BOOK audit history.
 - PostgreSQL partial-unique-index protection for concurrent slot booking conflicts.
@@ -113,7 +112,7 @@ FROM pg_available_extensions
 WHERE name IN ('vector', 'uuid-ossp');
 ```
 
-Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql), [V2__add_doctor_days_off.sql](./src/main/resources/db/migration/V2__add_doctor_days_off.sql), [V3__add_payments.sql](./src/main/resources/db/migration/V3__add_payments.sql), [V4__phase_26_3_staff_and_follow_up.sql](./src/main/resources/db/migration/V4__phase_26_3_staff_and_follow_up.sql), [V5__auth_sessions_and_medical_record_drafts.sql](./src/main/resources/db/migration/V5__auth_sessions_and_medical_record_drafts.sql) and [V6__backfill_default_doctor_schedules.sql](./src/main/resources/db/migration/V6__backfill_default_doctor_schedules.sql). V6 only backfills doctors with no weekly schedule and never overwrites partial/customized schedules. Hibernate only validates the schema through `ddl-auto=validate`.
+Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql) through [V7__remove_doctor_days_off.sql](./src/main/resources/db/migration/V7__remove_doctor_days_off.sql). V6 only backfills doctors with no weekly schedule and never overwrites partial/customized schedules. V7 removes the obsolete doctor-day-off table only when it is empty; if historical rows exist, migration stops without dropping the table so the data can be preserved or archived explicitly. Hibernate only validates the schema through `ddl-auto=validate`.
 
 ## Run
 
@@ -206,11 +205,6 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `GET /api/admin/staff?search=&status=&page=&size=`
 - `GET /api/admin/staff/{id}`
 - `PATCH /api/admin/staff/{id}/status`
-- `POST /api/admin/doctors/{doctorId}/days-off/preview`
-- `POST /api/admin/doctors/{doctorId}/days-off`
-- `GET /api/admin/doctors/{doctorId}/days-off?fromDate={yyyy-MM-dd}&toDate={yyyy-MM-dd}`
-- `DELETE /api/admin/doctors/{doctorId}/days-off/{dayOffId}`
-- `GET /api/doctors/{doctorId}/days-off?fromDate={yyyy-MM-dd}&toDate={yyyy-MM-dd}`
 - `GET /api/doctors`
 - `GET /api/doctors/{id}`
 - `POST /api/admin/doctors`
@@ -264,6 +258,52 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `PUT /api/admin/doctors/{doctorId}/schedules/{scheduleId}`
 - `DELETE /api/admin/doctors/{doctorId}/schedules/{scheduleId}`
 
+### Doctor calendar response example
+
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "Thành công",
+  "data": {
+    "doctorId": "<DOCTOR_ID>",
+    "serviceId": "<SERVICE_ID>",
+    "fromDate": "2026-10-22",
+    "toDate": "2026-11-20",
+    "days": [
+      {
+        "date": "2026-10-22",
+        "dayOfWeek": 4,
+        "status": "AVAILABLE",
+        "sessions": [
+          {
+            "session": "MORNING",
+            "status": "AVAILABLE",
+            "availableSlotCount": 3,
+            "availableSlots": [
+              {"startAt": "2026-10-22T08:00:00+07:00", "endAt": "2026-10-22T09:00:00+07:00"},
+              {"startAt": "2026-10-22T09:00:00+07:00", "endAt": "2026-10-22T10:00:00+07:00"},
+              {"startAt": "2026-10-22T10:00:00+07:00", "endAt": "2026-10-22T11:00:00+07:00"}
+            ]
+          },
+          {
+            "session": "AFTERNOON",
+            "status": "AVAILABLE",
+            "availableSlotCount": 4,
+            "availableSlots": [
+              {"startAt": "2026-10-22T13:00:00+07:00", "endAt": "2026-10-22T14:00:00+07:00"},
+              {"startAt": "2026-10-22T14:00:00+07:00", "endAt": "2026-10-22T15:00:00+07:00"},
+              {"startAt": "2026-10-22T15:00:00+07:00", "endAt": "2026-10-22T16:00:00+07:00"},
+              {"startAt": "2026-10-22T16:00:00+07:00", "endAt": "2026-10-22T17:00:00+07:00"}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
 ## React integration notes
 
 - Configure the frontend API base URL as `http://localhost:8081` in development.
@@ -273,11 +313,10 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - Only explicit user interaction should call `/api/auth/activity`; background refresh and MedicalRecord autosave must not keep an idle ADMIN/DOCTOR/STAFF session active.
 - Configure `CORS_ALLOWED_ORIGINS` with exact React origins. Wildcard origins are not used.
 - Treat `401` as an expired/missing session, `403` as insufficient permission and `409` as a recoverable business conflict.
-- A cancelled appointment may include `cancellationReason`, `cancellationSource` and `cancelledAt`. `DOCTOR_DAY_OFF` identifies a clinic cancellation; the public response never exposes the doctor's internal day-off reason.
-- Preview a day off before confirmation, but always handle `409` from the create call because the backend rechecks appointments inside the write transaction.
+- A cancelled appointment may include `cancellationReason`, `cancellationSource` and `cancelledAt`. Treat an existing `cancellationSource` as immutable historical audit data; it does not affect current slot availability.
 - Parse timestamps as ISO-8601 values. Appointment display and day-based queries follow `Asia/Ho_Chi_Minh`.
-- Load the booking month with `/api/doctors/{doctorId}/calendar`. Render the returned `days` directly, distinguish `DAY_OFF` from `FULL`, and use each slot's `startAt` as the booking value. The API returns at most the rolling 30-day window; refresh it when the clinic date changes.
-- The calendar session status is `AVAILABLE`, `FULL`, `DAY_OFF`, `NOT_WORKING` or `UNAVAILABLE`. Sunday is always `NOT_WORKING`; a partial day off only closes its matching session.
+- Load the booking month with `/api/doctors/{doctorId}/calendar`. Render the returned `days` directly and use each slot's `startAt` as the booking value. The API returns at most the rolling 30-day window; refresh it when the clinic date changes.
+- The calendar session status is `AVAILABLE`, `FULL`, `NOT_WORKING` or `UNAVAILABLE`. `NOT_WORKING` means no matching weekly schedule (including Sunday); `FULL` means scheduled slots are occupied; `UNAVAILABLE` means no slot remains bookable because of time or another booking rule.
 - Use the documented `ApiResponse` envelope and zero-based pagination contract instead of relying on JPA entity shapes.
 - Send only `serviceId` and `quantity` when a doctor updates Payment items. Never send or calculate prices as trusted frontend data.
 - A completed examination exposes an UNPAID payment until Staff, or Admin as backup, confirms actual receipt at the counter. `BANK_TRANSFER` is manual confirmation, not an online gateway.

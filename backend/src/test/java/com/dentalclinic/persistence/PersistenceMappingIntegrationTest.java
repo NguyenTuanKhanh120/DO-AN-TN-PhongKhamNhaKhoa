@@ -29,9 +29,7 @@ import com.dentalclinic.payment.entity.PaymentItemSnapshot;
 import com.dentalclinic.payment.entity.PaymentStatus;
 import com.dentalclinic.payment.repository.PaymentRepository;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
-import com.dentalclinic.schedule.entity.DoctorDayOff;
 import com.dentalclinic.schedule.entity.ScheduleSession;
-import com.dentalclinic.schedule.repository.DoctorDayOffRepository;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
@@ -67,7 +65,6 @@ class PersistenceMappingIntegrationTest {
     private final DentalServiceRepository dentalServiceRepository;
     private final DoctorServiceRepository doctorServiceRepository;
     private final DoctorScheduleRepository doctorScheduleRepository;
-    private final DoctorDayOffRepository doctorDayOffRepository;
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final MedicalRecordRepository medicalRecordRepository;
@@ -85,7 +82,6 @@ class PersistenceMappingIntegrationTest {
             DentalServiceRepository dentalServiceRepository,
             DoctorServiceRepository doctorServiceRepository,
             DoctorScheduleRepository doctorScheduleRepository,
-            DoctorDayOffRepository doctorDayOffRepository,
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
             MedicalRecordRepository medicalRecordRepository,
@@ -101,7 +97,6 @@ class PersistenceMappingIntegrationTest {
         this.dentalServiceRepository = dentalServiceRepository;
         this.doctorServiceRepository = doctorServiceRepository;
         this.doctorScheduleRepository = doctorScheduleRepository;
-        this.doctorDayOffRepository = doctorDayOffRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.medicalRecordRepository = medicalRecordRepository;
@@ -118,10 +113,8 @@ class PersistenceMappingIntegrationTest {
 
         User patientUser = createUser("patient-" + testId + "@example.com", "Phase 02 Patient", Role.PATIENT);
         User doctorUser = createUser("doctor-" + testId + "@example.com", "Phase 02 Doctor", Role.DOCTOR);
-        User adminUser = createUser("admin-" + testId + "@example.com", "Phase 26.1 Admin", Role.ADMIN);
         userRepository.save(patientUser);
-        userRepository.save(doctorUser);
-        userRepository.saveAndFlush(adminUser);
+        userRepository.saveAndFlush(doctorUser);
 
         Patient patient = new Patient();
         patient.setUser(patientUser);
@@ -160,14 +153,6 @@ class PersistenceMappingIntegrationTest {
         schedule.setStartTime(LocalTime.of(8, 0));
         schedule.setEndTime(LocalTime.of(11, 0));
         doctorScheduleRepository.saveAndFlush(schedule);
-
-        DoctorDayOff dayOff = new DoctorDayOff();
-        dayOff.setDoctor(doctor);
-        dayOff.setOffDate(LocalDate.of(2030, 1, 7));
-        dayOff.setSession(ScheduleSession.AFTERNOON);
-        dayOff.setReason("Persistence mapping verification");
-        dayOff.setCreatedBy(adminUser);
-        doctorDayOffRepository.saveAndFlush(dayOff);
 
         Appointment appointment = new Appointment();
         appointment.setPatient(patient);
@@ -247,7 +232,6 @@ class PersistenceMappingIntegrationTest {
         AppointmentHistory persistedHistory = appointmentHistoryRepository.findById(historyId).orElseThrow();
         MedicalRecord persistedRecord = medicalRecordRepository.findById(medicalRecordId).orElseThrow();
         DoctorSchedule persistedSchedule = doctorScheduleRepository.findById(schedule.getId()).orElseThrow();
-        DoctorDayOff persistedDayOff = doctorDayOffRepository.findById(dayOff.getId()).orElseThrow();
         Payment persistedPayment = paymentRepository.findById(paymentId).orElseThrow();
         MedicalRecordDraft persistedDraft = medicalRecordDraftRepository
                 .findById(medicalRecordDraftId)
@@ -275,9 +259,6 @@ class PersistenceMappingIntegrationTest {
 
         assertThat(persistedSchedule.getSession()).isEqualTo(ScheduleSession.MORNING);
         assertThat(persistedSchedule.getDoctor().getWorkingStatus()).isEqualTo(DoctorStatus.ACTIVE);
-        assertThat(persistedDayOff.getSession()).isEqualTo(ScheduleSession.AFTERNOON);
-        assertThat(persistedDayOff.getCreatedBy().getRole()).isEqualTo(Role.ADMIN);
-        assertThat(persistedDayOff.getCreatedAt()).isNotNull();
         assertThat(persistedPayment.getStatus()).isEqualTo(PaymentStatus.DRAFT);
         assertThat(persistedPayment.getItems()).hasSize(1);
         assertThat(persistedPayment.getItems().getFirst().serviceName())

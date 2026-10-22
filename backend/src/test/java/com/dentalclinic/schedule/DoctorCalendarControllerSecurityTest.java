@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -32,7 +33,9 @@ import java.util.UUID;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -111,6 +114,28 @@ class DoctorCalendarControllerSecurityTest {
         mockMvc.perform(get("/api/doctors/{doctorId}/calendar", UUID.randomUUID()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void shouldNotExposeRemovedDoctorDayOffEndpoints() throws Exception {
+        UUID doctorId = UUID.randomUUID();
+        UUID dayOffId = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/days-off/preview", doctorId))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/days-off", doctorId))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/admin/doctors/{doctorId}/days-off", doctorId))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete(
+                        "/api/admin/doctors/{doctorId}/days-off/{dayOffId}",
+                        doctorId,
+                        dayOffId
+                ))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/doctors/{doctorId}/days-off", doctorId))
+                .andExpect(status().isNotFound());
     }
 
     private static String generateSecret() {
