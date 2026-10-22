@@ -46,6 +46,19 @@ public interface DoctorDayOffRepository extends JpaRepository<DoctorDayOff, UUID
             @Param("toDate") LocalDate toDate
     );
 
+    @Query("""
+            select dayOff
+            from DoctorDayOff dayOff
+            where dayOff.doctor.id = :doctorId
+              and dayOff.offDate between :fromDate and :toDate
+            order by dayOff.offDate asc, dayOff.session asc
+            """)
+    List<DoctorDayOff> findForAvailability(
+            @Param("doctorId") UUID doctorId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate
+    );
+
     @EntityGraph(attributePaths = {"doctor.user", "createdBy"})
     Optional<DoctorDayOff> findByIdAndDoctor_Id(UUID id, UUID doctorId);
 }

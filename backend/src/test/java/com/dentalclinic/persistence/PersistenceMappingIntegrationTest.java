@@ -158,7 +158,7 @@ class PersistenceMappingIntegrationTest {
         schedule.setDayOfWeek((short) 1);
         schedule.setSession(ScheduleSession.MORNING);
         schedule.setStartTime(LocalTime.of(8, 0));
-        schedule.setEndTime(LocalTime.of(12, 0));
+        schedule.setEndTime(LocalTime.of(11, 0));
         doctorScheduleRepository.saveAndFlush(schedule);
 
         DoctorDayOff dayOff = new DoctorDayOff();

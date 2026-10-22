@@ -16,6 +16,7 @@ import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
 import com.dentalclinic.user.repository.UserRepository;
+import com.dentalclinic.schedule.service.DoctorScheduleService;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -39,15 +40,18 @@ public class DoctorManagementService {
     private final DoctorRepository doctorRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final DoctorScheduleService doctorScheduleService;
 
     public DoctorManagementService(
             DoctorRepository doctorRepository,
             UserRepository userRepository,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            DoctorScheduleService doctorScheduleService
     ) {
         this.doctorRepository = doctorRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.doctorScheduleService = doctorScheduleService;
     }
 
     @Transactional(readOnly = true)
@@ -120,6 +124,7 @@ public class DoctorManagementService {
         } catch (DataIntegrityViolationException exception) {
             throw new BusinessException(ErrorCode.LICENSE_NUMBER_ALREADY_EXISTS);
         }
+        doctorScheduleService.createDefaultWeeklySchedule(doctor);
         return toAdminResponse(doctor);
     }
 

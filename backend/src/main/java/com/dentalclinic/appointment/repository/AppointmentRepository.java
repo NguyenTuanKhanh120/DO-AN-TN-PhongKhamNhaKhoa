@@ -144,6 +144,20 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     );
 
     @Query("""
+            select appointment.scheduledStartAt
+            from Appointment appointment
+            where appointment.doctorService.doctor.id = :doctorId
+              and appointment.scheduledStartAt >= :fromTime
+              and appointment.status in :statuses
+            order by appointment.scheduledStartAt asc
+            """)
+    List<Instant> findScheduledStartTimesByDoctorIdAndStatusesFrom(
+            @Param("doctorId") UUID doctorId,
+            @Param("statuses") List<AppointmentStatus> statuses,
+            @Param("fromTime") Instant fromTime
+    );
+
+    @Query("""
             select (count(appointment) > 0)
             from Appointment appointment
             where appointment.doctorService.doctor.id = :doctorId

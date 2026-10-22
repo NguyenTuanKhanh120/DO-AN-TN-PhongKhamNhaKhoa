@@ -12,6 +12,7 @@ import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorStatus;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.doctor.service.DoctorManagementService;
+import com.dentalclinic.schedule.service.DoctorScheduleService;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
@@ -54,11 +55,19 @@ class DoctorManagementServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private DoctorScheduleService doctorScheduleService;
+
     private DoctorManagementService service;
 
     @BeforeEach
     void setUp() {
-        service = new DoctorManagementService(doctorRepository, userRepository, passwordEncoder);
+        service = new DoctorManagementService(
+                doctorRepository,
+                userRepository,
+                passwordEncoder,
+                doctorScheduleService
+        );
     }
 
     @Test
@@ -101,6 +110,7 @@ class DoctorManagementServiceTest {
         assertThat(doctor.getWorkingStatus()).isEqualTo(DoctorStatus.ACTIVE);
         assertThat(response.email()).isEqualTo("doctor@example.com");
         assertThat(response.workingStatus()).isEqualTo(DoctorStatus.ACTIVE);
+        verify(doctorScheduleService).createDefaultWeeklySchedule(doctor);
     }
 
     @Test

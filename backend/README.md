@@ -5,7 +5,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 ## Implemented
 
 - Java 21, Spring Boot 3.5, Maven and PostgreSQL 18.
-- Flyway V1–V5 migrations for the 17-table schema.
+- Flyway V1–V6 migrations for the 17-table schema.
 - JPA entities and repositories for the first nine business tables.
 - Common API response, pagination and exception handling.
 - Patient registration and login with BCrypt, 15-minute JWT access tokens and rotating Refresh Tokens.
@@ -19,17 +19,19 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Admin-only staff account creation, listing, detail and activation/deactivation.
 - Admin status updates reject self-deactivation and preserve at least one active admin with a PostgreSQL transaction-level advisory lock.
 - Public doctor listing and detail APIs.
-- Admin doctor account creation, profile update and working-status management.
+- Admin doctor account creation, profile update and working-status management. Creating a doctor atomically creates 12 default weekly schedules; a schedule failure rolls back the User and Doctor.
 - Public dental-service listing and detail APIs.
 - Admin dental-service creation, update and soft status management.
 - Public doctor-to-service and service-to-doctor lookup APIs.
 - Transactional admin replacement of doctor-service mappings with composite-key and foreign-key protection.
 - Public weekly doctor-schedule lookup.
-- Admin-owned weekly doctor-schedule CRUD with weekday, session and time-range validation; doctors have read-only access to their own schedules.
+- Admin-owned weekly doctor-schedule CRUD for Monday-Saturday, hourly boundaries inside `08:00-11:00` and `13:00-17:00`; doctors have read-only access to their own schedules.
+- Weekly schedule updates/deletes take the same Doctor lock as booking and reject changes that would invalidate future active appointments.
 - Admin-managed date-specific doctor days off with preview, morning/afternoon/full-day support and no mutation of recurring weekly schedules.
 - Creating a day off transactionally cancels affected future `BOOKED` appointments, writes clinic-safe CANCEL history and rejects active `CHECKED_IN`/`IN_PROGRESS` examinations.
 - Booking, rescheduling and patient follow-up creation share a pessimistic Doctor lock and recheck days off before writing.
 - Public available-slot calculation from weekly schedules and appointments.
+- Public rolling 30-day doctor calendar calculated with one schedule query, one day-off query and one occupied-slot query for the requested range.
 - Fixed 60-minute slots with active doctor/service/mapping checks and a 120-minute booking lead time.
 - Transactional patient appointment booking with BOOK audit history.
 - PostgreSQL partial-unique-index protection for concurrent slot booking conflicts.
@@ -62,7 +64,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Admins can inspect each appointment's chronological audit timeline with action, actor, reason, JSONB details and timestamp.
 - Admin dashboard summary reports patient and doctor totals plus today's appointment status counts using the clinic timezone.
 - PostgreSQL integration tests cover the appointment lifecycle, transaction rollback and concurrent booking/rescheduling races.
-- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V5, all 17 tables, session/token/draft constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
+- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V6, all 17 tables, session/token/draft constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
 - OpenAPI 3 documentation exposes typed request/response schemas, reusable error responses and JWT Bearer authorization.
 - Swagger UI and OpenAPI JSON are public in development and disabled by default in production.
 - React clients are supported through an exact-origin CORS allowlist with credentialed requests for auth cookies.
@@ -111,7 +113,7 @@ FROM pg_available_extensions
 WHERE name IN ('vector', 'uuid-ossp');
 ```
 
-Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql), [V2__add_doctor_days_off.sql](./src/main/resources/db/migration/V2__add_doctor_days_off.sql), [V3__add_payments.sql](./src/main/resources/db/migration/V3__add_payments.sql), [V4__phase_26_3_staff_and_follow_up.sql](./src/main/resources/db/migration/V4__phase_26_3_staff_and_follow_up.sql) and [V5__auth_sessions_and_medical_record_drafts.sql](./src/main/resources/db/migration/V5__auth_sessions_and_medical_record_drafts.sql). Hibernate only validates the schema through `ddl-auto=validate`.
+Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql), [V2__add_doctor_days_off.sql](./src/main/resources/db/migration/V2__add_doctor_days_off.sql), [V3__add_payments.sql](./src/main/resources/db/migration/V3__add_payments.sql), [V4__phase_26_3_staff_and_follow_up.sql](./src/main/resources/db/migration/V4__phase_26_3_staff_and_follow_up.sql), [V5__auth_sessions_and_medical_record_drafts.sql](./src/main/resources/db/migration/V5__auth_sessions_and_medical_record_drafts.sql) and [V6__backfill_default_doctor_schedules.sql](./src/main/resources/db/migration/V6__backfill_default_doctor_schedules.sql). V6 only backfills doctors with no weekly schedule and never overwrites partial/customized schedules. Hibernate only validates the schema through `ddl-auto=validate`.
 
 ## Run
 
@@ -222,6 +224,7 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `GET /api/doctors/{doctorId}/services`
 - `GET /api/doctors/{doctorId}/schedule`
 - `GET /api/doctors/{doctorId}/available-slots?serviceId={serviceId}&date={yyyy-MM-dd}`
+- `GET /api/doctors/{doctorId}/calendar?serviceId={serviceId}&fromDate={yyyy-MM-dd}&toDate={yyyy-MM-dd}` (dates optional; defaults to today through today + 29 days)
 - `POST /api/patient/appointments`
 - `GET /api/patient/appointments`
 - `GET /api/patient/appointments/{id}`
@@ -273,6 +276,8 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - A cancelled appointment may include `cancellationReason`, `cancellationSource` and `cancelledAt`. `DOCTOR_DAY_OFF` identifies a clinic cancellation; the public response never exposes the doctor's internal day-off reason.
 - Preview a day off before confirmation, but always handle `409` from the create call because the backend rechecks appointments inside the write transaction.
 - Parse timestamps as ISO-8601 values. Appointment display and day-based queries follow `Asia/Ho_Chi_Minh`.
+- Load the booking month with `/api/doctors/{doctorId}/calendar`. Render the returned `days` directly, distinguish `DAY_OFF` from `FULL`, and use each slot's `startAt` as the booking value. The API returns at most the rolling 30-day window; refresh it when the clinic date changes.
+- The calendar session status is `AVAILABLE`, `FULL`, `DAY_OFF`, `NOT_WORKING` or `UNAVAILABLE`. Sunday is always `NOT_WORKING`; a partial day off only closes its matching session.
 - Use the documented `ApiResponse` envelope and zero-based pagination contract instead of relying on JPA entity shapes.
 - Send only `serviceId` and `quantity` when a doctor updates Payment items. Never send or calculate prices as trusted frontend data.
 - A completed examination exposes an UNPAID payment until Staff, or Admin as backup, confirms actual receipt at the counter. `BANK_TRANSFER` is manual confirmation, not an online gateway.

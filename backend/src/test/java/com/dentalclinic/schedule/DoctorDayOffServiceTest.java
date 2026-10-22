@@ -183,7 +183,7 @@ class DoctorDayOffServiceTest {
     @Test
     void shouldCancelFutureBookedAppointmentAndWriteSafeAuditWithoutChangingWeeklySchedule() {
         TestContext context = stubAuthorizedCreate(DoctorDayOffPeriod.MORNING);
-        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "07:00", "12:00");
+        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "08:00", "11:00");
         Appointment appointment = appointment(
                 context.doctor(),
                 AppointmentStatus.BOOKED,
@@ -194,8 +194,8 @@ class DoctorDayOffServiceTest {
         )).thenReturn(List.of(schedule));
         when(appointmentRepository.findForUpdateByDoctorIdAndScheduledRange(
                 context.doctor().getId(),
-                Instant.parse("2026-10-19T00:00:00Z"),
-                Instant.parse("2026-10-19T05:00:00Z")
+                Instant.parse("2026-10-19T01:00:00Z"),
+                Instant.parse("2026-10-19T04:00:00Z")
         )).thenReturn(List.of(appointment));
         stubSavedDaysOff();
 
@@ -226,7 +226,7 @@ class DoctorDayOffServiceTest {
     @Test
     void shouldLeaveTerminalAppointmentsUnchanged() {
         TestContext context = stubAuthorizedCreate(DoctorDayOffPeriod.MORNING);
-        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "07:00", "12:00");
+        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "08:00", "11:00");
         List<Appointment> appointments = List.of(
                 appointment(context.doctor(), AppointmentStatus.COMPLETED, NOW.plusSeconds(3600)),
                 appointment(context.doctor(), AppointmentStatus.CANCELLED, NOW.plusSeconds(7200)),
@@ -255,7 +255,7 @@ class DoctorDayOffServiceTest {
     @EnumSource(value = AppointmentStatus.class, names = {"CHECKED_IN", "IN_PROGRESS"})
     void shouldRejectActiveExaminationWithoutCancellingIt(AppointmentStatus status) {
         TestContext context = stubAuthorizedCreate(DoctorDayOffPeriod.MORNING);
-        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "07:00", "12:00");
+        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "08:00", "11:00");
         Appointment appointment = appointment(context.doctor(), status, NOW.plusSeconds(3600));
         when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
                 context.doctor().getId(), (short) 1
@@ -275,7 +275,7 @@ class DoctorDayOffServiceTest {
     @Test
     void previewShouldReportCancellationsAndBlockingAppointmentsWithoutWriting() {
         TestContext context = authorizedContext();
-        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "07:00", "12:00");
+        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "08:00", "11:00");
         Appointment booked = appointment(
                 context.doctor(), AppointmentStatus.BOOKED, NOW.plusSeconds(3600)
         );
@@ -309,7 +309,7 @@ class DoctorDayOffServiceTest {
     @Test
     void shouldReportPastBookedAppointmentForManualReviewInsteadOfCancelling() {
         TestContext context = stubAuthorizedCreate(DoctorDayOffPeriod.MORNING);
-        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "07:00", "12:00");
+        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "08:00", "11:00");
         Appointment appointment = appointment(context.doctor(), AppointmentStatus.BOOKED, NOW);
         when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
                 context.doctor().getId(), (short) 1
@@ -330,7 +330,7 @@ class DoctorDayOffServiceTest {
     @Test
     void shouldNotChangeAppointmentsWhenDayOffInsertFails() {
         TestContext context = stubAuthorizedCreate(DoctorDayOffPeriod.MORNING);
-        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "07:00", "12:00");
+        DoctorSchedule schedule = schedule(context.doctor(), ScheduleSession.MORNING, "08:00", "11:00");
         Appointment appointment = appointment(context.doctor(), AppointmentStatus.BOOKED, NOW.plusSeconds(3600));
         when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
                 context.doctor().getId(), (short) 1

@@ -91,6 +91,9 @@ public class OpenApiConfig {
                         ),
                         new Tag().name("Doctor Days Off").description("Ngoại lệ nghỉ theo ngày do quản trị viên đăng ký"),
                         new Tag().name("Available Slots").description("Khung giờ khám còn trống"),
+                        new Tag().name("Doctor Calendar").description(
+                                "Lịch khả dụng theo thời gian thực trong cửa sổ 30 ngày"
+                        ),
                         new Tag().name("Patient Appointments").description("Lịch hẹn của bệnh nhân"),
                         new Tag().name("Doctor Appointments").description("Quy trình khám của bác sĩ"),
                         new Tag().name("Doctor Payments").description("Bác sĩ ghi nhận dịch vụ thực tế"),
@@ -343,6 +346,9 @@ public class OpenApiConfig {
         }
         if (path.contains("available-slots")) {
             return "Available Slots";
+        }
+        if (path.endsWith("/calendar")) {
+            return "Doctor Calendar";
         }
         if (path.startsWith("/api/doctors") && path.contains("/days-off")) {
             return "Doctor Days Off";

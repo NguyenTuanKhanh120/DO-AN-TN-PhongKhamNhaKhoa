@@ -44,6 +44,11 @@ import java.util.UUID;
 public class AppointmentQueryService {
 
     private static final char LIKE_ESCAPE = '\\';
+    private static final List<AppointmentStatus> ACTIVE_SCHEDULE_STATUSES = List.of(
+            AppointmentStatus.BOOKED,
+            AppointmentStatus.CHECKED_IN,
+            AppointmentStatus.IN_PROGRESS
+    );
     private static final Set<String> STAFF_SORT_FIELDS = Set.of(
             "scheduledStartAt",
             "status",
@@ -227,6 +232,15 @@ public class AppointmentQueryService {
                 page,
                 size,
                 sort
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<Instant> findActiveScheduledStartsForDoctor(UUID doctorId, Instant fromTime) {
+        return appointmentRepository.findScheduledStartTimesByDoctorIdAndStatusesFrom(
+                doctorId,
+                ACTIVE_SCHEDULE_STATUSES,
+                fromTime
         );
     }
 

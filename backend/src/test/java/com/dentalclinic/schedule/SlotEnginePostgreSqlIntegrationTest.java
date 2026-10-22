@@ -107,8 +107,8 @@ class SlotEnginePostgreSqlIntegrationTest {
         Doctor doctor = saveDoctor(doctorUser, "PHASE11-" + marker);
         DentalService dentalService = saveDentalService("Dịch vụ Phase 11 " + marker, true);
         DoctorService mapping = saveMapping(doctor, dentalService);
-        saveSchedule(doctor, ScheduleSession.MORNING, "07:00", "12:00");
-        saveSchedule(doctor, ScheduleSession.AFTERNOON, "13:00", "18:00");
+        saveSchedule(doctor, ScheduleSession.MORNING, "08:00", "11:00");
+        saveSchedule(doctor, ScheduleSession.AFTERNOON, "13:00", "17:00");
 
         User patientUser = saveUser(
                 "phase11-patient-" + marker + "@example.com",
@@ -123,12 +123,11 @@ class SlotEnginePostgreSqlIntegrationTest {
                         .param("serviceId", dentalService.getId().toString())
                         .param("date", MONDAY.toString()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(4))
+                .andExpect(jsonPath("$.data.length()").value(3))
                 .andExpect(jsonPath("$.data[0].startTime").value("13:00:00"))
                 .andExpect(jsonPath("$.data[0].startAt").value("2026-10-12T13:00:00+07:00"))
                 .andExpect(jsonPath("$.data[1].startTime").value("15:00:00"))
-                .andExpect(jsonPath("$.data[2].startTime").value("16:00:00"))
-                .andExpect(jsonPath("$.data[3].startTime").value("17:00:00"));
+                .andExpect(jsonPath("$.data[2].startTime").value("16:00:00"));
 
         assertThat(appointmentRepository.findOccupiedStartTimes(
                 doctor.getId(),

@@ -111,7 +111,7 @@ class DoctorSchedulePostgreSqlIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isEmpty());
 
-        Map<String, Object> morningBody = scheduleBody(1, "MORNING", "07:00", "12:00");
+        Map<String, Object> morningBody = scheduleBody(1, "MORNING", "08:00", "11:00");
         mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", doctor.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -144,8 +144,8 @@ class DoctorSchedulePostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.doctorId").value(doctor.getId().toString()))
                 .andExpect(jsonPath("$.data.dayOfWeek").value(1))
                 .andExpect(jsonPath("$.data.session").value("MORNING"))
-                .andExpect(jsonPath("$.data.startTime").value("07:00:00"))
-                .andExpect(jsonPath("$.data.endTime").value("12:00:00"))
+                .andExpect(jsonPath("$.data.startTime").value("08:00:00"))
+                .andExpect(jsonPath("$.data.endTime").value("11:00:00"))
                 .andReturn();
         UUID morningId = responseId(morningCreated);
 
@@ -153,7 +153,7 @@ class DoctorSchedulePostgreSqlIntegrationTest {
         assertThat(persistedMorning.getDoctor().getId()).isEqualTo(doctor.getId());
         assertThat(persistedMorning.getDayOfWeek()).isEqualTo((short) 1);
         assertThat(persistedMorning.getSession()).isEqualTo(ScheduleSession.MORNING);
-        assertThat(persistedMorning.getStartTime()).isEqualTo(LocalTime.of(7, 0));
+        assertThat(persistedMorning.getStartTime()).isEqualTo(LocalTime.of(8, 0));
 
         mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", doctor.getId())
                         .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
@@ -170,7 +170,7 @@ class DoctorSchedulePostgreSqlIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
-        Map<String, Object> afternoonBody = scheduleBody(1, "AFTERNOON", "13:00", "18:00");
+        Map<String, Object> afternoonBody = scheduleBody(1, "AFTERNOON", "13:00", "17:00");
         MvcResult afternoonCreated = mockMvc.perform(post(
                         "/api/admin/doctors/{doctorId}/schedules",
                         doctor.getId()
@@ -201,7 +201,7 @@ class DoctorSchedulePostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data[0].session").value("MORNING"))
                 .andExpect(jsonPath("$.data[1].session").value("AFTERNOON"));
 
-        Map<String, Object> movedMorningBody = scheduleBody(2, "MORNING", "08:00", "12:00");
+        Map<String, Object> movedMorningBody = scheduleBody(2, "MORNING", "08:00", "11:00");
         mockMvc.perform(put(
                         "/api/admin/doctors/{doctorId}/schedules/{scheduleId}",
                         otherDoctor.getId(),
