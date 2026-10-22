@@ -3,8 +3,6 @@ package com.dentalclinic.medicalrecord.controller;
 import com.dentalclinic.auth.security.CurrentUser;
 import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.response.ApiResponse;
-import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftRequest;
-import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftResponse;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordRequest;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordResponse;
 import com.dentalclinic.medicalrecord.service.MedicalRecordService;
@@ -58,23 +56,11 @@ public class MedicalRecordController {
         );
     }
 
-    @PutMapping("/{id}/medical-record/draft")
-    public ApiResponse<MedicalRecordDraftResponse> saveDraft(
-            @CurrentUser UserPrincipal currentUser,
-            @PathVariable UUID id,
-            @Valid @RequestBody MedicalRecordDraftRequest request
-    ) {
-        return ApiResponse.success(
-                "Lưu bản nháp bệnh án thành công",
-                medicalRecordService.saveDraft(currentUser.getId(), id, request)
-        );
-    }
-
-    @GetMapping("/{id}/medical-record/draft")
-    public ApiResponse<MedicalRecordDraftResponse> getDraft(
+    @GetMapping("/{id}/medical-record")
+    public ApiResponse<MedicalRecordResponse> getMedicalRecord(
             @CurrentUser UserPrincipal currentUser,
             @PathVariable UUID id
     ) {
-        return ApiResponse.success(medicalRecordService.getDraft(currentUser.getId(), id));
+        return ApiResponse.success(medicalRecordService.get(currentUser.getId(), id));
     }
 }

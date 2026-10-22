@@ -16,7 +16,6 @@ import com.dentalclinic.schedule.dto.AvailableSlotResponse;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
-import com.dentalclinic.schedule.repository.DoctorDayOffRepository;
 import com.dentalclinic.schedule.service.SlotService;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
@@ -66,9 +65,6 @@ class SlotServiceTest {
     private DoctorScheduleRepository doctorScheduleRepository;
 
     @Mock
-    private DoctorDayOffRepository doctorDayOffRepository;
-
-    @Mock
     private AppointmentRepository appointmentRepository;
 
     private SlotService slotService;
@@ -85,7 +81,6 @@ class SlotServiceTest {
                 dentalServiceRepository,
                 doctorServiceRepository,
                 doctorScheduleRepository,
-                doctorDayOffRepository,
                 appointmentRepository,
                 timeProvider,
                 60,
@@ -131,7 +126,7 @@ class SlotServiceTest {
     }
 
     @Test
-    void shouldRemoveOnlySlotsInRegisteredDayOffSession() {
+    void shouldGenerateThreeMorningAndFourAfternoonSlotsForDefaultSchedule() {
         Doctor doctor = doctor();
         DentalService dentalService = dentalService(true);
         stubValidDoctorAndService(doctor, dentalService);
@@ -141,9 +136,6 @@ class SlotServiceTest {
                 schedule(doctor, ScheduleSession.MORNING, "08:00", "11:00"),
                 schedule(doctor, ScheduleSession.AFTERNOON, "13:00", "17:00")
         ));
-        when(doctorDayOffRepository.findSessionsByDoctorIdAndOffDate(
-                doctor.getId(), NEXT_MONDAY
-        )).thenReturn(List.of(ScheduleSession.MORNING));
         when(appointmentRepository.findOccupiedStartTimes(
                 doctor.getId(),
                 toInstant(NEXT_MONDAY, LocalTime.MIN),
@@ -155,10 +147,16 @@ class SlotServiceTest {
                 doctor.getId(), dentalService.getId(), NEXT_MONDAY
         );
 
-        assertThat(slots).hasSize(4);
-        assertThat(slots).allMatch(slot -> slot.session() == ScheduleSession.AFTERNOON);
+        assertThat(slots).hasSize(7);
+        assertThat(slots).filteredOn(slot -> slot.session() == ScheduleSession.MORNING)
+                .hasSize(3);
+        assertThat(slots).filteredOn(slot -> slot.session() == ScheduleSession.AFTERNOON)
+                .hasSize(4);
         assertThat(slots).extracting(AvailableSlotResponse::startTime)
                 .containsExactly(
+                        LocalTime.of(8, 0),
+                        LocalTime.of(9, 0),
+                        LocalTime.of(10, 0),
                         LocalTime.of(13, 0),
                         LocalTime.of(14, 0),
                         LocalTime.of(15, 0),
@@ -177,9 +175,6 @@ class SlotServiceTest {
         )).thenReturn(List.of(schedule(
                 doctor, ScheduleSession.MORNING, "08:00", "11:00"
         )));
-        when(doctorDayOffRepository.findSessionsByDoctorIdAndOffDate(
-                doctor.getId(), followingMonday
-        )).thenReturn(List.of());
         when(appointmentRepository.findOccupiedStartTimes(
                 doctor.getId(),
                 toInstant(followingMonday, LocalTime.MIN),
@@ -193,35 +188,6 @@ class SlotServiceTest {
 
         assertThat(slots).hasSize(3);
         assertThat(slots).allMatch(slot -> slot.session() == ScheduleSession.MORNING);
-    }
-
-    @Test
-    void shouldRejectBookingAndRescheduleWritesInsideDayOff() {
-        Doctor doctor = doctor();
-        DentalService dentalService = dentalService(true);
-        stubValidDoctorAndService(doctor, dentalService);
-        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
-                doctor.getId(), (short) 1
-        )).thenReturn(List.of(schedule(
-                doctor, ScheduleSession.MORNING, "08:00", "11:00"
-        )));
-        when(doctorDayOffRepository.findSessionsByDoctorIdAndOffDate(
-                doctor.getId(), NEXT_MONDAY
-        )).thenReturn(List.of(ScheduleSession.MORNING));
-        Instant requestedStart = toInstant(NEXT_MONDAY, LocalTime.of(9, 0));
-
-        assertThatThrownBy(() -> slotService.requireAvailableSlot(
-                doctor.getId(), dentalService.getId(), requestedStart
-        )).isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Bác sĩ đã nghỉ");
-        assertThatThrownBy(() -> slotService.requireAvailableRescheduleSlot(
-                doctor.getId(), dentalService.getId(), requestedStart
-        )).isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Bác sĩ đã nghỉ");
-
-        verify(appointmentRepository, never()).existsOccupiedStart(
-                doctor.getId(), requestedStart, AppointmentStatus.CANCELLED
-        );
     }
 
     @Test

@@ -12,15 +12,10 @@ import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordRequest;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordResponse;
-import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftPrescriptionItem;
-import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftRequest;
-import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftResponse;
 import com.dentalclinic.medicalrecord.dto.PrescriptionItem;
 import com.dentalclinic.medicalrecord.entity.MedicalRecord;
-import com.dentalclinic.medicalrecord.entity.MedicalRecordDraft;
 import com.dentalclinic.medicalrecord.mapper.MedicalRecordMapper;
 import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
-import com.dentalclinic.medicalrecord.repository.MedicalRecordDraftRepository;
 import com.dentalclinic.medicalrecord.service.MedicalRecordService;
 import com.dentalclinic.user.entity.User;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,9 +51,6 @@ class MedicalRecordServiceTest {
     @Mock
     private MedicalRecordRepository medicalRecordRepository;
 
-    @Mock
-    private MedicalRecordDraftRepository medicalRecordDraftRepository;
-
     private MedicalRecordService medicalRecordService;
 
     @BeforeEach
@@ -67,7 +59,6 @@ class MedicalRecordServiceTest {
                 doctorRepository,
                 appointmentRepository,
                 medicalRecordRepository,
-                medicalRecordDraftRepository,
                 new MedicalRecordMapper(new ClinicTimeProvider(
                         Clock.system(ZoneId.of("Asia/Ho_Chi_Minh"))
                 ))
@@ -110,7 +101,6 @@ class MedicalRecordServiceTest {
         ));
         assertThat(response.createdAt()).isNotNull();
         assertThat(response.updatedAt()).isNotNull();
-        verify(medicalRecordDraftRepository).deleteByAppointmentId(appointment.getId());
     }
 
     @Test
@@ -317,71 +307,53 @@ class MedicalRecordServiceTest {
     }
 
     @Test
-    void shouldPersistAndRestoreIncompleteDraftForOwningDoctor() {
+    void shouldReturnOfficialMedicalRecordForOwningDoctor() {
         UUID authenticatedUserId = UUID.randomUUID();
         Doctor doctor = doctor(authenticatedUserId);
         Appointment appointment = appointment(AppointmentStatus.IN_PROGRESS);
-        MedicalRecordDraftRequest request = new MedicalRecordDraftRequest(
-                "Chẩn đoán đang nhập",
-                null,
-                "Kế hoạch chưa hoàn chỉnh",
-                null,
-                List.of(new MedicalRecordDraftPrescriptionItem(
-                        "Paracetamol",
-                        null,
-                        null,
-                        null
-                )),
-                null,
-                null,
-                null
-        );
-        stubOwnedAppointment(authenticatedUserId, doctor, appointment);
-        when(medicalRecordDraftRepository.findByAppointmentId(appointment.getId()))
-                .thenReturn(Optional.empty());
-        when(medicalRecordDraftRepository.saveAndFlush(any(MedicalRecordDraft.class)))
-                .thenAnswer(invocation -> persistedDraft(invocation.getArgument(0)));
-
-        MedicalRecordDraftResponse saved = medicalRecordService.saveDraft(
-                authenticatedUserId,
-                appointment.getId(),
-                request
-        );
-
-        assertThat(saved.diagnosis()).isEqualTo("Chẩn đoán đang nhập");
-        assertThat(saved.treatment()).isNull();
-        assertThat(saved.followUpRequired()).isNull();
-        assertThat(saved.prescription()).containsExactly(new MedicalRecordDraftPrescriptionItem(
-                "Paracetamol",
-                null,
-                null,
-                null
-        ));
-
-        MedicalRecordDraft persistedDraft = new MedicalRecordDraft();
-        persistedDraft.setId(saved.id());
-        persistedDraft.setAppointment(appointment);
-        persistedDraft.setDraftData(new MedicalRecordMapper(new ClinicTimeProvider(
-                Clock.system(ZoneId.of("Asia/Ho_Chi_Minh"))
-        )).toDraftJson(request));
-        persistedDraft.setCreatedAt(saved.createdAt());
-        persistedDraft.setUpdatedAt(saved.updatedAt());
+        MedicalRecord medicalRecord = medicalRecord(appointment);
+        when(doctorRepository.findByUserId(authenticatedUserId))
+                .thenReturn(Optional.of(doctor));
         when(appointmentRepository.findDetailedByIdAndDoctorId(
                 appointment.getId(),
                 doctor.getId()
         )).thenReturn(Optional.of(appointment));
-        when(medicalRecordDraftRepository.findByAppointmentId(appointment.getId()))
-                .thenReturn(Optional.of(persistedDraft));
+        when(medicalRecordRepository.findByAppointmentId(appointment.getId()))
+                .thenReturn(Optional.of(medicalRecord));
 
-        MedicalRecordDraftResponse restored = medicalRecordService.getDraft(
+        MedicalRecordResponse response = medicalRecordService.get(
                 authenticatedUserId,
                 appointment.getId()
         );
-        assertThat(restored).isEqualTo(saved);
+
+        assertThat(response.id()).isEqualTo(medicalRecord.getId());
+        assertThat(response.appointmentId()).isEqualTo(appointment.getId());
+        assertThat(response.diagnosis()).isEqualTo("Chẩn đoán cũ");
     }
 
     @Test
-    void shouldNotRevealDraftBelongingToAnotherDoctor() {
+    void shouldReportMissingOfficialMedicalRecord() {
+        UUID authenticatedUserId = UUID.randomUUID();
+        Doctor doctor = doctor(authenticatedUserId);
+        Appointment appointment = appointment(AppointmentStatus.IN_PROGRESS);
+        when(doctorRepository.findByUserId(authenticatedUserId))
+                .thenReturn(Optional.of(doctor));
+        when(appointmentRepository.findDetailedByIdAndDoctorId(
+                appointment.getId(),
+                doctor.getId()
+        )).thenReturn(Optional.of(appointment));
+        when(medicalRecordRepository.findByAppointmentId(appointment.getId()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> medicalRecordService.get(
+                authenticatedUserId,
+                appointment.getId()
+        )).isInstanceOf(NotFoundException.class)
+                .hasMessage("Không tìm thấy bệnh án");
+    }
+
+    @Test
+    void shouldNotRevealOfficialMedicalRecordBelongingToAnotherDoctor() {
         UUID authenticatedUserId = UUID.randomUUID();
         UUID appointmentId = UUID.randomUUID();
         Doctor doctor = doctor(authenticatedUserId);
@@ -389,13 +361,13 @@ class MedicalRecordServiceTest {
         when(appointmentRepository.findDetailedByIdAndDoctorId(appointmentId, doctor.getId()))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> medicalRecordService.getDraft(
+        assertThatThrownBy(() -> medicalRecordService.get(
                 authenticatedUserId,
                 appointmentId
         )).isInstanceOf(NotFoundException.class)
                 .hasMessage("Không tìm thấy lịch hẹn");
 
-        verify(medicalRecordDraftRepository, never()).findByAppointmentId(any());
+        verify(medicalRecordRepository, never()).findByAppointmentId(any());
     }
 
     private void stubOwnedAppointment(
@@ -443,13 +415,6 @@ class MedicalRecordServiceTest {
         medicalRecord.setCreatedAt(Instant.parse("2026-10-12T02:00:00Z"));
         medicalRecord.setUpdatedAt(Instant.parse("2026-10-12T02:00:00Z"));
         return medicalRecord;
-    }
-
-    private MedicalRecordDraft persistedDraft(MedicalRecordDraft draft) {
-        draft.setId(UUID.randomUUID());
-        draft.setCreatedAt(Instant.parse("2026-10-12T02:00:00Z"));
-        draft.setUpdatedAt(Instant.parse("2026-10-12T02:00:00Z"));
-        return draft;
     }
 
     private MedicalRecordRequest request(boolean followUpRequired) {

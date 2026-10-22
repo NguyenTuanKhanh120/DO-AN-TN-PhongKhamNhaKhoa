@@ -9,8 +9,6 @@ import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.exception.GlobalExceptionHandler;
 import com.dentalclinic.config.SecurityConfig;
 import com.dentalclinic.medicalrecord.controller.MedicalRecordController;
-import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftRequest;
-import com.dentalclinic.medicalrecord.dto.MedicalRecordDraftResponse;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordRequest;
 import com.dentalclinic.medicalrecord.dto.MedicalRecordResponse;
 import com.dentalclinic.medicalrecord.dto.PrescriptionItem;
@@ -177,63 +175,41 @@ class MedicalRecordControllerSecurityTest {
     }
 
     @Test
-    void shouldAllowDoctorToSaveAndRestoreIncompleteDraft() throws Exception {
+    void shouldAllowDoctorToReadOfficialMedicalRecord() throws Exception {
         UserPrincipal principal = principal();
         UUID appointmentId = UUID.randomUUID();
-        MedicalRecordDraftRequest request = new MedicalRecordDraftRequest(
-                "Chẩn đoán đang nhập",
-                null,
-                null,
-                null,
-                List.of(),
-                null,
-                null,
-                null
-        );
-        MedicalRecordDraftResponse response = new MedicalRecordDraftResponse(
-                UUID.randomUUID(),
-                appointmentId,
-                request.diagnosis(),
-                null,
-                null,
-                null,
-                List.of(),
-                null,
-                null,
-                null,
-                Instant.parse("2026-10-21T08:00:00Z"),
-                Instant.parse("2026-10-21T08:00:00Z")
-        );
-        when(medicalRecordService.saveDraft(principal.getId(), appointmentId, request))
-                .thenReturn(response);
-        when(medicalRecordService.getDraft(principal.getId(), appointmentId))
-                .thenReturn(response);
+        when(medicalRecordService.get(principal.getId(), appointmentId))
+                .thenReturn(response(appointmentId));
+
+        mockMvc.perform(get(
+                        "/api/doctor/appointments/{id}/medical-record",
+                        appointmentId
+                ).with(user(principal)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.appointmentId").value(appointmentId.toString()))
+                .andExpect(jsonPath("$.data.diagnosis").value("Viêm tủy răng 36"));
+
+        verify(medicalRecordService).get(principal.getId(), appointmentId);
+    }
+
+    @Test
+    void shouldNotExposeRemovedMedicalRecordDraftEndpoints() throws Exception {
+        UserPrincipal principal = principal();
+        UUID appointmentId = UUID.randomUUID();
+
+        mockMvc.perform(get(
+                        "/api/doctor/appointments/{id}/medical-record/draft",
+                        appointmentId
+                ).with(user(principal)))
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(put(
                         "/api/doctor/appointments/{id}/medical-record/draft",
                         appointmentId
                 ).with(user(principal))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "diagnosis": "Chẩn đoán đang nhập",
-                                  "prescription": []
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("Lưu bản nháp bệnh án thành công"))
-                .andExpect(jsonPath("$.data.diagnosis").value("Chẩn đoán đang nhập"));
-
-        mockMvc.perform(get(
-                        "/api/doctor/appointments/{id}/medical-record/draft",
-                        appointmentId
-                ).with(user(principal)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.appointmentId").value(appointmentId.toString()))
-                .andExpect(jsonPath("$.data.treatment").doesNotExist());
-
-        verify(medicalRecordService).saveDraft(principal.getId(), appointmentId, request);
-        verify(medicalRecordService).getDraft(principal.getId(), appointmentId);
+                        .content("{}"))
+                .andExpect(status().isNotFound());
     }
 
     private String validRequestJson() {

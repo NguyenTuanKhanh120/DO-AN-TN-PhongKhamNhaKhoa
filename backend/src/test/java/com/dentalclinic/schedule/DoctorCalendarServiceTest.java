@@ -12,10 +12,8 @@ import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.schedule.dto.CalendarAvailabilityStatus;
 import com.dentalclinic.schedule.dto.DoctorCalendarResponse;
-import com.dentalclinic.schedule.entity.DoctorDayOff;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.ScheduleSession;
-import com.dentalclinic.schedule.repository.DoctorDayOffRepository;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
 import com.dentalclinic.schedule.service.SlotService;
 import com.dentalclinic.service.entity.DentalService;
@@ -66,9 +64,6 @@ class DoctorCalendarServiceTest {
     private DoctorScheduleRepository doctorScheduleRepository;
 
     @Mock
-    private DoctorDayOffRepository doctorDayOffRepository;
-
-    @Mock
     private AppointmentRepository appointmentRepository;
 
     private SlotService slotService;
@@ -82,7 +77,6 @@ class DoctorCalendarServiceTest {
                 dentalServiceRepository,
                 doctorServiceRepository,
                 doctorScheduleRepository,
-                doctorDayOffRepository,
                 appointmentRepository,
                 new ClinicTimeProvider(Clock.fixed(FIXED_NOW, CLINIC_ZONE)),
                 60,
@@ -93,7 +87,7 @@ class DoctorCalendarServiceTest {
     }
 
     @Test
-    void shouldBuildRollingThirtyDayCalendarWithThreeRangeQueries() {
+    void shouldBuildRollingThirtyDayCalendarWithScheduleAndAppointmentRangeQueries() {
         DoctorService mapping = new DoctorService();
         mapping.setId(new DoctorServiceId(doctor.getId(), dentalService.getId()));
         mapping.setDoctor(doctor);
@@ -103,18 +97,6 @@ class DoctorCalendarServiceTest {
                 .thenReturn(Optional.of(dentalService));
         when(doctorServiceRepository.findById(mapping.getId())).thenReturn(Optional.of(mapping));
         List<DoctorSchedule> schedules = defaultSchedules(doctor);
-        DoctorDayOff morningOff = new DoctorDayOff();
-        morningOff.setDoctor(doctor);
-        morningOff.setOffDate(MONDAY.plusDays(1));
-        morningOff.setSession(ScheduleSession.MORNING);
-        DoctorDayOff fullDayMorningOff = new DoctorDayOff();
-        fullDayMorningOff.setDoctor(doctor);
-        fullDayMorningOff.setOffDate(MONDAY.plusDays(2));
-        fullDayMorningOff.setSession(ScheduleSession.MORNING);
-        DoctorDayOff fullDayAfternoonOff = new DoctorDayOff();
-        fullDayAfternoonOff.setDoctor(doctor);
-        fullDayAfternoonOff.setOffDate(MONDAY.plusDays(2));
-        fullDayAfternoonOff.setSession(ScheduleSession.AFTERNOON);
         Instant occupiedAfternoonStart = toInstant(MONDAY, LocalTime.of(13, 0));
         LocalDate fullyBookedDate = MONDAY.plusDays(3);
         List<Instant> occupiedStarts = new ArrayList<>();
@@ -126,11 +108,6 @@ class DoctorCalendarServiceTest {
         when(doctorScheduleRepository.findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(
                 doctor.getId()
         )).thenReturn(schedules);
-        when(doctorDayOffRepository.findForAvailability(
-                doctor.getId(),
-                MONDAY,
-                MONDAY.plusDays(29)
-        )).thenReturn(List.of(morningOff, fullDayMorningOff, fullDayAfternoonOff));
         when(appointmentRepository.findOccupiedStartTimes(
                 doctor.getId(),
                 toInstant(MONDAY, LocalTime.MIN),
@@ -148,6 +125,9 @@ class DoctorCalendarServiceTest {
         assertThat(response.fromDate()).isEqualTo(MONDAY);
         assertThat(response.toDate()).isEqualTo(MONDAY.plusDays(29));
         assertThat(response.days()).hasSize(30);
+        assertThat(CalendarAvailabilityStatus.values())
+                .extracting(Enum::name)
+                .doesNotContain("DAY_OFF");
         assertThat(response.days().getFirst().sessions()).satisfiesExactly(
                 morning -> {
                     assertThat(morning.session()).isEqualTo(ScheduleSession.MORNING);
@@ -167,13 +147,11 @@ class DoctorCalendarServiceTest {
                             );
                 }
         );
-        assertThat(response.days().get(1).sessions().getFirst().status())
-                .isEqualTo(CalendarAvailabilityStatus.DAY_OFF);
-        assertThat(response.days().get(2).status()).isEqualTo(CalendarAvailabilityStatus.DAY_OFF);
-        assertThat(response.days().get(2).sessions()).allSatisfy(session -> {
-            assertThat(session.status()).isEqualTo(CalendarAvailabilityStatus.DAY_OFF);
-            assertThat(session.availableSlots()).isEmpty();
-        });
+        assertThat(response.days().get(1).status()).isEqualTo(CalendarAvailabilityStatus.AVAILABLE);
+        assertThat(response.days().get(1).sessions()).satisfiesExactly(
+                morning -> assertThat(morning.availableSlotCount()).isEqualTo(3),
+                afternoon -> assertThat(afternoon.availableSlotCount()).isEqualTo(4)
+        );
         assertThat(response.days().get(3).status()).isEqualTo(CalendarAvailabilityStatus.FULL);
         assertThat(response.days().get(3).sessions()).allSatisfy(session -> {
             assertThat(session.status()).isEqualTo(CalendarAvailabilityStatus.FULL);
@@ -190,11 +168,6 @@ class DoctorCalendarServiceTest {
 
         verify(doctorScheduleRepository, times(1))
                 .findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(doctor.getId());
-        verify(doctorDayOffRepository, times(1)).findForAvailability(
-                doctor.getId(),
-                MONDAY,
-                MONDAY.plusDays(29)
-        );
         verify(appointmentRepository, times(1)).findOccupiedStartTimes(
                 doctor.getId(),
                 toInstant(MONDAY, LocalTime.MIN),
@@ -220,6 +193,46 @@ class DoctorCalendarServiceTest {
                 MONDAY.plusDays(30)
         )).isInstanceOf(BusinessException.class)
                 .hasMessage("Lịch chỉ hỗ trợ xem trong 30 ngày tính từ ngày hiện tại");
+    }
+
+    @Test
+    void shouldReportUnavailableWhenExpiredAndFullSessionsAreMixed() {
+        DoctorService mapping = new DoctorService();
+        mapping.setId(new DoctorServiceId(doctor.getId(), dentalService.getId()));
+        mapping.setDoctor(doctor);
+        mapping.setService(dentalService);
+        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        when(dentalServiceRepository.findById(dentalService.getId()))
+                .thenReturn(Optional.of(dentalService));
+        when(doctorServiceRepository.findById(mapping.getId())).thenReturn(Optional.of(mapping));
+        when(doctorScheduleRepository.findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(
+                doctor.getId()
+        )).thenReturn(List.of(
+                schedule(doctor, (short) 1, ScheduleSession.MORNING, "08:00", "09:00"),
+                schedule(doctor, (short) 1, ScheduleSession.AFTERNOON, "13:00", "14:00")
+        ));
+        when(appointmentRepository.findOccupiedStartTimes(
+                doctor.getId(),
+                toInstant(MONDAY, LocalTime.MIN),
+                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
+                AppointmentStatus.CANCELLED
+        )).thenReturn(List.of(toInstant(MONDAY, LocalTime.of(13, 0))));
+
+        DoctorCalendarResponse response = slotService.getCalendar(
+                doctor.getId(),
+                dentalService.getId(),
+                MONDAY,
+                MONDAY
+        );
+
+        assertThat(response.days().getFirst().status())
+                .isEqualTo(CalendarAvailabilityStatus.UNAVAILABLE);
+        assertThat(response.days().getFirst().sessions()).satisfiesExactly(
+                morning -> assertThat(morning.status())
+                        .isEqualTo(CalendarAvailabilityStatus.UNAVAILABLE),
+                afternoon -> assertThat(afternoon.status())
+                        .isEqualTo(CalendarAvailabilityStatus.FULL)
+        );
     }
 
     private List<DoctorSchedule> defaultSchedules(Doctor scheduleDoctor) {

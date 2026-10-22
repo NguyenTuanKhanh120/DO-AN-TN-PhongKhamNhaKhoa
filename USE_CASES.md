@@ -61,13 +61,12 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Người dùng chọn bác sĩ; hệ thống trả danh sách dịch vụ được gán cho bác sĩ.
 - **Điều kiện:** Bác sĩ phải tồn tại và có tài khoản đang hoạt động.
 
-### UC07 - Xem lịch làm việc và ngày nghỉ của bác sĩ
+### UC07 - Xem lịch làm việc của bác sĩ
 
 - **Tác nhân:** Khách hoặc người dùng đã đăng nhập.
-- **Mục đích:** Xem lịch cố định và các ngày bác sĩ không làm việc.
-- **Luồng chính:** Người dùng chọn bác sĩ; xem lịch theo thứ trong tuần; xem ngày nghỉ theo khoảng ngày.
+- **Mục đích:** Xem lịch làm việc lặp lại theo tuần của bác sĩ.
+- **Luồng chính:** Người dùng chọn bác sĩ; hệ thống trả các buổi làm việc theo thứ trong tuần.
 - **Điều kiện:** Bác sĩ phải tồn tại.
-- **Bảo mật:** API công khai ngày nghỉ chỉ trả ngày và buổi nghỉ, không công khai lý do nội bộ.
 
 ### UC08 - Xem khung giờ còn trống
 
@@ -75,8 +74,8 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Mục đích:** Tìm thời gian có thể đặt lịch.
 - **Luồng chính:** Người dùng chọn dịch vụ và bác sĩ; hệ thống trả lịch khả dụng dạng rolling 30 ngày hoặc sinh slot 60 phút cho một ngày cụ thể.
 - **Điều kiện:** Bác sĩ và dịch vụ đang hoạt động; bác sĩ được phân công dịch vụ; ngày được chọn có lịch làm việc.
-- **Quy tắc:** Hệ thống loại ngày nghỉ, slot đã có lịch và slot cách thời điểm hiện tại dưới 120 phút.
-- **Trạng thái calendar:** Phân biệt `AVAILABLE`, `FULL`, `DAY_OFF`, `NOT_WORKING` và `UNAVAILABLE`; không trả thông tin bệnh nhân đã đặt lịch.
+- **Quy tắc:** Hệ thống loại slot đã có lịch và slot cách thời điểm hiện tại dưới 120 phút.
+- **Trạng thái calendar:** Phân biệt `AVAILABLE`, `FULL`, `NOT_WORKING` và `UNAVAILABLE`; không trả thông tin bệnh nhân đã đặt lịch.
 
 ## B. CHỨC NĂNG BỆNH NHÂN
 
@@ -101,7 +100,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Tác nhân:** Bệnh nhân.
 - **Mục đích:** Đặt lịch với bác sĩ và dịch vụ đã chọn.
 - **Luồng chính:** Bệnh nhân chọn bác sĩ, dịch vụ và slot; hệ thống khóa dữ liệu bác sĩ; kiểm tra lại slot; tạo Appointment `BOOKED`; ghi lịch sử `BOOK`.
-- **Điều kiện:** Slot thuộc lịch làm việc; không rơi vào ngày nghỉ; phải đặt trước ít nhất 120 phút (2 giờ).
+- **Điều kiện:** Slot thuộc lịch làm việc và phải được đặt trước ít nhất 120 phút (2 giờ).
 - **Ngoại lệ:** Nếu người khác vừa đặt cùng slot, request thua nhận HTTP 409 Conflict.
 - **Kết quả:** Chỉ một bệnh nhân có thể đặt thành công cùng một slot.
 
@@ -186,14 +185,16 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Bác sĩ nhập chẩn đoán, điều trị, kế hoạch, ghi chú, đơn thuốc và thông tin tái khám; hệ thống lưu MedicalRecord.
 - **Điều kiện:** Appointment thuộc bác sĩ, đang `IN_PROGRESS` và chưa có bệnh án.
 - **Quy tắc:** Mỗi Appointment có tối đa một MedicalRecord; đơn thuốc được lưu dưới dạng JSONB.
+- **Lưu ý:** Đây là bệnh án chính thức; hệ thống không có bản nháp hoặc autosave bệnh án.
 - **Ngoại lệ:** Nếu yêu cầu tái khám thì bắt buộc phải có ngày tái khám đề xuất; ghi chú không thay thế ngày đề xuất.
 
-### UC23 - Cập nhật bệnh án
+### UC23 - Xem và cập nhật bệnh án
 
 - **Tác nhân:** Bác sĩ.
 - **Mục đích:** Chỉnh sửa bệnh án trước khi hoàn thành khám.
-- **Luồng chính:** Bác sĩ mở bệnh án; sửa thông tin; hệ thống kiểm tra và cập nhật.
+- **Luồng chính:** Bác sĩ tải MedicalRecord chính thức của Appointment; sửa thông tin; hệ thống kiểm tra và cập nhật.
 - **Điều kiện:** Appointment thuộc bác sĩ, đang `IN_PROGRESS` và đã có MedicalRecord.
+- **Bảo mật:** Bác sĩ khác không được đọc hoặc cập nhật bệnh án của Appointment này.
 - **Ngoại lệ:** Không sửa bệnh án sau khi ca khám đã hoàn thành.
 
 ### UC24 - Ghi nhận dịch vụ thực tế
@@ -283,7 +284,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Admin chọn bác sĩ; xem, tạo lại buổi đã xóa, cập nhật hoặc xóa lịch tuần của bác sĩ đó.
 - **Điều kiện:** Chỉ Thứ Hai-Thứ Bảy; `MORNING` nằm trong `08:00-11:00`; `AFTERNOON` nằm trong `13:00-17:00`; thời gian khớp ranh giới slot 60 phút.
 - **Ngoại lệ:** Không được có hai lịch trùng cùng thứ và cùng buổi; lịch phải thuộc đúng bác sĩ; không được sửa/xóa nếu làm mất Appointment tương lai đang hoạt động.
-- **Ngày nghỉ:** Nghỉ một ngày hoặc một buổi cụ thể phải dùng `doctor_days_off`, không xóa lịch tuần.
+- **Mô hình lịch:** Khả năng đặt lịch chỉ dựa trên lịch tuần, Appointment hiện có và trạng thái hoạt động của bác sĩ/dịch vụ; không có ngoại lệ lịch riêng theo ngày.
 - **Bảo mật:** Chỉ Admin được tạo, cập nhật và xóa lịch tuần; bác sĩ chỉ được xem lịch của mình.
 
 ### UC35 - Tạo dịch vụ nha khoa
@@ -316,31 +317,6 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Admin gửi toàn bộ danh sách Service ID; hệ thống thay thế mapping hiện tại trong `doctor_services`.
 - **Điều kiện:** Bác sĩ và tất cả dịch vụ phải tồn tại; danh sách không chứa ID trùng.
 - **Ngoại lệ:** Không xóa mapping nếu việc xóa vi phạm dữ liệu lịch hẹn đang tham chiếu.
-
-### UC39 - Xem trước ảnh hưởng ngày nghỉ
-
-- **Tác nhân:** Admin.
-- **Mục đích:** Kiểm tra các lịch hẹn bị ảnh hưởng trước khi đăng ký ngày nghỉ.
-- **Luồng chính:** Admin chọn bác sĩ, ngày, buổi nghỉ và lý do; hệ thống phân loại lịch sẽ hủy, lịch đang khám gây chặn và lịch cần xem xét thủ công.
-- **Điều kiện:** Ngày nghỉ và buổi nghỉ chưa tồn tại.
-- **Kết quả:** Chỉ xem trước, chưa thay đổi dữ liệu.
-
-### UC40 - Đăng ký ngày nghỉ bác sĩ
-
-- **Tác nhân:** Admin.
-- **Mục đích:** Ngăn đặt lịch vào ngày bác sĩ nghỉ.
-- **Luồng chính:** Admin xác nhận ngày nghỉ; hệ thống khóa bác sĩ và lịch liên quan; tạo ngày nghỉ; tự động hủy các lịch `BOOKED` trong tương lai; ghi lịch sử `CANCEL`.
-- **Buổi nghỉ:** `MORNING`, `AFTERNOON` hoặc `FULL_DAY`.
-- **Ngoại lệ:** Không tạo ngày nghỉ nếu có Appointment `CHECKED_IN` hoặc `IN_PROGRESS`.
-- **Lưu ý:** Chỉ Admin quản lý ngày nghỉ; bác sĩ không có API tự đăng ký ngày nghỉ.
-
-### UC41 - Xem và xóa ngày nghỉ bác sĩ
-
-- **Tác nhân:** Admin.
-- **Mục đích:** Theo dõi hoặc gỡ ngày nghỉ đã khai báo.
-- **Luồng chính:** Admin xem danh sách ngày nghỉ theo khoảng ngày; chọn bản ghi; xóa ngày nghỉ.
-- **Điều kiện:** Ngày nghỉ phải thuộc đúng bác sĩ.
-- **Lưu ý:** Xóa ngày nghỉ không tự khôi phục những Appointment đã bị hủy trước đó.
 
 ### UC42 - Tra cứu toàn bộ lịch hẹn
 
@@ -458,7 +434,7 @@ Admin vẫn có endpoint xác nhận thanh toán làm phương án dự phòng.
 - Frontend React.
 - AI Chatbot, Google Gemini, RAG và tư vấn triệu chứng.
 
-## H. QUẢN LÝ PHIÊN ĐĂNG NHẬP VÀ BẢN NHÁP BỆNH ÁN
+## H. QUẢN LÝ PHIÊN ĐĂNG NHẬP
 
 ### UC53 - Đăng nhập và tạo phiên phía Backend
 
@@ -483,7 +459,7 @@ Admin vẫn có endpoint xác nhận thanh toán làm phương án dự phòng.
 - **Mục đích:** Khóa màn hình khi người dùng rời máy nhưng chưa hết ca làm việc.
 - **Luồng chính:** Frontend chỉ gọi `/api/auth/activity` khi có tương tác thực sự; Backend cập nhật thời điểm hoạt động cuối.
 - **Ngưỡng:** Admin 15 phút; Doctor/Staff 20 phút; Patient không áp dụng.
-- **Quy tắc:** Request nền, refresh token và autosave bệnh án không tự cập nhật hoạt động.
+- **Quy tắc:** Request nền và refresh token không tự cập nhật hoạt động.
 - **Kết quả:** Khi quá ngưỡng, API nghiệp vụ trả `SESSION_LOCKED` và không thực thi nghiệp vụ.
 
 ### UC56 - Mở khóa phiên
@@ -507,12 +483,3 @@ Admin vẫn có endpoint xác nhận thanh toán làm phương án dự phòng.
 - **Tác nhân:** Admin, Bác sĩ, Nhân viên, Bệnh nhân.
 - **Mục đích:** Cho client biết role, trạng thái, thời hạn tuyệt đối, hoạt động gần nhất và chính sách Idle Lock của phiên.
 - **Bảo mật:** Endpoint yêu cầu Access Token và chỉ trả phiên gắn với chính token đó.
-
-### UC59 - Lưu và khôi phục bản nháp bệnh án
-
-- **Tác nhân:** Bác sĩ phụ trách Appointment.
-- **Mục đích:** Lưu nội dung khám chưa hoàn chỉnh lên PostgreSQL để tiếp tục sau khi mở khóa hoặc tải lại trang.
-- **Luồng chính:** Bác sĩ đang khám gửi dữ liệu có thể chưa đầy đủ; hệ thống upsert `medical_record_drafts`; bác sĩ đọc lại qua Appointment tương ứng.
-- **Điều kiện:** Appointment thuộc bác sĩ đăng nhập và đang `IN_PROGRESS`.
-- **Bảo mật:** Patient, Staff và bác sĩ khác không được đọc hoặc sửa bản nháp.
-- **Quy tắc:** Bản nháp không được dùng để tự động hoàn thành khám; khi lưu bệnh án chính thức thành công, bản nháp tương ứng bị xóa.

@@ -12,10 +12,8 @@ import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
-import com.dentalclinic.schedule.entity.DoctorDayOff;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.ScheduleSession;
-import com.dentalclinic.schedule.repository.DoctorDayOffRepository;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
@@ -85,9 +83,6 @@ class DoctorCalendarPostgreSqlIntegrationTest {
     private DoctorScheduleRepository doctorScheduleRepository;
 
     @Autowired
-    private DoctorDayOffRepository doctorDayOffRepository;
-
-    @Autowired
     private PatientRepository patientRepository;
 
     @Autowired
@@ -110,16 +105,10 @@ class DoctorCalendarPostgreSqlIntegrationTest {
                 "Bác sĩ Calendar",
                 Role.DOCTOR
         );
-        User admin = saveUser(
-                "calendar-admin-" + marker + "@example.com",
-                "Quản trị viên",
-                Role.ADMIN
-        );
         Doctor doctor = saveDoctor(doctorUser, "CALENDAR-" + marker);
         DentalService service = saveService("Dịch vụ Calendar " + marker);
         DoctorService mapping = saveMapping(doctor, service);
         saveDefaultSchedules(doctor);
-        saveMorningDayOff(doctor, admin, MONDAY.plusDays(1));
 
         User patientUser = saveUser(
                 "calendar-patient-" + marker + "@example.com",
@@ -145,12 +134,15 @@ class DoctorCalendarPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.days.length()").value(30))
                 .andExpect(jsonPath("$.data.days[0].sessions[0].availableSlotCount").value(2))
                 .andExpect(jsonPath("$.data.days[0].sessions[1].availableSlotCount").value(3))
-                .andExpect(jsonPath("$.data.days[1].sessions[0].status").value("DAY_OFF"))
+                .andExpect(jsonPath("$.data.days[1].status").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.days[1].sessions[0].availableSlotCount").value(3))
+                .andExpect(jsonPath("$.data.days[1].sessions[1].availableSlotCount").value(4))
                 .andExpect(jsonPath("$.data.days[6].status").value("NOT_WORKING"))
                 .andReturn();
 
         String responseBody = result.getResponse().getContentAsString();
         assertThat(responseBody)
+                .doesNotContain("DAY_OFF")
                 .doesNotContain("Bệnh nhân bí mật")
                 .doesNotContain(patient.getId().toString())
                 .doesNotContain(patientUser.getId().toString());
@@ -215,16 +207,6 @@ class DoctorCalendarPostgreSqlIntegrationTest {
         schedule.setStartTime(LocalTime.parse(start));
         schedule.setEndTime(LocalTime.parse(end));
         doctorScheduleRepository.save(schedule);
-    }
-
-    private void saveMorningDayOff(Doctor doctor, User admin, LocalDate date) {
-        DoctorDayOff dayOff = new DoctorDayOff();
-        dayOff.setDoctor(doctor);
-        dayOff.setOffDate(date);
-        dayOff.setSession(ScheduleSession.MORNING);
-        dayOff.setReason("Nghỉ kiểm thử");
-        dayOff.setCreatedBy(admin);
-        doctorDayOffRepository.saveAndFlush(dayOff);
     }
 
     private Instant toInstant(LocalDate date, LocalTime time) {

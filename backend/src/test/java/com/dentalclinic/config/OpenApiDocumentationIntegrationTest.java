@@ -123,29 +123,13 @@ class OpenApiDocumentationIntegrationTest {
         JsonNode activity = operation(document, "/api/auth/activity", "post");
         assertThat(activity.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
 
-        JsonNode draft = operation(
+        JsonNode officialMedicalRecord = operation(
                 document,
-                "/api/doctor/appointments/{id}/medical-record/draft",
-                "put"
-        );
-        assertThat(draft.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
-
-        JsonNode createDayOff = operation(
-                document,
-                "/api/admin/doctors/{doctorId}/days-off",
-                "post"
-        );
-        assertThat(createDayOff.path("tags").get(0).asText()).isEqualTo("Doctor Days Off");
-        assertThat(createDayOff.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
-        assertOnlyResponses(createDayOff, "201");
-
-        JsonNode publicDaysOff = operation(
-                document,
-                "/api/doctors/{doctorId}/days-off",
+                "/api/doctor/appointments/{id}/medical-record",
                 "get"
         );
-        assertThat(publicDaysOff.path("tags").get(0).asText()).isEqualTo("Doctor Days Off");
-        assertThat(publicDaysOff.has("security")).isFalse();
+        assertThat(officialMedicalRecord.path("security").get(0)
+                .has(OpenApiConfig.BEARER_AUTH)).isTrue();
 
         JsonNode adminDoctorSchedule = operation(
                 document,
@@ -211,15 +195,18 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(schemas.has("CreateStaffRequest")).isTrue();
         assertThat(schemas.has("BookAppointmentRequest")).isTrue();
         assertThat(schemas.has("DashboardSummaryResponse")).isTrue();
-        assertThat(schemas.has("CreateDoctorDayOffRequest")).isTrue();
-        assertThat(schemas.has("CreateDoctorDayOffResponse")).isTrue();
+        assertThat(schemas.has("CreateDoctorDayOffRequest")).isFalse();
+        assertThat(schemas.has("CreateDoctorDayOffResponse")).isFalse();
+        assertThat(schemas.path("CalendarAvailabilityStatus").toString())
+                .doesNotContain("DAY_OFF");
         assertThat(schemas.has("UpdatePaymentItemsRequest")).isTrue();
         assertThat(schemas.has("PaymentResponse")).isTrue();
         assertThat(schemas.has("ConfirmPaymentRequest")).isTrue();
         assertThat(schemas.has("RevenueSummaryResponse")).isTrue();
         assertThat(schemas.has("AuthSessionResponse")).isTrue();
-        assertThat(schemas.has("MedicalRecordDraftRequest")).isTrue();
-        assertThat(schemas.has("MedicalRecordDraftResponse")).isTrue();
+        assertThat(schemas.has("MedicalRecordResponse")).isTrue();
+        assertThat(schemas.has("MedicalRecordDraftRequest")).isFalse();
+        assertThat(schemas.has("MedicalRecordDraftResponse")).isFalse();
         assertThat(schemas.has("ErrorResponse")).isTrue();
         assertThat(schemas.has("UserPrincipal")).isFalse();
         assertAllSchemaReferencesResolve(document, schemas);
@@ -229,6 +216,17 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(document.path("paths").has("/api/doctor/appointments/{id}/follow-up"))
                 .isFalse();
         assertThat(document.path("paths").has("/api/doctor/appointments/{id}/follow-up-slots"))
+                .isFalse();
+        assertThat(document.path("paths").has("/api/admin/doctors/{doctorId}/days-off"))
+                .isFalse();
+        assertThat(document.path("paths").has("/api/admin/doctors/{doctorId}/days-off/preview"))
+                .isFalse();
+        assertThat(document.path("paths").has("/api/admin/doctors/{doctorId}/days-off/{dayOffId}"))
+                .isFalse();
+        assertThat(document.path("paths").has("/api/doctors/{doctorId}/days-off"))
+                .isFalse();
+        assertThat(document.path("paths")
+                .has("/api/doctor/appointments/{id}/medical-record/draft"))
                 .isFalse();
         assertThat(document.path("paths").has("/api/chat/sessions")).isFalse();
     }

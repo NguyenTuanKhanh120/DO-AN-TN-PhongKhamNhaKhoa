@@ -53,7 +53,6 @@ public class OpenApiConfig {
             "POST /api/admin/doctors",
             "POST /api/admin/services",
             "POST /api/admin/doctors/{doctorId}/schedules",
-            "POST /api/admin/doctors/{doctorId}/days-off",
             "POST /api/patient/appointments",
             "POST /api/doctor/appointments/{id}/medical-record"
     );
@@ -89,7 +88,6 @@ public class OpenApiConfig {
                         new Tag().name("Doctor Schedules").description(
                                 "Admin quản lý lịch làm việc tuần; bác sĩ chỉ xem lịch của mình"
                         ),
-                        new Tag().name("Doctor Days Off").description("Ngoại lệ nghỉ theo ngày do quản trị viên đăng ký"),
                         new Tag().name("Available Slots").description("Khung giờ khám còn trống"),
                         new Tag().name("Doctor Calendar").description(
                                 "Lịch khả dụng theo thời gian thực trong cửa sổ 30 ngày"
@@ -312,9 +310,6 @@ public class OpenApiConfig {
             return "Admin Appointments";
         }
         if (path.startsWith("/api/admin/doctors")) {
-            if (path.contains("/days-off")) {
-                return "Doctor Days Off";
-            }
             if (path.contains("/schedules")) {
                 return "Doctor Schedules";
             }
@@ -349,9 +344,6 @@ public class OpenApiConfig {
         }
         if (path.endsWith("/calendar")) {
             return "Doctor Calendar";
-        }
-        if (path.startsWith("/api/doctors") && path.contains("/days-off")) {
-            return "Doctor Days Off";
         }
         if (path.endsWith("/schedule")) {
             return "Doctor Schedules";
