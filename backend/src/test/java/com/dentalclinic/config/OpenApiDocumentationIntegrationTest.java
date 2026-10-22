@@ -164,6 +164,14 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(document.path("paths").path("/api/doctor/schedules").has("put")).isFalse();
         assertThat(document.path("paths").path("/api/doctor/schedules").has("delete")).isFalse();
 
+        JsonNode doctorCalendar = operation(
+                document,
+                "/api/doctors/{doctorId}/calendar",
+                "get"
+        );
+        assertThat(doctorCalendar.path("tags").get(0).asText()).isEqualTo("Doctor Calendar");
+        assertThat(doctorCalendar.has("security")).isFalse();
+
         JsonNode doctorPayment = operation(
                 document,
                 "/api/doctor/appointments/{id}/payment/items",

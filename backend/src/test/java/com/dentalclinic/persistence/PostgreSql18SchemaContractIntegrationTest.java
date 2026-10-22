@@ -244,6 +244,12 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(sessionStatuses).containsExactly("ACTIVE", "LOCKED", "REVOKED");
         assertThat(currentRefreshTokenIndex).isEqualTo(1);
         assertThat(draftObjectConstraint).isEqualTo(1);
+
+        Boolean defaultScheduleBackfillSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '6'",
+                Boolean.class
+        );
+        assertThat(defaultScheduleBackfillSucceeded).isTrue();
     }
 
     @Test

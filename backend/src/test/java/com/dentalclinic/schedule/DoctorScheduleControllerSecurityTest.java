@@ -198,6 +198,24 @@ class DoctorScheduleControllerSecurityTest {
     }
 
     @Test
+    void shouldPreventPatientAndStaffFromManagingWeeklySchedule() throws Exception {
+        UUID doctorId = UUID.randomUUID();
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", doctorId)
+                        .with(user("patient@example.com").roles("PATIENT"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", doctorId)
+                        .with(user("staff@example.com").roles("STAFF"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validBody()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
     void shouldValidateAdminScheduleRequest() throws Exception {
         mockMvc.perform(post("/api/admin/doctors/{doctorId}/schedules", UUID.randomUUID())
                         .with(user(adminPrincipal()))
@@ -214,10 +232,10 @@ class DoctorScheduleControllerSecurityTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "dayOfWeek": 8,
+                                  "dayOfWeek": 7,
                                   "session": "MORNING",
-                                  "startTime": "07:00",
-                                  "endTime": "12:00"
+                                  "startTime": "08:00",
+                                  "endTime": "11:00"
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -246,8 +264,8 @@ class DoctorScheduleControllerSecurityTest {
                 {
                   "dayOfWeek": 1,
                   "session": "MORNING",
-                  "startTime": "07:00",
-                  "endTime": "12:00"
+                  "startTime": "08:00",
+                  "endTime": "11:00"
                 }
                 """;
     }
@@ -258,8 +276,8 @@ class DoctorScheduleControllerSecurityTest {
                 UUID.randomUUID(),
                 1,
                 ScheduleSession.MORNING,
-                LocalTime.of(7, 0),
-                LocalTime.of(12, 0),
+                LocalTime.of(8, 0),
+                LocalTime.of(11, 0),
                 Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2026-01-02T00:00:00Z")
         );

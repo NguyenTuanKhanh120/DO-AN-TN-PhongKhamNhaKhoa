@@ -14,6 +14,12 @@ import com.dentalclinic.doctor.entity.DoctorStatus;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.schedule.dto.AvailableSlotResponse;
+import com.dentalclinic.schedule.dto.CalendarAvailabilityStatus;
+import com.dentalclinic.schedule.dto.CalendarSlotResponse;
+import com.dentalclinic.schedule.dto.DoctorCalendarDayResponse;
+import com.dentalclinic.schedule.dto.DoctorCalendarResponse;
+import com.dentalclinic.schedule.dto.DoctorCalendarSessionResponse;
+import com.dentalclinic.schedule.entity.DoctorDayOff;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.repository.DoctorDayOffRepository;
@@ -29,16 +35,27 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.DayOfWeek;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 
 @Service
 public class SlotService {
+
+    private static final int MAX_CALENDAR_DAYS = 30;
+    private static final List<ScheduleSession> CALENDAR_SESSIONS = List.of(
+            ScheduleSession.MORNING,
+            ScheduleSession.AFTERNOON
+    );
 
     private final DoctorRepository doctorRepository;
     private final DentalServiceRepository dentalServiceRepository;
@@ -105,6 +122,61 @@ public class SlotService {
                 .filter(entry -> !occupiedStarts.contains(entry.getKey()))
                 .map(entry -> toResponse(date, entry.getValue()))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public DoctorCalendarResponse getCalendar(
+            UUID doctorId,
+            UUID serviceId,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        CalendarRange range = resolveCalendarRange(fromDate, toDate);
+        requireDoctorService(doctorId, serviceId);
+
+        List<DoctorSchedule> schedules = doctorScheduleRepository
+                .findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(doctorId)
+                .stream()
+                .filter(DoctorScheduleRules::isSupported)
+                .toList();
+        List<DoctorDayOff> daysOff = doctorDayOffRepository.findForAvailability(
+                doctorId,
+                range.fromDate(),
+                range.toDate()
+        );
+
+        ZoneId clinicZone = clinicTimeProvider.zoneId();
+        Instant rangeStart = range.fromDate().atStartOfDay(clinicZone).toInstant();
+        Instant rangeEnd = range.toDate().plusDays(1).atStartOfDay(clinicZone).toInstant();
+        Set<Instant> occupiedStarts = new HashSet<>(appointmentRepository.findOccupiedStartTimes(
+                doctorId,
+                rangeStart,
+                rangeEnd,
+                AppointmentStatus.CANCELLED
+        ));
+        Instant earliestBookableStart = clinicTimeProvider.now().plus(bookingMinAdvance);
+
+        Map<Integer, Map<ScheduleSession, DoctorSchedule>> schedulesByDay = groupSchedules(schedules);
+        Map<LocalDate, Set<ScheduleSession>> daysOffByDate = groupDaysOff(daysOff);
+        List<DoctorCalendarDayResponse> days = range.fromDate().datesUntil(
+                        range.toDate().plusDays(1)
+                )
+                .map(date -> calendarDay(
+                        date,
+                        schedulesByDay,
+                        daysOffByDate,
+                        occupiedStarts,
+                        earliestBookableStart,
+                        clinicZone
+                ))
+                .toList();
+        return new DoctorCalendarResponse(
+                doctorId,
+                serviceId,
+                range.fromDate(),
+                range.toDate(),
+                days
+        );
     }
 
     @Transactional(readOnly = true)
@@ -181,6 +253,21 @@ public class SlotService {
     }
 
     private SlotContext loadSlotContext(UUID doctorId, UUID serviceId, LocalDate date) {
+        DoctorService doctorService = requireDoctorService(doctorId, serviceId);
+
+        short dayOfWeek = (short) date.getDayOfWeek().getValue();
+        List<DoctorSchedule> schedules = doctorScheduleRepository
+                .findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(doctorId, dayOfWeek)
+                .stream()
+                .filter(DoctorScheduleRules::isSupported)
+                .toList();
+        Set<ScheduleSession> daysOff = new HashSet<>(
+                doctorDayOffRepository.findSessionsByDoctorIdAndOffDate(doctorId, date)
+        );
+        return new SlotContext(doctorService, schedules, daysOff);
+    }
+
+    private DoctorService requireDoctorService(UUID doctorId, UUID serviceId) {
         Doctor doctor = doctorRepository.findById(doctorId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy bác sĩ"));
         validateDoctorAvailability(doctor);
@@ -191,20 +278,185 @@ public class SlotService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "Dịch vụ nha khoa hiện không hoạt động");
         }
 
-        DoctorService doctorService = doctorServiceRepository
+        return doctorServiceRepository
                 .findById(new DoctorServiceId(doctorId, serviceId))
                 .orElseThrow(() -> new BusinessException(
                         ErrorCode.INVALID_REQUEST,
                         "Bác sĩ không cung cấp dịch vụ nha khoa đã chọn"
                 ));
+    }
 
-        short dayOfWeek = (short) date.getDayOfWeek().getValue();
-        List<DoctorSchedule> schedules = doctorScheduleRepository
-                .findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(doctorId, dayOfWeek);
-        Set<ScheduleSession> daysOff = new HashSet<>(
-                doctorDayOffRepository.findSessionsByDoctorIdAndOffDate(doctorId, date)
+    private CalendarRange resolveCalendarRange(LocalDate requestedFrom, LocalDate requestedTo) {
+        LocalDate today = clinicTimeProvider.today();
+        LocalDate maximumDate = today.plusDays(MAX_CALENDAR_DAYS - 1L);
+        LocalDate fromDate = requestedFrom == null ? today : requestedFrom;
+        LocalDate toDate = requestedTo == null ? maximumDate : requestedTo;
+
+        if (fromDate.isBefore(today)) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Từ ngày không được nằm trước ngày hiện tại"
+            );
+        }
+        if (fromDate.isAfter(toDate)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Từ ngày không được sau đến ngày");
+        }
+        if (toDate.isAfter(maximumDate)) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Lịch chỉ hỗ trợ xem trong 30 ngày tính từ ngày hiện tại"
+            );
+        }
+        if (ChronoUnit.DAYS.between(fromDate, toDate) + 1 > MAX_CALENDAR_DAYS) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Khoảng ngày truy vấn không được vượt quá 30 ngày"
+            );
+        }
+        return new CalendarRange(fromDate, toDate);
+    }
+
+    private Map<Integer, Map<ScheduleSession, DoctorSchedule>> groupSchedules(
+            List<DoctorSchedule> schedules
+    ) {
+        Map<Integer, Map<ScheduleSession, DoctorSchedule>> grouped = new HashMap<>();
+        for (DoctorSchedule schedule : schedules) {
+            grouped.computeIfAbsent(
+                    (int) schedule.getDayOfWeek(),
+                    ignored -> new EnumMap<>(ScheduleSession.class)
+            ).put(schedule.getSession(), schedule);
+        }
+        return grouped;
+    }
+
+    private Map<LocalDate, Set<ScheduleSession>> groupDaysOff(List<DoctorDayOff> daysOff) {
+        Map<LocalDate, Set<ScheduleSession>> grouped = new HashMap<>();
+        for (DoctorDayOff dayOff : daysOff) {
+            grouped.computeIfAbsent(
+                    dayOff.getOffDate(),
+                    ignored -> new HashSet<>()
+            ).add(dayOff.getSession());
+        }
+        return grouped;
+    }
+
+    private DoctorCalendarDayResponse calendarDay(
+            LocalDate date,
+            Map<Integer, Map<ScheduleSession, DoctorSchedule>> schedulesByDay,
+            Map<LocalDate, Set<ScheduleSession>> daysOffByDate,
+            Set<Instant> occupiedStarts,
+            Instant earliestBookableStart,
+            ZoneId clinicZone
+    ) {
+        int dayOfWeek = date.getDayOfWeek().getValue();
+        Map<ScheduleSession, DoctorSchedule> schedules = date.getDayOfWeek() == DayOfWeek.SUNDAY
+                ? Map.of()
+                : schedulesByDay.getOrDefault(dayOfWeek, Map.of());
+        Set<ScheduleSession> daysOff = daysOffByDate.getOrDefault(date, Set.of());
+        List<DoctorCalendarSessionResponse> sessions = CALENDAR_SESSIONS.stream()
+                .map(session -> calendarSession(
+                        date,
+                        session,
+                        schedules.get(session),
+                        daysOff.contains(session),
+                        occupiedStarts,
+                        earliestBookableStart,
+                        clinicZone
+                ))
+                .toList();
+
+        return new DoctorCalendarDayResponse(
+                date,
+                dayOfWeek,
+                resolveDayStatus(sessions),
+                sessions
         );
-        return new SlotContext(doctorService, schedules, daysOff);
+    }
+
+    private DoctorCalendarSessionResponse calendarSession(
+            LocalDate date,
+            ScheduleSession session,
+            DoctorSchedule schedule,
+            boolean dayOff,
+            Set<Instant> occupiedStarts,
+            Instant earliestBookableStart,
+            ZoneId clinicZone
+    ) {
+        if (schedule == null) {
+            return emptyCalendarSession(session, CalendarAvailabilityStatus.NOT_WORKING);
+        }
+        if (dayOff) {
+            return emptyCalendarSession(session, CalendarAvailabilityStatus.DAY_OFF);
+        }
+
+        TreeMap<Instant, SlotCandidate> candidates = generateSlotCandidates(
+                List.of(schedule),
+                date,
+                clinicZone
+        );
+        List<CalendarSlotResponse> availableSlots = candidates.entrySet().stream()
+                .filter(entry -> !entry.getKey().isBefore(earliestBookableStart))
+                .filter(entry -> !occupiedStarts.contains(entry.getKey()))
+                .map(entry -> new CalendarSlotResponse(
+                        entry.getValue().startAt().toOffsetDateTime(),
+                        entry.getValue().endAt().toOffsetDateTime()
+                ))
+                .toList();
+
+        CalendarAvailabilityStatus status;
+        if (!availableSlots.isEmpty()) {
+            status = CalendarAvailabilityStatus.AVAILABLE;
+        } else if (candidates.keySet().stream().allMatch(start -> start.isBefore(earliestBookableStart))) {
+            status = CalendarAvailabilityStatus.UNAVAILABLE;
+        } else {
+            status = CalendarAvailabilityStatus.FULL;
+        }
+        return new DoctorCalendarSessionResponse(
+                session,
+                status,
+                availableSlots.size(),
+                availableSlots
+        );
+    }
+
+    private DoctorCalendarSessionResponse emptyCalendarSession(
+            ScheduleSession session,
+            CalendarAvailabilityStatus status
+    ) {
+        return new DoctorCalendarSessionResponse(session, status, 0, List.of());
+    }
+
+    private CalendarAvailabilityStatus resolveDayStatus(
+            List<DoctorCalendarSessionResponse> sessions
+    ) {
+        if (hasStatus(sessions, CalendarAvailabilityStatus.AVAILABLE)) {
+            return CalendarAvailabilityStatus.AVAILABLE;
+        }
+        List<DoctorCalendarSessionResponse> workingSessions = sessions.stream()
+                .filter(session -> session.status() != CalendarAvailabilityStatus.NOT_WORKING)
+                .toList();
+        if (workingSessions.isEmpty()) {
+            return CalendarAvailabilityStatus.NOT_WORKING;
+        }
+        if (workingSessions.stream().allMatch(
+                session -> session.status() == CalendarAvailabilityStatus.DAY_OFF
+        )) {
+            return CalendarAvailabilityStatus.DAY_OFF;
+        }
+        if (hasStatus(sessions, CalendarAvailabilityStatus.FULL)) {
+            return CalendarAvailabilityStatus.FULL;
+        }
+        if (hasStatus(sessions, CalendarAvailabilityStatus.UNAVAILABLE)) {
+            return CalendarAvailabilityStatus.UNAVAILABLE;
+        }
+        return CalendarAvailabilityStatus.NOT_WORKING;
+    }
+
+    private boolean hasStatus(
+            List<DoctorCalendarSessionResponse> sessions,
+            CalendarAvailabilityStatus status
+    ) {
+        return sessions.stream().anyMatch(session -> session.status() == status);
     }
 
     private TreeMap<Instant, SlotCandidate> generateSlotCandidates(
@@ -272,5 +524,8 @@ public class SlotService {
             ZonedDateTime startAt,
             ZonedDateTime endAt
     ) {
+    }
+
+    private record CalendarRange(LocalDate fromDate, LocalDate toDate) {
     }
 }

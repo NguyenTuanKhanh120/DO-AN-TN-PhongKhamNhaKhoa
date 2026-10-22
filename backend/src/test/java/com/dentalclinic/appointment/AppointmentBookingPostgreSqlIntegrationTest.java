@@ -374,7 +374,7 @@ class AppointmentBookingPostgreSqlIntegrationTest {
         schedule.setDayOfWeek((short) 1);
         schedule.setSession(ScheduleSession.AFTERNOON);
         schedule.setStartTime(LocalTime.of(13, 0));
-        schedule.setEndTime(LocalTime.of(18, 0));
+        schedule.setEndTime(LocalTime.of(17, 0));
         doctorScheduleRepository.saveAndFlush(schedule);
     }
 

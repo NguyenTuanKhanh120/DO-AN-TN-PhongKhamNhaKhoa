@@ -34,4 +34,6 @@ public interface DoctorScheduleRepository extends JpaRepository<DoctorSchedule, 
             ScheduleSession session,
             UUID scheduleId
     );
+
+    boolean existsByDoctor_Id(UUID doctorId);
 }

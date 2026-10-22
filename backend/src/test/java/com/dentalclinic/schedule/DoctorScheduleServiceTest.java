@@ -1,7 +1,9 @@
 package com.dentalclinic.schedule;
 
+import com.dentalclinic.appointment.service.AppointmentQueryService;
 import com.dentalclinic.common.constant.ErrorCode;
 import com.dentalclinic.common.exception.BusinessException;
+import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorStatus;
@@ -26,6 +28,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -46,17 +50,29 @@ class DoctorScheduleServiceTest {
     @Mock
     private DoctorScheduleRepository doctorScheduleRepository;
 
+    @Mock
+    private AppointmentQueryService appointmentQueryService;
+
+    @Mock
+    private ClinicTimeProvider clinicTimeProvider;
+
     private DoctorScheduleService service;
 
     @BeforeEach
     void setUp() {
-        service = new DoctorScheduleService(doctorRepository, doctorScheduleRepository);
+        service = new DoctorScheduleService(
+                doctorRepository,
+                doctorScheduleRepository,
+                appointmentQueryService,
+                clinicTimeProvider,
+                60
+        );
     }
 
     @Test
     void shouldReturnPublicWeeklyScheduleForActiveDoctorAccount() {
         Doctor doctor = doctor();
-        DoctorSchedule morning = schedule(doctor, (short) 1, ScheduleSession.MORNING, "07:00", "12:00");
+        DoctorSchedule morning = schedule(doctor, (short) 1, ScheduleSession.MORNING, "08:00", "11:00");
         when(doctorRepository.findByIdAndUser_Status(doctor.getId(), UserStatus.ACTIVE))
                 .thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(
@@ -69,7 +85,7 @@ class DoctorScheduleServiceTest {
             assertThat(item.doctorId()).isEqualTo(doctor.getId());
             assertThat(item.dayOfWeek()).isEqualTo(1);
             assertThat(item.session()).isEqualTo(ScheduleSession.MORNING);
-            assertThat(item.startTime()).isEqualTo(LocalTime.of(7, 0));
+            assertThat(item.startTime()).isEqualTo(LocalTime.of(8, 0));
         });
     }
 
@@ -136,8 +152,8 @@ class DoctorScheduleServiceTest {
     @Test
     void shouldCreateScheduleForDoctorSelectedByAdmin() {
         Doctor doctor = doctor();
-        DoctorScheduleRequest request = request(1, ScheduleSession.MORNING, "07:00", "12:00");
-        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        DoctorScheduleRequest request = request(1, ScheduleSession.MORNING, "08:00", "11:00");
+        when(doctorRepository.findForUpdateById(doctor.getId())).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.existsByDoctor_IdAndDayOfWeekAndSession(
                 doctor.getId(),
                 (short) 1,
@@ -157,16 +173,16 @@ class DoctorScheduleServiceTest {
         assertThat(saved.getDoctor()).isSameAs(doctor);
         assertThat(saved.getDayOfWeek()).isEqualTo((short) 1);
         assertThat(saved.getSession()).isEqualTo(ScheduleSession.MORNING);
-        assertThat(saved.getStartTime()).isEqualTo(LocalTime.of(7, 0));
-        assertThat(saved.getEndTime()).isEqualTo(LocalTime.of(12, 0));
+        assertThat(saved.getStartTime()).isEqualTo(LocalTime.of(8, 0));
+        assertThat(saved.getEndTime()).isEqualTo(LocalTime.of(11, 0));
         assertThat(response.id()).isNotNull();
     }
 
     @Test
     void shouldRejectDuplicateDoctorDayAndSession() {
         Doctor doctor = doctor();
-        DoctorScheduleRequest request = request(1, ScheduleSession.MORNING, "07:00", "12:00");
-        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        DoctorScheduleRequest request = request(1, ScheduleSession.MORNING, "08:00", "11:00");
+        when(doctorRepository.findForUpdateById(doctor.getId())).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.existsByDoctor_IdAndDayOfWeekAndSession(
                 doctor.getId(),
                 (short) 1,
@@ -191,7 +207,7 @@ class DoctorScheduleServiceTest {
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
 
-        verify(doctorRepository, never()).findById(any());
+        verify(doctorRepository, never()).findForUpdateById(any());
     }
 
     @Test
@@ -204,8 +220,8 @@ class DoctorScheduleServiceTest {
                 "07:00",
                 "12:00"
         );
-        DoctorScheduleRequest request = request(2, ScheduleSession.AFTERNOON, "13:30", "17:30");
-        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        DoctorScheduleRequest request = request(2, ScheduleSession.AFTERNOON, "14:00", "17:00");
+        when(doctorRepository.findForUpdateById(doctor.getId())).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.findByIdAndDoctor_Id(
                 schedule.getId(),
                 doctor.getId()
@@ -225,8 +241,8 @@ class DoctorScheduleServiceTest {
 
         assertThat(schedule.getDayOfWeek()).isEqualTo((short) 2);
         assertThat(schedule.getSession()).isEqualTo(ScheduleSession.AFTERNOON);
-        assertThat(schedule.getStartTime()).isEqualTo(LocalTime.of(13, 30));
-        assertThat(response.endTime()).isEqualTo(LocalTime.of(17, 30));
+        assertThat(schedule.getStartTime()).isEqualTo(LocalTime.of(14, 0));
+        assertThat(response.endTime()).isEqualTo(LocalTime.of(17, 0));
         verify(doctorScheduleRepository).saveAndFlush(schedule);
     }
 
@@ -240,8 +256,8 @@ class DoctorScheduleServiceTest {
                 "07:00",
                 "12:00"
         );
-        DoctorScheduleRequest request = request(1, ScheduleSession.AFTERNOON, "13:00", "18:00");
-        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        DoctorScheduleRequest request = request(1, ScheduleSession.AFTERNOON, "13:00", "17:00");
+        when(doctorRepository.findForUpdateById(doctor.getId())).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.findByIdAndDoctor_Id(
                 schedule.getId(),
                 doctor.getId()
@@ -270,14 +286,14 @@ class DoctorScheduleServiceTest {
         UUID scheduleId = UUID.randomUUID();
         Doctor doctor = doctor();
         doctor.setId(doctorId);
-        when(doctorRepository.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(doctorRepository.findForUpdateById(doctorId)).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.findByIdAndDoctor_Id(scheduleId, doctorId))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.updateSchedule(
                 doctorId,
                 scheduleId,
-                request(1, ScheduleSession.MORNING, "07:00", "12:00")
+                request(1, ScheduleSession.MORNING, "08:00", "11:00")
         )).isInstanceOf(NotFoundException.class)
                 .hasMessage("Không tìm thấy lịch làm việc");
 
@@ -294,7 +310,7 @@ class DoctorScheduleServiceTest {
                 "07:00",
                 "12:00"
         );
-        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        when(doctorRepository.findForUpdateById(doctor.getId())).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.findByIdAndDoctor_Id(
                 schedule.getId(),
                 doctor.getId()
@@ -309,8 +325,8 @@ class DoctorScheduleServiceTest {
     @Test
     void shouldMapDatabaseUniqueConflictToScheduleConflict() {
         Doctor doctor = doctor();
-        DoctorScheduleRequest request = request(1, ScheduleSession.MORNING, "07:00", "12:00");
-        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        DoctorScheduleRequest request = request(1, ScheduleSession.MORNING, "08:00", "11:00");
+        when(doctorRepository.findForUpdateById(doctor.getId())).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.existsByDoctor_IdAndDayOfWeekAndSession(
                 doctor.getId(),
                 (short) 1,
@@ -323,6 +339,91 @@ class DoctorScheduleServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.SCHEDULE_ALREADY_EXISTS);
+    }
+
+    @Test
+    void shouldCreateTwelveDefaultSchedulesFromMondayToSaturday() {
+        Doctor doctor = doctor();
+        List<DoctorSchedule> savedSchedules = new ArrayList<>();
+        when(doctorScheduleRepository.saveAllAndFlush(any())).thenAnswer(invocation -> {
+            Iterable<DoctorSchedule> schedules = invocation.getArgument(0);
+            schedules.forEach(savedSchedules::add);
+            return savedSchedules;
+        });
+
+        service.createDefaultWeeklySchedule(doctor);
+
+        assertThat(savedSchedules).hasSize(12);
+        for (int day = 1; day <= 6; day++) {
+            int expectedDay = day;
+            assertThat(savedSchedules).filteredOn(schedule -> schedule.getDayOfWeek() == expectedDay)
+                    .extracting(
+                            DoctorSchedule::getSession,
+                            DoctorSchedule::getStartTime,
+                            DoctorSchedule::getEndTime
+                    )
+                    .containsExactlyInAnyOrder(
+                            org.assertj.core.groups.Tuple.tuple(
+                                    ScheduleSession.MORNING,
+                                    LocalTime.of(8, 0),
+                                    LocalTime.of(11, 0)
+                            ),
+                            org.assertj.core.groups.Tuple.tuple(
+                                    ScheduleSession.AFTERNOON,
+                                    LocalTime.of(13, 0),
+                                    LocalTime.of(17, 0)
+                            )
+                    );
+        }
+        assertThat(savedSchedules).noneMatch(schedule -> schedule.getDayOfWeek() == 7);
+    }
+
+    @Test
+    void shouldRejectSundayAndNonHourlyScheduleBoundaries() {
+        assertThatThrownBy(() -> service.createSchedule(
+                UUID.randomUUID(),
+                request(7, ScheduleSession.MORNING, "08:00", "11:00")
+        )).isInstanceOf(BusinessException.class)
+                .hasMessage("Lịch làm việc chỉ áp dụng từ Thứ Hai đến Thứ Bảy");
+
+        assertThatThrownBy(() -> service.createSchedule(
+                UUID.randomUUID(),
+                request(1, ScheduleSession.AFTERNOON, "13:30", "16:30")
+        )).isInstanceOf(BusinessException.class)
+                .hasMessage("Giờ làm việc phải khớp ranh giới slot 60 phút");
+
+        verify(doctorRepository, never()).findForUpdateById(any());
+    }
+
+    @Test
+    void shouldRejectUpdateThatWouldRemoveFutureBookedSlot() {
+        Doctor doctor = doctor();
+        DoctorSchedule schedule = schedule(
+                doctor,
+                (short) 1,
+                ScheduleSession.MORNING,
+                "08:00",
+                "11:00"
+        );
+        Instant now = Instant.parse("2026-10-18T00:00:00Z");
+        Instant bookedStart = Instant.parse("2026-10-19T01:00:00Z");
+        when(doctorRepository.findForUpdateById(doctor.getId())).thenReturn(Optional.of(doctor));
+        when(doctorScheduleRepository.findByIdAndDoctor_Id(schedule.getId(), doctor.getId()))
+                .thenReturn(Optional.of(schedule));
+        when(clinicTimeProvider.now()).thenReturn(now);
+        when(clinicTimeProvider.toClinicTime(bookedStart))
+                .thenReturn(bookedStart.atZone(ZoneId.of("Asia/Ho_Chi_Minh")));
+        when(appointmentQueryService.findActiveScheduledStartsForDoctor(doctor.getId(), now))
+                .thenReturn(List.of(bookedStart));
+
+        assertThatThrownBy(() -> service.updateSchedule(
+                doctor.getId(),
+                schedule.getId(),
+                request(1, ScheduleSession.MORNING, "09:00", "11:00")
+        )).isInstanceOf(com.dentalclinic.common.exception.ConflictException.class)
+                .hasMessage("Không thể thay đổi lịch tuần vì có 1 lịch hẹn tương lai đang bị ảnh hưởng");
+
+        verify(doctorScheduleRepository, never()).saveAndFlush(schedule);
     }
 
     private DoctorScheduleRequest request(

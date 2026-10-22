@@ -73,9 +73,10 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 
 - **Tác nhân:** Khách hoặc người dùng đã đăng nhập.
 - **Mục đích:** Tìm thời gian có thể đặt lịch.
-- **Luồng chính:** Người dùng chọn dịch vụ, bác sĩ và ngày khám; hệ thống sinh các slot 60 phút từ lịch làm việc.
+- **Luồng chính:** Người dùng chọn dịch vụ và bác sĩ; hệ thống trả lịch khả dụng dạng rolling 30 ngày hoặc sinh slot 60 phút cho một ngày cụ thể.
 - **Điều kiện:** Bác sĩ và dịch vụ đang hoạt động; bác sĩ được phân công dịch vụ; ngày được chọn có lịch làm việc.
 - **Quy tắc:** Hệ thống loại ngày nghỉ, slot đã có lịch và slot cách thời điểm hiện tại dưới 120 phút.
+- **Trạng thái calendar:** Phân biệt `AVAILABLE`, `FULL`, `DAY_OFF`, `NOT_WORKING` và `UNAVAILABLE`; không trả thông tin bệnh nhân đã đặt lịch.
 
 ## B. CHỨC NĂNG BỆNH NHÂN
 
@@ -255,9 +256,10 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 
 - **Tác nhân:** Admin.
 - **Mục đích:** Thêm bác sĩ mới vào hệ thống.
-- **Luồng chính:** Admin nhập email, mật khẩu, họ tên, chuyên khoa, giấy phép, tiểu sử và kinh nghiệm; hệ thống tạo User `DOCTOR` và Doctor trong một transaction.
+- **Luồng chính:** Admin nhập email, mật khẩu, họ tên, chuyên khoa, giấy phép, tiểu sử và kinh nghiệm; hệ thống tạo User `DOCTOR`, Doctor và 12 DoctorSchedule mặc định trong một transaction.
 - **Điều kiện:** Email và số giấy phép chưa tồn tại; mật khẩu từ 8 đến 72 ký tự; số năm kinh nghiệm không âm.
-- **Kết quả:** Tài khoản và trạng thái làm việc mặc định là `ACTIVE`.
+- **Kết quả:** Tài khoản và trạng thái làm việc mặc định là `ACTIVE`; lịch gồm Thứ Hai-Thứ Bảy, mỗi ngày `MORNING 08:00-11:00` và `AFTERNOON 13:00-17:00`.
+- **Transaction:** Nếu bất kỳ DoctorSchedule nào không lưu được thì User, Doctor và toàn bộ lịch đều rollback.
 
 ### UC32 - Cập nhật hồ sơ bác sĩ
 
@@ -277,10 +279,11 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 ### UC34 - Quản lý lịch làm việc tuần của bác sĩ
 
 - **Tác nhân:** Admin.
-- **Mục đích:** Thiết lập lịch làm việc cố định theo tuần cho từng bác sĩ.
-- **Luồng chính:** Admin chọn bác sĩ; xem, tạo, cập nhật hoặc xóa lịch tuần của bác sĩ đó.
-- **Điều kiện:** Ngày trong tuần từ 1 đến 7; buổi `MORNING` hoặc `AFTERNOON`; giờ kết thúc phải sau giờ bắt đầu.
-- **Ngoại lệ:** Không được có hai lịch trùng cùng thứ và cùng buổi của một bác sĩ; lịch được sửa hoặc xóa phải thuộc đúng bác sĩ trên URL.
+- **Mục đích:** Xem và điều chỉnh lịch tuần đã được hệ thống tự tạo cho bác sĩ.
+- **Luồng chính:** Admin chọn bác sĩ; xem, tạo lại buổi đã xóa, cập nhật hoặc xóa lịch tuần của bác sĩ đó.
+- **Điều kiện:** Chỉ Thứ Hai-Thứ Bảy; `MORNING` nằm trong `08:00-11:00`; `AFTERNOON` nằm trong `13:00-17:00`; thời gian khớp ranh giới slot 60 phút.
+- **Ngoại lệ:** Không được có hai lịch trùng cùng thứ và cùng buổi; lịch phải thuộc đúng bác sĩ; không được sửa/xóa nếu làm mất Appointment tương lai đang hoạt động.
+- **Ngày nghỉ:** Nghỉ một ngày hoặc một buổi cụ thể phải dùng `doctor_days_off`, không xóa lịch tuần.
 - **Bảo mật:** Chỉ Admin được tạo, cập nhật và xóa lịch tuần; bác sĩ chỉ được xem lịch của mình.
 
 ### UC35 - Tạo dịch vụ nha khoa

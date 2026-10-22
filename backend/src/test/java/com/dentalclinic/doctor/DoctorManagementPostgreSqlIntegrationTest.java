@@ -3,6 +3,8 @@ package com.dentalclinic.doctor;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorStatus;
 import com.dentalclinic.doctor.repository.DoctorRepository;
+import com.dentalclinic.schedule.entity.ScheduleSession;
+import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
@@ -27,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.crypto.SecretKey;
 import java.math.BigDecimal;
+import java.time.LocalTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -59,6 +62,9 @@ class DoctorManagementPostgreSqlIntegrationTest {
 
     @Autowired
     private DoctorRepository doctorRepository;
+
+    @Autowired
+    private DoctorScheduleRepository doctorScheduleRepository;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -123,6 +129,19 @@ class DoctorManagementPostgreSqlIntegrationTest {
         assertThat(doctor.getUser().getId()).isEqualTo(doctorUserId);
         assertThat(doctor.getLicenseNumber()).isEqualTo(licenseNumber);
         assertThat(doctor.getRating()).isEqualByComparingTo("0.0");
+        assertThat(doctorScheduleRepository
+                .findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(doctorId))
+                .hasSize(12)
+                .allSatisfy(schedule -> {
+                    assertThat(schedule.getDayOfWeek()).isBetween((short) 1, (short) 6);
+                    if (schedule.getSession() == ScheduleSession.MORNING) {
+                        assertThat(schedule.getStartTime()).isEqualTo(LocalTime.of(8, 0));
+                        assertThat(schedule.getEndTime()).isEqualTo(LocalTime.of(11, 0));
+                    } else {
+                        assertThat(schedule.getStartTime()).isEqualTo(LocalTime.of(13, 0));
+                        assertThat(schedule.getEndTime()).isEqualTo(LocalTime.of(17, 0));
+                    }
+                });
         assertThat(login(doctorEmail, PASSWORD)).isNotBlank();
 
         mockMvc.perform(get("/api/doctors")

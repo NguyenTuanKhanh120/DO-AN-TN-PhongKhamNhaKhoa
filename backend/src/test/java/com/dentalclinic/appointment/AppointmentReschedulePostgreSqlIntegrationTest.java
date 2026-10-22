@@ -500,13 +500,20 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
     }
 
     private void saveSchedule(Doctor doctor) {
-        DoctorSchedule schedule = new DoctorSchedule();
-        schedule.setDoctor(doctor);
-        schedule.setDayOfWeek((short) 1);
-        schedule.setSession(ScheduleSession.MORNING);
-        schedule.setStartTime(LocalTime.of(8, 0));
-        schedule.setEndTime(LocalTime.of(16, 0));
-        doctorScheduleRepository.saveAndFlush(schedule);
+        DoctorSchedule morning = new DoctorSchedule();
+        morning.setDoctor(doctor);
+        morning.setDayOfWeek((short) 1);
+        morning.setSession(ScheduleSession.MORNING);
+        morning.setStartTime(LocalTime.of(8, 0));
+        morning.setEndTime(LocalTime.of(11, 0));
+
+        DoctorSchedule afternoon = new DoctorSchedule();
+        afternoon.setDoctor(doctor);
+        afternoon.setDayOfWeek((short) 1);
+        afternoon.setSession(ScheduleSession.AFTERNOON);
+        afternoon.setStartTime(LocalTime.of(13, 0));
+        afternoon.setEndTime(LocalTime.of(17, 0));
+        doctorScheduleRepository.saveAllAndFlush(List.of(morning, afternoon));
     }
 
     private Appointment saveAppointment(

@@ -9,7 +9,7 @@ import java.time.LocalTime;
 
 public record DoctorScheduleRequest(
         @Min(value = 1, message = "Ngày trong tuần phải từ 1 đến 7")
-        @Max(value = 7, message = "Ngày trong tuần phải từ 1 đến 7")
+        @Max(value = 6, message = "Lịch làm việc chỉ áp dụng từ Thứ Hai đến Thứ Bảy")
         int dayOfWeek,
 
         @NotNull(message = "Buổi làm việc không được để trống")
