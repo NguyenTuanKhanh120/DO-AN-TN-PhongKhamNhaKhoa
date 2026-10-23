@@ -53,7 +53,8 @@ class DentalServiceManagementServiceTest {
         CreateDentalServiceRequest request = new CreateDentalServiceRequest(
                 "  Cạo   vôi răng  ",
                 "  Làm sạch cao răng  ",
-                new BigDecimal("300000.00")
+                new BigDecimal("300000.00"),
+                "  https://cdn.example.com/dental-services/scaling.webp  "
         );
         when(dentalServiceRepository.existsByName("Cạo vôi răng")).thenReturn(false);
         when(dentalServiceRepository.saveAndFlush(any(DentalService.class))).thenAnswer(invocation -> {
@@ -70,7 +71,10 @@ class DentalServiceManagementServiceTest {
         assertThat(persisted.getName()).isEqualTo("Cạo vôi răng");
         assertThat(persisted.getDescription()).isEqualTo("Làm sạch cao răng");
         assertThat(persisted.getPrice()).isEqualByComparingTo("300000.00");
+        assertThat(persisted.getImageUrl())
+                .isEqualTo("https://cdn.example.com/dental-services/scaling.webp");
         assertThat(persisted.isActive()).isTrue();
+        assertThat(response.imageUrl()).isEqualTo(persisted.getImageUrl());
         assertThat(response.active()).isTrue();
     }
 
@@ -79,7 +83,8 @@ class DentalServiceManagementServiceTest {
         CreateDentalServiceRequest request = new CreateDentalServiceRequest(
                 "Cạo vôi răng",
                 null,
-                new BigDecimal("300000.00")
+                new BigDecimal("300000.00"),
+                null
         );
         when(dentalServiceRepository.existsByName("Cạo vôi răng")).thenReturn(true);
 
@@ -103,15 +108,42 @@ class DentalServiceManagementServiceTest {
                 new UpdateDentalServiceRequest(
                         "  Tẩy   trắng răng  ",
                         "  Mô tả mới  ",
-                        new BigDecimal("1200000.00")
+                        new BigDecimal("1200000.00"),
+                        "https://cdn.example.com/dental-services/whitening.webp"
                 )
         );
 
         assertThat(dentalService.getName()).isEqualTo("Tẩy trắng răng");
         assertThat(dentalService.getDescription()).isEqualTo("Mô tả mới");
         assertThat(dentalService.getPrice()).isEqualByComparingTo("1200000.00");
+        assertThat(dentalService.getImageUrl())
+                .isEqualTo("https://cdn.example.com/dental-services/whitening.webp");
         assertThat(dentalService.isActive()).isFalse();
+        assertThat(response.imageUrl()).isEqualTo(dentalService.getImageUrl());
         assertThat(response.active()).isFalse();
+        verify(dentalServiceRepository).saveAndFlush(dentalService);
+    }
+
+    @Test
+    void shouldRemoveImageWhenUpdateUsesBlankValue() {
+        DentalService dentalService = dentalService(true);
+        dentalService.setImageUrl("https://cdn.example.com/dental-services/old.webp");
+        when(dentalServiceRepository.findById(dentalService.getId())).thenReturn(Optional.of(dentalService));
+        when(dentalServiceRepository.existsByNameAndIdNot(dentalService.getName(), dentalService.getId()))
+                .thenReturn(false);
+
+        DentalServiceResponse response = service.updateService(
+                dentalService.getId(),
+                new UpdateDentalServiceRequest(
+                        dentalService.getName(),
+                        dentalService.getDescription(),
+                        dentalService.getPrice(),
+                        "   "
+                )
+        );
+
+        assertThat(dentalService.getImageUrl()).isNull();
+        assertThat(response.imageUrl()).isNull();
         verify(dentalServiceRepository).saveAndFlush(dentalService);
     }
 
@@ -148,6 +180,7 @@ class DentalServiceManagementServiceTest {
         assertThat(response.content()).singleElement().satisfies(item -> {
             assertThat(item.id()).isEqualTo(dentalService.getId());
             assertThat(item.name()).isEqualTo(dentalService.getName());
+            assertThat(item.imageUrl()).isEqualTo(dentalService.getImageUrl());
         });
     }
 

@@ -67,6 +67,7 @@ public class DentalServiceManagementService {
         service.setName(name);
         service.setDescription(normalizeNullable(request.description()));
         service.setPrice(request.price());
+        service.setImageUrl(normalizeNullable(request.imageUrl()));
         service.setActive(true);
 
         try {
@@ -88,6 +89,7 @@ public class DentalServiceManagementService {
         service.setName(name);
         service.setDescription(normalizeNullable(request.description()));
         service.setPrice(request.price());
+        service.setImageUrl(normalizeNullable(request.imageUrl()));
 
         try {
             dentalServiceRepository.saveAndFlush(service);
@@ -134,6 +136,7 @@ public class DentalServiceManagementService {
                 service.getName(),
                 service.getDescription(),
                 service.getPrice(),
+                service.getImageUrl(),
                 service.isActive(),
                 service.getCreatedAt(),
                 service.getUpdatedAt()

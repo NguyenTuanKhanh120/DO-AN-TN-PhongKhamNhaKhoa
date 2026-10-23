@@ -248,6 +248,60 @@ class PostgreSql18SchemaContractIntegrationTest {
         );
         assertThat(draftRemovalMigrationSucceeded).isTrue();
         assertThat(draftTableCount).isZero();
+
+        Boolean legacyMorningScheduleMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '9'",
+                Boolean.class
+        );
+        Integer legacyMorningScheduleCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from doctor_schedules
+                        where session = 'MORNING'
+                          and start_time = time '08:00'
+                          and end_time = time '12:00'
+                        """,
+                Integer.class
+        );
+        assertThat(legacyMorningScheduleMigrationSucceeded).isTrue();
+        assertThat(legacyMorningScheduleCount).isZero();
+
+        Boolean scheduleLocalTimeRepairSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '10'",
+                Boolean.class
+        );
+        Integer unsupportedScheduleCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from doctor_schedules
+                        where day_of_week not between 1 and 6
+                           or (session = 'MORNING'
+                               and (start_time < time '08:00' or end_time > time '11:00'))
+                           or (session = 'AFTERNOON'
+                               and (start_time < time '13:00' or end_time > time '17:00'))
+                        """,
+                Integer.class
+        );
+        assertThat(scheduleLocalTimeRepairSucceeded).isTrue();
+        assertThat(unsupportedScheduleCount).isZero();
+
+        Boolean dentalServiceImageMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '11'",
+                Boolean.class
+        );
+        Map<String, Object> imageUrlColumn = jdbcTemplate.queryForMap(
+                """
+                        select data_type, character_maximum_length, is_nullable
+                        from information_schema.columns
+                        where table_schema = 'public'
+                          and table_name = 'dental_services'
+                          and column_name = 'image_url'
+                        """
+        );
+        assertThat(dentalServiceImageMigrationSucceeded).isTrue();
+        assertThat(imageUrlColumn.get("data_type")).isEqualTo("character varying");
+        assertThat(imageUrlColumn.get("character_maximum_length")).isEqualTo(1000);
+        assertThat(imageUrlColumn.get("is_nullable")).isEqualTo("YES");
     }
 
     @Test

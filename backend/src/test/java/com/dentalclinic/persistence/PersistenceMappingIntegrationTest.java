@@ -132,6 +132,7 @@ class PersistenceMappingIntegrationTest {
         dentalService.setName("Phase 02 Service " + testId);
         dentalService.setDescription("Persistence mapping verification");
         dentalService.setPrice(new BigDecimal("250000.00"));
+        dentalService.setImageUrl("https://cdn.example.com/dental-services/persistence.webp");
         dentalServiceRepository.saveAndFlush(dentalService);
 
         DoctorServiceId doctorServiceId = new DoctorServiceId(doctor.getId(), dentalService.getId());
@@ -219,7 +220,15 @@ class PersistenceMappingIntegrationTest {
         Appointment persistedAppointment = appointmentRepository.findById(appointmentId).orElseThrow();
         AppointmentHistory persistedHistory = appointmentHistoryRepository.findById(historyId).orElseThrow();
         MedicalRecord persistedRecord = medicalRecordRepository.findById(medicalRecordId).orElseThrow();
+        DentalService persistedDentalService = dentalServiceRepository.findById(dentalService.getId()).orElseThrow();
         DoctorSchedule persistedSchedule = doctorScheduleRepository.findById(schedule.getId()).orElseThrow();
+        String storedScheduleTimes = (String) entityManager.createNativeQuery("""
+                select to_char(start_time, 'HH24:MI') || '-' || to_char(end_time, 'HH24:MI')
+                from doctor_schedules
+                where id = :scheduleId
+                """)
+                .setParameter("scheduleId", schedule.getId())
+                .getSingleResult();
         Payment persistedPayment = paymentRepository.findById(paymentId).orElseThrow();
         AuthSession persistedSession = authSessionRepository.findById(authSessionId).orElseThrow();
         RefreshToken persistedRefreshToken = refreshTokenRepository
@@ -242,7 +251,13 @@ class PersistenceMappingIntegrationTest {
         assertThat(persistedRecord.getCreatedAt()).isNotNull();
         assertThat(persistedRecord.getUpdatedAt()).isNotNull();
 
+        assertThat(persistedDentalService.getImageUrl())
+                .isEqualTo("https://cdn.example.com/dental-services/persistence.webp");
+
         assertThat(persistedSchedule.getSession()).isEqualTo(ScheduleSession.MORNING);
+        assertThat(persistedSchedule.getStartTime()).isEqualTo(LocalTime.of(8, 0));
+        assertThat(persistedSchedule.getEndTime()).isEqualTo(LocalTime.of(11, 0));
+        assertThat(storedScheduleTimes).isEqualTo("08:00-11:00");
         assertThat(persistedSchedule.getDoctor().getWorkingStatus()).isEqualTo(DoctorStatus.ACTIVE);
         assertThat(persistedPayment.getStatus()).isEqualTo(PaymentStatus.DRAFT);
         assertThat(persistedPayment.getItems()).hasSize(1);

@@ -83,6 +83,7 @@ class DoctorServiceMappingServiceTest {
         assertThat(response).singleElement().satisfies(item -> {
             assertThat(item.id()).isEqualTo(dentalService.getId());
             assertThat(item.name()).isEqualTo("Cạo vôi răng");
+            assertThat(item.imageUrl()).isEqualTo(dentalService.getImageUrl());
             assertThat(item.active()).isTrue();
         });
     }
@@ -283,6 +284,7 @@ class DoctorServiceMappingServiceTest {
         dentalService.setName(name);
         dentalService.setDescription("Mô tả " + name);
         dentalService.setPrice(new BigDecimal("300000.00"));
+        dentalService.setImageUrl("https://cdn.example.com/dental-services/service.webp");
         dentalService.setActive(true);
         dentalService.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
         dentalService.setUpdatedAt(Instant.parse("2026-01-02T00:00:00Z"));

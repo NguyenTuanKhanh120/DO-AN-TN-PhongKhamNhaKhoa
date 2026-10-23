@@ -1,0 +1,169 @@
+MÔ TẢ BÀI TOÁN
+HỆ THỐNG QUẢN LÝ PHÒNG KHÁM NHA KHOA TÍCH HỢP AI CHATBOT
+
+1. BỐI CẢNH BÀI TOÁN
+
+Phòng khám nha khoa cần quản lý nhiều hoạt động có liên quan chặt chẽ với nhau như quản lý tài khoản, bệnh nhân, bác sĩ, dịch vụ, lịch làm việc, lịch hẹn, quá trình khám, bệnh án, đơn thuốc, thanh toán và lịch sử thao tác. Nếu các hoạt động này được thực hiện bằng sổ sách, bảng tính hoặc nhiều công cụ rời rạc thì rất dễ xảy ra sai sót, trùng lịch, thất lạc thông tin và khó kiểm soát quyền truy cập dữ liệu.
+
+Bệnh nhân cần một phương thức thuận tiện để xem dịch vụ, tìm bác sĩ, xem khung giờ còn trống, đặt lịch, đổi lịch, hủy lịch và theo dõi kết quả khám. Bác sĩ cần biết chính xác lịch khám được phân công, quản lý tiến trình từng ca khám, ghi bệnh án, đơn thuốc, dịch vụ thực tế và chỉ định tái khám. Quản trị viên cần quản lý người dùng, bác sĩ, dịch vụ, lịch làm việc, ngày nghỉ, lịch hẹn, thanh toán và báo cáo hoạt động của phòng khám.
+
+Vì vậy, bài toán đặt ra là xây dựng một hệ thống quản lý phòng khám nha khoa tập trung, bảo đảm dữ liệu chính xác, quy trình nghiệp vụ nhất quán, phân quyền an toàn và hỗ trợ mở rộng AI Chatbot trong giai đoạn sau.
+
+2. MỤC TIÊU CỦA HỆ THỐNG
+
+Hệ thống được xây dựng nhằm các mục tiêu sau:
+
+- Số hóa quy trình quản lý phòng khám nha khoa.
+- Quản lý tập trung thông tin người dùng, bệnh nhân, bác sĩ và dịch vụ.
+- Hỗ trợ bệnh nhân chủ động tra cứu và đặt lịch khám trực tuyến.
+- Tự động tính các khung giờ còn trống dựa trên lịch làm việc, ngày nghỉ và lịch đã được đặt.
+- Ngăn chặn hai bệnh nhân đặt cùng một bác sĩ trong cùng một khung giờ.
+- Quản lý đầy đủ tiến trình khám từ lúc đặt lịch đến khi hoàn tất.
+- Lưu trữ bệnh án, chẩn đoán, điều trị, đơn thuốc và thông tin tái khám.
+- Ghi nhận các dịch vụ thực tế và hỗ trợ thu tiền trực tiếp tại phòng khám.
+- Bảo vệ dữ liệu theo vai trò và quyền sở hữu.
+- Cung cấp số liệu tổng hợp phục vụ quản lý phòng khám.
+- Tạo nền tảng dữ liệu để tích hợp AI Chatbot trong giai đoạn sau.
+
+3. CÁC TÁC NHÂN CỦA HỆ THỐNG
+
+3.1. Khách chưa đăng nhập
+
+Khách có thể xem thông tin công khai về bác sĩ, dịch vụ, lịch làm việc và khung giờ còn trống. Khách có thể đăng ký tài khoản bệnh nhân hoặc đăng nhập vào hệ thống.
+
+3.2. Bệnh nhân
+
+Bệnh nhân có thể quản lý hồ sơ cá nhân, tìm dịch vụ và bác sĩ, xem lịch trống, đặt lịch, xem lịch hẹn, hủy lịch, đổi lịch, xem bệnh án, đơn thuốc, hướng dẫn tái khám và phiếu thanh toán của chính mình.
+
+3.3. Bác sĩ
+
+Bác sĩ có thể xem lịch làm việc và các lịch khám được phân công. Bác sĩ thực hiện check-in, bắt đầu khám, xác nhận bệnh nhân không đến, ghi bệnh án, đơn thuốc, dịch vụ thực tế, hoàn tất ca khám và tạo lịch tái khám. Bác sĩ chỉ được thao tác trên các lịch hẹn thuộc chính mình và không được tự sửa lịch làm việc cố định.
+
+3.4. Quản trị viên
+
+Quản trị viên quản lý tài khoản, bác sĩ, dịch vụ, quan hệ bác sĩ - dịch vụ, lịch làm việc, ngày nghỉ, toàn bộ lịch hẹn, lịch sử thao tác, phiếu thanh toán và báo cáo tổng hợp. Quản trị viên là người xác nhận khoản tiền đã thực sự được phòng khám nhận tại quầy.
+
+4. MÔ TẢ NGHIỆP VỤ CHÍNH
+
+4.1. Đăng ký và đăng nhập
+
+Bệnh nhân được tự đăng ký bằng email, mật khẩu và họ tên. Hệ thống kiểm tra email duy nhất, mã hóa mật khẩu bằng BCrypt và tạo đồng thời tài khoản người dùng cùng hồ sơ bệnh nhân. Tài khoản bác sĩ chỉ do quản trị viên tạo. Người dùng đăng nhập bằng email và mật khẩu để nhận JWT Access Token và sử dụng chức năng theo vai trò.
+
+4.2. Quản lý bác sĩ và dịch vụ
+
+Quản trị viên tạo và cập nhật hồ sơ bác sĩ, trạng thái làm việc, chuyên khoa và các thông tin nghề nghiệp. Quản trị viên quản lý danh mục dịch vụ nha khoa, giá dịch vụ, mô tả và trạng thái hoạt động. Một bác sĩ chỉ được nhận lịch cho các dịch vụ đã được quản trị viên phân công.
+
+4.3. Quản lý lịch làm việc và ngày nghỉ
+
+Lịch làm việc của bác sĩ được tổ chức cố định theo các ngày trong tuần và do quản trị viên quản lý. Bác sĩ chỉ được xem lịch của mình. Quản trị viên có thể khai báo ngày nghỉ theo ngày, buổi sáng, buổi chiều hoặc cả ngày. Khi tạo ngày nghỉ, hệ thống phải kiểm tra các lịch khám liên quan và xử lý theo đúng trạng thái nghiệp vụ, đồng thời không làm thay đổi lịch làm việc cố định hằng tuần.
+
+4.4. Tính khung giờ còn trống
+
+Hệ thống không tạo bảng lưu slot cố định. Khung giờ được sinh động từ lịch làm việc của bác sĩ với thời lượng 60 phút. Hệ thống loại bỏ các ngày nghỉ, các khung giờ đã có lịch và các khung giờ không đáp ứng thời gian đặt trước tối thiểu 120 phút. Bệnh nhân có thể xem lịch trống trong phạm vi ngày được giao diện hỗ trợ, ví dụ tối đa một tháng.
+
+4.5. Đặt lịch khám
+
+Quy trình đặt lịch thực hiện theo thứ tự: chọn dịch vụ, chọn bác sĩ thực hiện dịch vụ, chọn ngày và chọn khung giờ còn trống. Sau khi nhận yêu cầu, backend phải kiểm tra lại bác sĩ, dịch vụ, quan hệ phân công, lịch làm việc, ngày nghỉ, thời gian đặt trước và tình trạng slot. Lịch hẹn hợp lệ được tạo với trạng thái BOOKED và được ghi lịch sử BOOK.
+
+Trong trường hợp hai bệnh nhân đồng thời đặt cùng một bác sĩ và cùng một slot, hệ thống chỉ cho phép một yêu cầu thành công. Yêu cầu còn lại phải nhận HTTP 409 Conflict.
+
+4.6. Hủy và đổi lịch
+
+Bệnh nhân chỉ được hủy hoặc đổi lịch thuộc chính mình và đang ở trạng thái BOOKED. Việc hủy hoặc đổi phải được thực hiện trước giờ hẹn cũ ít nhất 90 phút. Khi hủy, lịch chuyển sang CANCELLED. Khi đổi lịch, hệ thống giữ nguyên bản ghi Appointment, cập nhật slot mới và vẫn giữ trạng thái BOOKED. Mọi thao tác đều phải được ghi vào lịch sử lịch hẹn.
+
+4.7. Quy trình khám của bác sĩ
+
+Một ca khám thông thường đi qua các trạng thái:
+
+BOOKED -> CHECKED_IN -> IN_PROGRESS -> COMPLETED
+
+Các nhánh ngoại lệ gồm:
+
+BOOKED -> CANCELLED
+BOOKED -> NO_SHOW
+
+Bác sĩ xác nhận bệnh nhân đã đến bằng thao tác check-in. Sau đó bác sĩ bắt đầu khám và hệ thống chuyển lịch sang IN_PROGRESS. Mỗi bác sĩ chỉ được có một ca đang IN_PROGRESS tại cùng một thời điểm. Nếu bệnh nhân không đến sau giờ hẹn ít nhất 15 phút và chưa check-in, bác sĩ có thể xác nhận NO_SHOW.
+
+Trong quá trình khám, bác sĩ tạo bệnh án gồm chẩn đoán, điều trị, kế hoạch điều trị, ghi chú, đơn thuốc và thông tin tái khám. Mỗi Appointment có tối đa một MedicalRecord. Đơn thuốc được lưu dưới dạng JSONB.
+
+4.8. Ghi nhận dịch vụ thực tế và hoàn tất khám
+
+Trong lúc lịch đang IN_PROGRESS, bác sĩ ghi các dịch vụ thực tế đã thực hiện và số lượng. Backend tự lấy giá hiện hành từ cơ sở dữ liệu; không tin tưởng giá do frontend gửi lên. Tên dịch vụ và đơn giá được lưu thành dữ liệu snapshot trong phiếu thanh toán để giá của phiếu không thay đổi khi danh mục dịch vụ được cập nhật sau này.
+
+Bác sĩ chỉ được hoàn tất khám khi đã có bệnh án hợp lệ, có ít nhất một dịch vụ thực tế và tổng tiền khớp với các chi tiết. Khi hoàn tất, Appointment chuyển từ IN_PROGRESS sang COMPLETED và Payment chuyển từ DRAFT sang UNPAID trong cùng một transaction.
+
+4.9. Thanh toán trực tiếp tại phòng khám
+
+Hệ thống hiện hỗ trợ thu tiền trực tiếp tại quầy bằng tiền mặt hoặc chuyển khoản được nhân viên xác minh thủ công. Hệ thống chưa tích hợp cổng thanh toán trực tuyến.
+
+Các trạng thái của phiếu thanh toán gồm:
+
+- DRAFT: Bác sĩ đang nhập hoặc kiểm tra dịch vụ thực tế.
+- UNPAID: Ca khám đã hoàn thành và đang chờ thu tiền.
+- PAID: Quản trị viên đã xác nhận phòng khám nhận đủ tiền.
+
+Quản trị viên mở danh sách phiếu UNPAID, tìm bệnh nhân và đối chiếu thông tin trước khi thu tiền. Thông tin cần hiển thị gồm tên bệnh nhân, số điện thoại, mã lịch hẹn, thời gian khám, bác sĩ, các dịch vụ, số lượng, đơn giá và tổng tiền.
+
+Để tránh nhầm bệnh nhân trùng tên, quản trị viên không được xác định phiếu chỉ bằng họ tên. Việc đối chiếu nên dựa trên tối thiểu họ tên, số điện thoại và mã lịch hẹn. Hệ thống nên hỗ trợ tìm kiếm theo tên bệnh nhân, số điện thoại, email, mã lịch hẹn, mã phiếu và tên bác sĩ.
+
+Khi đã nhận tiền, quản trị viên xác nhận phiếu theo ID phiếu thanh toán và chọn phương thức CASH hoặc BANK_TRANSFER. Backend chỉ cho phép xác nhận nếu Appointment đã COMPLETED và Payment đang UNPAID. Sau khi xác nhận, hệ thống lưu trạng thái PAID, phương thức thanh toán, quản trị viên xác nhận và thời điểm paidAt. Cơ chế khóa dữ liệu phải ngăn hai yêu cầu đồng thời xác nhận cùng một phiếu.
+
+4.10. Tái khám
+
+Khi bệnh án yêu cầu tái khám, bác sĩ có thể xem các slot phù hợp và tạo Appointment mới cho cùng bệnh nhân. Lịch tái khám liên kết với lịch cũ thông qua previous_appointment_id, không tạo bảng tái khám riêng. Slot tái khám vẫn phải đáp ứng lịch làm việc, ngày nghỉ, dịch vụ được phân công và điều kiện chống trùng lịch.
+
+4.11. Tra cứu lịch sử và báo cáo
+
+Bệnh nhân chỉ được xem lịch hẹn, bệnh án và phiếu thanh toán của chính mình. Bác sĩ chỉ được xem các lịch khám thuộc mình. Quản trị viên được xem lịch sử thay đổi trạng thái của Appointment và các số liệu tổng hợp như tổng bệnh nhân, tổng bác sĩ, số lịch hôm nay, số ca hoàn thành, hủy, không đến, doanh thu đã thu và khoản tiền chưa thanh toán.
+
+5. DỮ LIỆU CHÍNH CẦN QUẢN LÝ
+
+Hệ thống quản lý các nhóm dữ liệu sau:
+
+- Tài khoản người dùng và vai trò.
+- Hồ sơ bệnh nhân.
+- Hồ sơ bác sĩ.
+- Dịch vụ nha khoa.
+- Quan hệ bác sĩ thực hiện dịch vụ.
+- Lịch làm việc cố định của bác sĩ.
+- Ngày nghỉ của bác sĩ.
+- Lịch hẹn và lịch sử lịch hẹn.
+- Bệnh án và đơn thuốc.
+- Phiếu thanh toán và các dịch vụ thực tế.
+- Phiên trò chuyện, tin nhắn và dữ liệu vector dành cho AI Chatbot trong tương lai.
+
+6. CÁC RÀNG BUỘC NGHIỆP VỤ QUAN TRỌNG
+
+- Chỉ bệnh nhân được tự đăng ký; bác sĩ do quản trị viên tạo.
+- Mật khẩu được mã hóa, thông tin bí mật không được hardcode trong source code.
+- Dữ liệu và chức năng được bảo vệ theo vai trò ADMIN, DOCTOR và PATIENT.
+- Backend phải xác định quyền sở hữu từ JWT, không tin ID người dùng do client gửi.
+- Mỗi slot có thời lượng cố định 60 phút.
+- Đặt lịch phải trước ít nhất 120 phút.
+- Hủy và đổi lịch phải trước giờ hẹn cũ ít nhất 90 phút.
+- Chỉ bác sĩ được đánh dấu NO_SHOW sau thời gian chờ 15 phút.
+- Mỗi Appointment có tối đa một MedicalRecord và một Payment.
+- Phải có MedicalRecord và Payment hợp lệ trước khi hoàn tất khám.
+- Không được tin giá tiền do frontend gửi lên.
+- Thanh toán chỉ được xác nhận một lần cho một phiếu.
+- Mọi thay đổi trạng thái quan trọng phải được ghi lịch sử để phục vụ kiểm tra.
+- Các thao tác nhiều bước phải sử dụng transaction và rollback toàn bộ khi có lỗi.
+- Database constraint và cơ chế khóa phải được sử dụng để xử lý race condition.
+
+7. YÊU CẦU KỸ THUẬT VÀ KIẾN TRÚC
+
+Backend được xây dựng dưới dạng Modular Monolith bằng Java 21 và Spring Boot 3.x. Hệ thống sử dụng Spring Web, Spring Security, JWT, BCrypt, Spring Data JPA, Hibernate, Jakarta Validation, Spring Transaction, Maven, Lombok và Springdoc OpenAPI.
+
+Cơ sở dữ liệu chính là PostgreSQL 18.6 với UUID, JSONB, TIMESTAMPTZ, uuid-ossp và pgvector. Flyway chịu trách nhiệm quản lý migration; Hibernate chỉ thực hiện validate schema. Múi giờ nghiệp vụ là Asia/Ho_Chi_Minh.
+
+Hệ thống không sử dụng Docker, H2 làm cơ sở dữ liệu chính, microservices hoặc Python Backend. Frontend dự kiến sử dụng React và TypeScript nhưng không thuộc phạm vi triển khai backend hiện tại.
+
+8. PHẠM VI AI CHATBOT
+
+Ba nhóm dữ liệu chat_sessions, chat_messages và vector_store được giữ trong cơ sở dữ liệu để chuẩn bị cho AI Chatbot. Tuy nhiên, Spring AI, Gemini API, RAG, Embedding Model, tư vấn triệu chứng và API trò chuyện chưa được triển khai trong giai đoạn backend hiện tại.
+
+Khi triển khai ở giai đoạn sau, AI Chatbot có thể hỗ trợ trả lời thông tin dịch vụ, hướng dẫn đặt lịch, gợi ý bác sĩ và tra cứu slot. AI không được tự thay đổi lịch hẹn, bệnh án hoặc thông tin thanh toán nếu chưa có xác nhận và phân quyền phù hợp.
+
+9. KẾT QUẢ MONG ĐỢI
+
+Sau khi hoàn thành, hệ thống phải giúp phòng khám vận hành thống nhất từ khâu tiếp nhận bệnh nhân, đặt lịch, khám, lập bệnh án, ghi nhận dịch vụ, thu tiền đến báo cáo. Bệnh nhân có thể chủ động sử dụng các chức năng trực tuyến; bác sĩ có quy trình khám rõ ràng; quản trị viên kiểm soát được lịch, dữ liệu, thanh toán và doanh thu. Dữ liệu phải chính xác, có khả năng truy vết, an toàn và sẵn sàng cho việc xây dựng giao diện React cũng như tích hợp AI Chatbot trong tương lai.

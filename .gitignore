@@ -1,5 +1,6 @@
 # Maven
 backend/target/
+backend/uploads/
 .m2/
 .maven-settings.xml
 

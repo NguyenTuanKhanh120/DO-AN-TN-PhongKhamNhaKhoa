@@ -5,7 +5,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 ## Implemented
 
 - Java 21, Spring Boot 3.5, Maven and PostgreSQL 18.
-- Flyway V1–V8 migrations for the 15-table active schema.
+- Flyway V1–V11 migrations for the 15-table active schema.
 - JPA entities and repositories for the first nine business tables.
 - Common API response, pagination and exception handling.
 - Patient registration and login with BCrypt, 15-minute JWT access tokens and rotating Refresh Tokens.
@@ -22,6 +22,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Admin doctor account creation, profile update and working-status management. Creating a doctor atomically creates 12 default weekly schedules; a schedule failure rolls back the User and Doctor.
 - Public dental-service listing and detail APIs.
 - Admin dental-service creation, update and soft status management.
+- Admin-only JPEG/PNG/WebP service-image upload (maximum 5 MB), local UUID-based storage and public cached image delivery.
 - Public doctor-to-service and service-to-doctor lookup APIs.
 - Transactional admin replacement of doctor-service mappings with composite-key and foreign-key protection.
 - Public weekly doctor-schedule lookup.
@@ -63,7 +64,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Admins can inspect each appointment's chronological audit timeline with action, actor, reason, JSONB details and timestamp.
 - Admin dashboard summary reports patient and doctor totals plus today's appointment status counts using the clinic timezone.
 - PostgreSQL integration tests cover the appointment lifecycle, transaction rollback and concurrent booking/rescheduling races.
-- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V8, all 15 active tables, session/token constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
+- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V11, all 15 active tables, session/token constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
 - OpenAPI 3 documentation exposes typed request/response schemas, reusable error responses and JWT Bearer authorization.
 - Swagger UI and OpenAPI JSON are public in development and disabled by default in production.
 - React clients are supported through an exact-origin CORS allowlist with credentialed requests for auth cookies.
@@ -91,6 +92,10 @@ Copy the names from `.env.example` into the terminal or the deployment environme
 | `SPRING_PROFILES_ACTIVE` | No | `development` by default; use `production` when deploying |
 | `CLINIC_TIMEZONE` | No | Business timezone, defaults to `Asia/Ho_Chi_Minh` |
 | `CORS_ALLOWED_ORIGINS` | Frontend | Comma-separated exact origins, for example `http://localhost:5173` |
+| `SERVICE_IMAGE_STORAGE_DIRECTORY` | No | Local service-image directory; defaults to `uploads/service-images` relative to the backend process |
+| `SERVICE_IMAGE_MAX_FILE_SIZE_BYTES` | No | Application validation limit in bytes; defaults to `5242880` (5 MB) |
+| `SERVICE_IMAGE_MAX_FILE_SIZE` | No | Spring multipart file limit; defaults to `5MB` |
+| `SERVICE_IMAGE_MAX_REQUEST_SIZE` | No | Spring multipart request limit; defaults to `6MB` |
 | `AUTH_COOKIE_SECURE` | No | `false` for local HTTP development; must be `true` on production HTTPS |
 | `AUTH_COOKIE_SAME_SITE` | No | Refresh/CSRF cookie SameSite policy; defaults to `Lax` |
 | `OPENAPI_ENABLED` | No | Enables `/v3/api-docs`; defaults to `false` in production |
@@ -112,7 +117,7 @@ FROM pg_available_extensions
 WHERE name IN ('vector', 'uuid-ossp');
 ```
 
-Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql) through [V8__remove_medical_record_drafts.sql](./src/main/resources/db/migration/V8__remove_medical_record_drafts.sql). V6 only backfills doctors with no weekly schedule and never overwrites partial/customized schedules. V7 removes the obsolete doctor-day-off table only when it is empty. V8 similarly removes `medical_record_drafts` only when it is empty; if historical rows exist, migration stops so the unfinalized patient data can be reviewed or archived explicitly. Hibernate only validates the schema through `ddl-auto=validate`.
+Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql) through [V11__add_dental_service_image_url.sql](./src/main/resources/db/migration/V11__add_dental_service_image_url.sql). V6 only backfills doctors with no weekly schedule and never overwrites partial/customized schedules. V7 removes the obsolete doctor-day-off table only when it is empty. V8 similarly removes `medical_record_drafts` only when it is empty; if historical rows exist, migration stops so the unfinalized patient data can be reviewed or archived explicitly. V9 normalizes direct legacy `08:00–12:00` morning schedules to the supported `08:00–11:00` window. V10 repairs schedule times shifted by the former UTC JDBC calendar and refuses to run if shortening a legacy morning would affect an active future 11:00 appointment. V11 adds nullable `dental_services.image_url` storage for HTTP/HTTPS image references without changing existing service rows. Hibernate only validates the schema through `ddl-auto=validate`.
 
 ## Run
 
@@ -178,14 +183,15 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 
 | HTTP | Codes |
 |---:|---|
-| 400 | `INVALID_REQUEST`, `VALIDATION_FAILED`, `MALFORMED_REQUEST`, `PASSWORD_TOO_LONG` |
+| 400 | `INVALID_REQUEST`, `VALIDATION_FAILED`, `MALFORMED_REQUEST`, `PASSWORD_TOO_LONG`, `INVALID_IMAGE_FILE` |
 | 401 | `AUTHENTICATION_REQUIRED`, `INVALID_CREDENTIALS`, `SESSION_EXPIRED`, `SESSION_REVOKED`, `REFRESH_TOKEN_INVALID`, `REFRESH_TOKEN_REUSED` |
 | 403 | `ACCOUNT_INACTIVE`, `ACCESS_DENIED`, `CSRF_VALIDATION_FAILED` |
 | 423 | `SESSION_LOCKED` |
 | 404 | `RESOURCE_NOT_FOUND` |
 | 405 | `METHOD_NOT_ALLOWED` |
 | 409 | `RESOURCE_CONFLICT`, `EMAIL_ALREADY_EXISTS`, `LICENSE_NUMBER_ALREADY_EXISTS`, `SERVICE_NAME_ALREADY_EXISTS`, `SCHEDULE_ALREADY_EXISTS` |
-| 500 | `INTERNAL_SERVER_ERROR` |
+| 413 | `IMAGE_FILE_TOO_LARGE` |
+| 500 | `INTERNAL_SERVER_ERROR`, `IMAGE_STORAGE_FAILED` |
 
 ## Current APIs
 
@@ -212,7 +218,9 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `PATCH /api/admin/doctors/{id}/status`
 - `GET /api/services`
 - `GET /api/services/{id}`
+- `GET /api/services/images/{filename}`
 - `POST /api/admin/services`
+- `POST /api/admin/services/images` (`multipart/form-data`, field `file`)
 - `PUT /api/admin/services/{id}`
 - `PATCH /api/admin/services/{id}/status`
 - `GET /api/doctors/{doctorId}/services`
@@ -311,6 +319,7 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - If React and the API use different subdomains, configure `AUTH_COOKIE_DOMAIN` for their shared parent domain; prefer a same-origin reverse proxy in production.
 - Only explicit user interaction should call `/api/auth/activity`; background refresh and other background requests must not keep an idle ADMIN/DOCTOR/STAFF session active.
 - Configure `CORS_ALLOWED_ORIGINS` with exact React origins. Wildcard origins are not used.
+- To upload a service image, send an ADMIN-authenticated multipart request to `/api/admin/services/images`, then use the returned `imageUrl` in the service create/update payload.
 - Treat `401` as an expired/missing session, `403` as insufficient permission and `409` as a recoverable business conflict.
 - A cancelled appointment may include `cancellationReason`, `cancellationSource` and `cancelledAt`. Treat an existing `cancellationSource` as immutable historical audit data; it does not affect current slot availability.
 - Parse timestamps as ISO-8601 values. Appointment display and day-based queries follow `Asia/Ho_Chi_Minh`.

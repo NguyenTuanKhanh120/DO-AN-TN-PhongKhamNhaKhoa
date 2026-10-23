@@ -83,6 +83,10 @@ class DentalServiceManagementPostgreSqlIntegrationTest {
         createBody.put("name", "  " + serviceName + "  ");
         createBody.put("description", "  Làm sạch cao răng PHASE 08  ");
         createBody.put("price", new BigDecimal("300000.00"));
+        createBody.put(
+                "imageUrl",
+                "  https://cdn.example.com/dental-services/scaling-" + marker + ".webp  "
+        );
 
         mockMvc.perform(post("/api/admin/services")
                         .header(HttpHeaders.AUTHORIZATION, bearer(doctorToken))
@@ -99,6 +103,9 @@ class DentalServiceManagementPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.name").value(serviceName))
                 .andExpect(jsonPath("$.data.description").value("Làm sạch cao răng PHASE 08"))
                 .andExpect(jsonPath("$.data.price").value(300000.0))
+                .andExpect(jsonPath("$.data.imageUrl").value(
+                        "https://cdn.example.com/dental-services/scaling-" + marker + ".webp"
+                ))
                 .andExpect(jsonPath("$.data.active").value(true))
                 .andReturn();
 
@@ -109,6 +116,8 @@ class DentalServiceManagementPostgreSqlIntegrationTest {
         DentalService persisted = dentalServiceRepository.findById(serviceId).orElseThrow();
         assertThat(persisted.getName()).isEqualTo(serviceName);
         assertThat(persisted.getPrice()).isEqualByComparingTo("300000.00");
+        assertThat(persisted.getImageUrl())
+                .isEqualTo("https://cdn.example.com/dental-services/scaling-" + marker + ".webp");
         assertThat(persisted.isActive()).isTrue();
 
         mockMvc.perform(get("/api/services")
@@ -117,17 +126,23 @@ class DentalServiceManagementPostgreSqlIntegrationTest {
                         .param("size", "10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalElements").value(1))
-                .andExpect(jsonPath("$.data.content[0].id").value(serviceId.toString()));
+                .andExpect(jsonPath("$.data.content[0].id").value(serviceId.toString()))
+                .andExpect(jsonPath("$.data.content[0].imageUrl").value(persisted.getImageUrl()));
 
         mockMvc.perform(get("/api/services/{id}", serviceId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.name").value(serviceName));
+                .andExpect(jsonPath("$.data.name").value(serviceName))
+                .andExpect(jsonPath("$.data.imageUrl").value(persisted.getImageUrl()));
 
         String updatedName = "Tẩy trắng răng " + marker;
         Map<String, Object> updateBody = new LinkedHashMap<>();
         updateBody.put("name", "  " + updatedName + "  ");
         updateBody.put("description", "  Mô tả đã cập nhật  ");
         updateBody.put("price", new BigDecimal("1250000.50"));
+        updateBody.put(
+                "imageUrl",
+                "https://cdn.example.com/dental-services/whitening-" + marker + ".webp"
+        );
 
         mockMvc.perform(put("/api/admin/services/{id}", serviceId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
@@ -136,7 +151,19 @@ class DentalServiceManagementPostgreSqlIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.name").value(updatedName))
                 .andExpect(jsonPath("$.data.price").value(1250000.5))
+                .andExpect(jsonPath("$.data.imageUrl").value(
+                        "https://cdn.example.com/dental-services/whitening-" + marker + ".webp"
+                ))
                 .andExpect(jsonPath("$.data.active").value(true));
+
+        updateBody.put("imageUrl", null);
+        mockMvc.perform(put("/api/admin/services/{id}", serviceId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(updateBody)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.imageUrl").value(org.hamcrest.Matchers.nullValue()));
+        assertThat(dentalServiceRepository.findById(serviceId).orElseThrow().getImageUrl()).isNull();
 
         mockMvc.perform(patch("/api/admin/services/{id}/status", serviceId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
@@ -182,6 +209,27 @@ class DentalServiceManagementPostgreSqlIntegrationTest {
                         .content(objectMapper.writeValueAsBytes(updateBody)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+
+        Map<String, Object> legacyCompatibleBody = new LinkedHashMap<>();
+        legacyCompatibleBody.put("name", "Dịch vụ không ảnh " + marker);
+        legacyCompatibleBody.put("description", "Dữ liệu tương thích dịch vụ cũ");
+        legacyCompatibleBody.put("price", new BigDecimal("100000.00"));
+        MvcResult legacyCompatibleResult = mockMvc.perform(post("/api/admin/services")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(legacyCompatibleBody)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.imageUrl").value(org.hamcrest.Matchers.nullValue()))
+                .andReturn();
+        UUID legacyCompatibleServiceId = UUID.fromString(
+                objectMapper.readTree(legacyCompatibleResult.getResponse().getContentAsByteArray())
+                        .path("data").path("id").asText()
+        );
+        assertThat(dentalServiceRepository.findById(legacyCompatibleServiceId).orElseThrow().getImageUrl())
+                .isNull();
+        mockMvc.perform(get("/api/services/{id}", legacyCompatibleServiceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.imageUrl").value(org.hamcrest.Matchers.nullValue()));
     }
 
     private User saveUser(String email, Role role) {

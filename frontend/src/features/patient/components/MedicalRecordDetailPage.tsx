@@ -1,0 +1,15 @@
+import { ArrowLeft, CalendarPlus, Pill } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
+import { AsyncStateView } from "@/components/common/AsyncStateView";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { formatDate, formatDateTime } from "@/utils/format";
+import { usePatientMedicalRecord } from "../hooks/usePatientData";
+
+export default function MedicalRecordDetailPage() {
+  const { appointmentId } = useParams();
+  const query = usePatientMedicalRecord(appointmentId);
+  return <div><Link to="/patient/medical-records" className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-primary-700"><ArrowLeft className="h-4 w-4" /> Quay lại bệnh án</Link><AsyncStateView loading={query.isLoading} error={query.error} empty={!query.data} onRetry={() => void query.refetch()}>{query.data && <><div className="mb-6"><h1 className="page-heading">Bệnh án ngày {formatDateTime(query.data.scheduledStartAt)}</h1><p className="page-subtitle">{query.data.doctorFullName} · {query.data.serviceName}</p></div><div className="grid gap-5 lg:grid-cols-2"><Card className="p-6"><h2 className="font-bold text-ink">Kết quả khám</h2><dl className="mt-4 space-y-4"><Detail label="Chẩn đoán" value={query.data.diagnosis} /><Detail label="Điều trị" value={query.data.treatment} /><Detail label="Kế hoạch điều trị" value={query.data.treatmentPlan || "Không có"} /><Detail label="Ghi chú" value={query.data.notes || "Không có"} /></dl></Card><Card className="p-6"><h2 className="flex items-center gap-2 font-bold text-ink"><Pill className="h-5 w-5 text-primary-700" /> Đơn thuốc</h2>{query.data.prescription.length ? <div className="mt-4 space-y-3">{query.data.prescription.map((item, index) => <div key={`${item.medicationName}-${index}`} className="rounded-xl bg-slate-50 p-4"><p className="font-semibold">{item.medicationName} · {item.dosage}</p><p className="mt-1 text-sm text-muted">Số lượng: {item.quantity} · {item.instructions}</p></div>)}</div> : <p className="mt-4 text-sm text-muted">Không có thuốc được kê.</p>}</Card></div>{query.data.followUpRequired && <Card className="mt-5 border-primary-100 bg-primary-50/40 p-6"><h2 className="font-bold text-primary-900">Chỉ định tái khám</h2><p className="mt-2 text-sm text-slate-700">Ngày dự kiến: <strong>{formatDate(query.data.recommendedFollowUpDate)}</strong></p>{query.data.followUpNote && <p className="mt-1 text-sm text-slate-700">{query.data.followUpNote}</p>}<div className="mt-4"><Link to={`/patient/book-appointment?serviceId=${query.data.serviceId}&doctorId=${query.data.doctorId}&previousAppointmentId=${query.data.appointmentId}`}><Button><CalendarPlus className="h-4 w-4" /> Đặt lịch tái khám</Button></Link></div></Card>}</>}</AsyncStateView></div>;
+}
+
+function Detail({ label, value }: { label: string; value: string }) { return <div><dt className="text-sm text-muted">{label}</dt><dd className="mt-1 whitespace-pre-wrap text-sm leading-6 text-ink">{value}</dd></div>; }

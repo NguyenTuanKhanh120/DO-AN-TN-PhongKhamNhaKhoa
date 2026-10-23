@@ -9,6 +9,7 @@ public record DentalServiceResponse(
         String name,
         String description,
         BigDecimal price,
+        String imageUrl,
         boolean active,
         Instant createdAt,
         Instant updatedAt
