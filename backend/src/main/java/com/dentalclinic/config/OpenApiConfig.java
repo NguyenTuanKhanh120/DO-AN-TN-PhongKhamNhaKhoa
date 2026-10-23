@@ -52,6 +52,7 @@ public class OpenApiConfig {
             "POST /api/admin/staff",
             "POST /api/admin/doctors",
             "POST /api/admin/services",
+            "POST /api/admin/services/images",
             "POST /api/admin/doctors/{doctorId}/schedules",
             "POST /api/patient/appointments",
             "POST /api/doctor/appointments/{id}/medical-record"

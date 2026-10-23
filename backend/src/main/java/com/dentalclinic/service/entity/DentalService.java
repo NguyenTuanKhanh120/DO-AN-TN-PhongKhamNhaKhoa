@@ -37,6 +37,9 @@ public class DentalService {
     @Column(name = "price", nullable = false, precision = 14, scale = 2)
     private BigDecimal price;
 
+    @Column(name = "image_url", length = 1000)
+    private String imageUrl;
+
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 

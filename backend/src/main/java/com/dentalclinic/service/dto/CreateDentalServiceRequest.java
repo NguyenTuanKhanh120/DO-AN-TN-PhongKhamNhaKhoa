@@ -1,5 +1,6 @@
 package com.dentalclinic.service.dto;
 
+import com.dentalclinic.service.validation.HttpUrl;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
@@ -18,6 +19,10 @@ public record CreateDentalServiceRequest(
         @NotNull(message = "Giá dịch vụ không được để trống")
         @DecimalMin(value = "0.00", message = "Giá dịch vụ không được âm")
         @Digits(integer = 12, fraction = 2, message = "Giá dịch vụ vượt quá định dạng NUMERIC(14,2)")
-        BigDecimal price
+        BigDecimal price,
+
+        @Size(max = 1000, message = "URL ảnh không được vượt quá 1000 ký tự")
+        @HttpUrl
+        String imageUrl
 ) {
 }

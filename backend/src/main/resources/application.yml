@@ -20,10 +20,6 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
-    properties:
-      hibernate:
-        jdbc:
-          time_zone: UTC
 
   # Flyway is the only schema owner. Set FLYWAY_ENABLED=false only for
   # explicit diagnostics where migrations must not run.
@@ -34,6 +30,11 @@ spring:
 
   jackson:
     time-zone: ${CLINIC_TIMEZONE:Asia/Ho_Chi_Minh}
+
+  servlet:
+    multipart:
+      max-file-size: ${SERVICE_IMAGE_MAX_FILE_SIZE:5MB}
+      max-request-size: ${SERVICE_IMAGE_MAX_REQUEST_SIZE:6MB}
 
 server:
   port: ${SERVER_PORT:8081}
@@ -80,6 +81,9 @@ logging:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
+  service-images:
+    storage-directory: ${SERVICE_IMAGE_STORAGE_DIRECTORY:uploads/service-images}
+    max-file-size-bytes: ${SERVICE_IMAGE_MAX_FILE_SIZE_BYTES:5242880}
 
 springdoc:
   api-docs:

@@ -14,6 +14,7 @@ import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
@@ -125,6 +126,16 @@ public class GlobalExceptionHandler {
     ) {
         log.warn("Malformed request body: method={}, path={}", request.getMethod(), request.getRequestURI());
         return errorResponse(ErrorCode.MALFORMED_REQUEST, null, null, request);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSizeExceeded(
+            MaxUploadSizeExceededException exception,
+            HttpServletRequest request
+    ) {
+        log.warn("Uploaded file exceeded the configured limit: method={}, path={}",
+                request.getMethod(), request.getRequestURI());
+        return errorResponse(ErrorCode.IMAGE_FILE_TOO_LARGE, null, null, request);
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

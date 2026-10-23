@@ -24,6 +24,9 @@ public enum ErrorCode {
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "Email đã được sử dụng"),
     LICENSE_NUMBER_ALREADY_EXISTS(HttpStatus.CONFLICT, "Số giấy phép hành nghề đã được sử dụng"),
     SERVICE_NAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "Tên dịch vụ đã được sử dụng"),
+    INVALID_IMAGE_FILE(HttpStatus.BAD_REQUEST, "Ảnh dịch vụ không hợp lệ"),
+    IMAGE_FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "Ảnh dịch vụ không được vượt quá 5 MB"),
+    IMAGE_STORAGE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "Không thể lưu ảnh dịch vụ"),
     SCHEDULE_ALREADY_EXISTS(HttpStatus.CONFLICT, "Lịch làm việc cho ngày và buổi này đã tồn tại"),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "Phương thức HTTP không được hỗ trợ"),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Đã xảy ra lỗi hệ thống");

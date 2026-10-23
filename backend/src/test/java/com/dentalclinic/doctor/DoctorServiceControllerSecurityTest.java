@@ -81,6 +81,7 @@ class DoctorServiceControllerSecurityTest {
         mockMvc.perform(get("/api/doctors/{doctorId}/services", doctorId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value(response.id().toString()))
+                .andExpect(jsonPath("$.data[0].imageUrl").value(response.imageUrl()))
                 .andExpect(jsonPath("$.data[0].name").value(response.name()));
     }
 
@@ -178,6 +179,7 @@ class DoctorServiceControllerSecurityTest {
                 "Cạo vôi răng",
                 "Làm sạch cao răng",
                 new BigDecimal("300000.00"),
+                "https://cdn.example.com/dental-services/scaling.webp",
                 true,
                 Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2026-01-02T00:00:00Z")

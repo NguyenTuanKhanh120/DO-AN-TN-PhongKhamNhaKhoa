@@ -1,0 +1,85 @@
+2. CHỨC NĂNG 
+--------------------------------------------------------------------------------
+   2.1. XÁC THỰC & PHÂN QUYỀN
+        - Đăng ký bằng email (tự động tạo hồ sơ bệnh nhân)
+        - Đăng nhập email / mật khẩu
+        - JWT: access token + refresh token
+        - Mã hóa mật khẩu BCrypt
+        - Middleware phân quyền theo 3 vai trò
+       Google OAuth (tích hợp thêm, giá trị thấp so với công sức)
+
+   2.2. QUẢN LÝ LỊCH HẸN  ★ chức năng cốt lõi
+        - Bệnh nhân đặt lịch: dịch vụ → bác sĩ → ngày → giờ
+        - Kiểm tra slot trống
+        - Vòng đời: pending → confirmed → in_progress → completed
+                     + rescheduled, cancelled
+        - Bác sĩ/Admin xác nhận, check-in, hoàn thành
+        - Đổi lịch, hủy lịch (ghi lý do, ai hủy, thời gian)
+        - Realtime khi lịch hẹn thay đổi
+        ⚠ BẮT BUỘC thêm: UNIQUE (DoctorId, AppointmentDate, StartTime)
+                        + transaction chống trùng slot
+
+   2.3. QUẢN LÝ LỊCH LÀM VIỆC & SLOT  ★ điều kiện cho 2.2
+        - Lịch mặc định theo ngày tuần (Thứ 2 → Chủ nhật)
+        - Lịch override theo tuần cụ thể (WeekStart)
+        - StartTime / EndTime / MaxSlots / IsOff
+
+   2.4. QUẢN LÝ DỊCH VỤ NHA KHOA
+        - Tên, mô tả, giá
+        - Admin và bác sĩ thêm / sửa / xóa
+
+   2.5. QUẢN LÝ BÁC SĨ
+        - Hồ sơ: chuyên khoa, số giấy phép, tiểu sử, đánh giá, kinh nghiệm
+        - Liên kết bác sĩ với dịch vụ (bảng trung gian)
+        - Admin tạo tài khoản bác sĩ
+        - Trang công khai: danh sách + chi tiết bác sĩ
+
+   2.6. KẾT QUẢ KHÁM  ★ chức năng cốt lõi
+        - Bác sĩ tạo kết quả sau khi khám
+        - Chẩn đoán, điều trị, kế hoạch điều trị, đơn thuốc, ghi chú
+        - Đặt lịch tái khám (NextDate)
+   2.7. QUẢN LÝ BỆNH NHÂN
+        - Hồ sơ: ngày sinh, giới tính, địa chỉ, tiền sử bệnh, dị ứng
+        - Bệnh nhân xem được lịch sử khám
+   2.8. AI CHATBOT RAG  ★ điểm sáng của đề tài
+       
+        ----- Phần tư vấn triệu chứng & chọn bác sĩ -----
+        - Chatbot đặt câu hỏi làm rõ TRIỆU CHỨNG theo từng bước:
+            vị trí đau (răng trên/răng dưới, bên trái/phải) → mức độ đau
+            (nhẹ / vừa / dữ dội) → thời gian diễn ra → triệu chứng kèm theo
+            (sưng, chảy máu, ê buốt, sốt...) → tiền sử dị ứng thuốc
+        - Từ triệu chứng → truy xuất KB (chunk chuyên khoa) + query MySQL
+          (bác sĩ có chuyên khoa phù hợp + đang nhận dịch vụ tương ứng
+          + còn slot trống) → Gemini sinh DANH SÁCH BÁC SĨ ĐỀ XUẤT
+        - Mỗi bác sĩ đề xuất kèm: chuyên khoa, số năm kinh nghiệm, đánh giá,
+          và nút "Xem lịch trống" / "Đặt lịch ngay" (điều hướng sang 2.2)
+        - Quick replies gợi ý câu hỏi tiếp theo (theo từng bước đang hỏi)
+
+        ----- Phần lưu trữ lịch sử tư vấn (giữ lại) -----
+        - Mỗi tài khoản có nhiều phiên chat
+        - Lưu TOÀN BỘ: câu hỏi của bệnh nhân, triệu chứng đã mô tả,
+          câu hỏi chatbot hỏi lại, và bác sĩ chatbot đề xuất
+        - Bệnh nhân mở lại bất kỳ phiên nào để xem lại, tiếp tục chat
+
+        ⚠ BẮT BUỘC thêm: ngưỡng confidence (topScore < threshold → trả lời
+                        mặc định "chưa có thông tin, vui lòng liên hệ phòng khám")
+        ⚠ BẮT BUỘC thêm: bộ benchmark ≥ 30 câu hỏi có đáp án để đánh giá 4.4
+
+
+	
+
+Công việc để làm RAG
+
+- Chuẩn bị Knowledge Base
+- Chia tài liệu thành Chunk	
+- Tạo Embedding cho từng Chunk
+- Lưu Vector Database	
+- Embed câu hỏi và truy xuất Top-K	
+- Ghép Context với cơ sở dữ liệu 
+- Gemini LLM sinh phản hồi và trả về người dùng
+
+• Document Loading & Splitting: Đọc tài liệu (PDF, Word, TXT) và chia nhỏ văn bản thành các đoạn (chunks).
+• Embedding Generation: Chuyển đổi các đoạn văn bản thành vector số học bằng các mô hình embedding.
+• Vector Database: Lưu trữ các vector vào cơ sở dữ liệu chuyên dụng (như pgvector, Chroma, FAISS, Pinecone).
+• Retrieval: Khi người dùng hỏi, hệ thống tìm các đoạn văn bản có ý nghĩa gần nhất với câu hỏi trong cơ sở dữ liệu.
+• Generation: Đưa câu hỏi và các đoạn ngữ cảnh tìm được vào mô hình LLM để tổng hợp câu trả lời cuối cùng

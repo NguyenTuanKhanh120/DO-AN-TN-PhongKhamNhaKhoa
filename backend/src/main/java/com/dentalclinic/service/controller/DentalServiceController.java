@@ -4,10 +4,14 @@ import com.dentalclinic.common.response.ApiResponse;
 import com.dentalclinic.common.response.PageResponse;
 import com.dentalclinic.service.dto.DentalServiceResponse;
 import com.dentalclinic.service.service.DentalServiceManagementService;
+import com.dentalclinic.service.service.DentalServiceImageStorageService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+import java.time.Duration;
 
 @Validated
 @RestController
@@ -22,9 +27,14 @@ import java.util.UUID;
 public class DentalServiceController {
 
     private final DentalServiceManagementService dentalServiceManagementService;
+    private final DentalServiceImageStorageService dentalServiceImageStorageService;
 
-    public DentalServiceController(DentalServiceManagementService dentalServiceManagementService) {
+    public DentalServiceController(
+            DentalServiceManagementService dentalServiceManagementService,
+            DentalServiceImageStorageService dentalServiceImageStorageService
+    ) {
         this.dentalServiceManagementService = dentalServiceManagementService;
+        this.dentalServiceImageStorageService = dentalServiceImageStorageService;
     }
 
     @GetMapping
@@ -42,6 +52,16 @@ public class DentalServiceController {
             int size
     ) {
         return ApiResponse.success(dentalServiceManagementService.getServices(search, active, page, size));
+    }
+
+    @GetMapping("/images/{filename:.+}")
+    public ResponseEntity<Resource> getServiceImage(@PathVariable String filename) {
+        DentalServiceImageStorageService.StoredImage storedImage =
+                dentalServiceImageStorageService.load(filename);
+        return ResponseEntity.ok()
+                .contentType(storedImage.mediaType())
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
+                .body(storedImage.resource());
     }
 
     @GetMapping("/{id}")

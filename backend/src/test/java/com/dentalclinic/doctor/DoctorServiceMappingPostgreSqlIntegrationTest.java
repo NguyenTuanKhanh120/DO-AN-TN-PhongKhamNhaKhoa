@@ -120,6 +120,7 @@ class DoctorServiceMappingPostgreSqlIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].id").value(serviceA.getId().toString()))
+                .andExpect(jsonPath("$.data[0].imageUrl").value(serviceA.getImageUrl()))
                 .andExpect(jsonPath("$.data[1].id").value(serviceB.getId().toString()));
 
         assertThat(doctorServiceRepository.findAllWithServiceByDoctorId(doctor.getId()))
@@ -130,6 +131,7 @@ class DoctorServiceMappingPostgreSqlIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].name").value(serviceA.getName()))
+                .andExpect(jsonPath("$.data[0].imageUrl").value(serviceA.getImageUrl()))
                 .andExpect(jsonPath("$.data[1].name").value(serviceB.getName()));
 
         mockMvc.perform(get("/api/services/{serviceId}/doctors", serviceA.getId()))
@@ -145,7 +147,8 @@ class DoctorServiceMappingPostgreSqlIntegrationTest {
                         .content(objectMapper.writeValueAsBytes(retainedMappingBody)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1))
-                .andExpect(jsonPath("$.data[0].id").value(serviceB.getId().toString()));
+                .andExpect(jsonPath("$.data[0].id").value(serviceB.getId().toString()))
+                .andExpect(jsonPath("$.data[0].imageUrl").value(serviceB.getImageUrl()));
 
         assertThat(doctorServiceRepository.existsById(
                 new DoctorServiceId(doctor.getId(), serviceA.getId())
@@ -252,6 +255,7 @@ class DoctorServiceMappingPostgreSqlIntegrationTest {
         dentalService.setName(name);
         dentalService.setDescription("Dịch vụ kiểm thử PHASE 09");
         dentalService.setPrice(new BigDecimal(price));
+        dentalService.setImageUrl("https://cdn.example.com/dental-services/mapping-test.webp");
         dentalService.setActive(true);
         return dentalServiceRepository.saveAndFlush(dentalService);
     }

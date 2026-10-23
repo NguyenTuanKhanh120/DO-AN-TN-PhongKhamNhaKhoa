@@ -130,6 +130,7 @@ public class DoctorServiceMappingService {
                 dentalService.getName(),
                 dentalService.getDescription(),
                 dentalService.getPrice(),
+                dentalService.getImageUrl(),
                 dentalService.isActive(),
                 dentalService.getCreatedAt(),
                 dentalService.getUpdatedAt()

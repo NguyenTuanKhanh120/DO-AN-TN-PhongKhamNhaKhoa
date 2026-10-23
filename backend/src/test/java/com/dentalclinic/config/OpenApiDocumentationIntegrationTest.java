@@ -203,6 +203,19 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(schemas.has("PaymentResponse")).isTrue();
         assertThat(schemas.has("ConfirmPaymentRequest")).isTrue();
         assertThat(schemas.has("RevenueSummaryResponse")).isTrue();
+        assertThat(schemas.path("CreateDentalServiceRequest").path("properties").has("imageUrl"))
+                .isTrue();
+        assertThat(schemas.path("UpdateDentalServiceRequest").path("properties").has("imageUrl"))
+                .isTrue();
+        assertThat(schemas.path("DentalServiceResponse").path("properties").has("imageUrl"))
+                .isTrue();
+        JsonNode serviceImageUpload = operation(document, "/api/admin/services/images", "post");
+        assertThat(serviceImageUpload.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
+                .isTrue();
+        assertThat(serviceImageUpload.path("requestBody").path("content").has("multipart/form-data"))
+                .isTrue();
+        assertThat(document.path("paths").has("/api/services/images/{filename}"))
+                .isTrue();
         assertThat(schemas.has("AuthSessionResponse")).isTrue();
         assertThat(schemas.has("MedicalRecordResponse")).isTrue();
         assertThat(schemas.has("MedicalRecordDraftRequest")).isFalse();

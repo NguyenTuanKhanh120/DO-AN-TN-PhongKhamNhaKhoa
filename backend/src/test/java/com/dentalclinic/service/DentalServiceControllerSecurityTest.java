@@ -14,6 +14,7 @@ import com.dentalclinic.service.dto.CreateDentalServiceRequest;
 import com.dentalclinic.service.dto.DentalServiceResponse;
 import com.dentalclinic.service.dto.UpdateDentalServiceRequest;
 import com.dentalclinic.service.service.DentalServiceManagementService;
+import com.dentalclinic.service.service.DentalServiceImageStorageService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Encoders;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -39,10 +41,12 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest({DentalServiceController.class, AdminDentalServiceController.class})
@@ -63,6 +67,9 @@ class DentalServiceControllerSecurityTest {
     private DentalServiceManagementService dentalServiceManagementService;
 
     @MockitoBean
+    private DentalServiceImageStorageService dentalServiceImageStorageService;
+
+    @MockitoBean
     private JwtTokenProvider jwtTokenProvider;
 
     @MockitoBean
@@ -80,14 +87,16 @@ class DentalServiceControllerSecurityTest {
 
     @Test
     void shouldAllowAnonymousActiveServiceList() throws Exception {
+        DentalServiceResponse response = response(true);
         PageResponse<DentalServiceResponse> page = new PageResponse<>(
-                List.of(response(true)), 0, 20, 1, 1, true, true, false, false
+                List.of(response), 0, 20, 1, 1, true, true, false, false
         );
         when(dentalServiceManagementService.getServices(null, true, 0, 20)).thenReturn(page);
 
         mockMvc.perform(get("/api/services"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].imageUrl").value(response.imageUrl()))
                 .andExpect(jsonPath("$.data.content[0].active").value(true));
     }
 
@@ -99,7 +108,25 @@ class DentalServiceControllerSecurityTest {
         mockMvc.perform(get("/api/services/{id}", response.id()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(response.id().toString()))
+                .andExpect(jsonPath("$.data.imageUrl").value(response.imageUrl()))
                 .andExpect(jsonPath("$.data.price").value(300000.0));
+    }
+
+    @Test
+    void shouldAllowAnonymousUploadedServiceImage() throws Exception {
+        String filename = "00000000-0000-0000-0000-000000000000.png";
+        byte[] imageBytes = {(byte) 0x89, 0x50, 0x4E, 0x47};
+        when(dentalServiceImageStorageService.load(filename)).thenReturn(
+                new DentalServiceImageStorageService.StoredImage(
+                        new ByteArrayResource(imageBytes),
+                        MediaType.IMAGE_PNG
+                )
+        );
+
+        mockMvc.perform(get("/api/services/images/{filename}", filename))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_PNG))
+                .andExpect(content().bytes(imageBytes));
     }
 
     @Test
@@ -107,6 +134,14 @@ class DentalServiceControllerSecurityTest {
         mockMvc.perform(post("/api/admin/services")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    void shouldRequireAuthenticationForImageUpload() throws Exception {
+        mockMvc.perform(multipart("/api/admin/services/images")
+                        .file("file", new byte[]{1, 2, 3}))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
     }
@@ -133,7 +168,22 @@ class DentalServiceControllerSecurityTest {
                         .content(validBody()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.id").value(response.id().toString()))
+                .andExpect(jsonPath("$.data.imageUrl").value(response.imageUrl()))
                 .andExpect(jsonPath("$.data.active").value(true));
+    }
+
+    @Test
+    void shouldUploadServiceImageForAdmin() throws Exception {
+        String filename = "00000000-0000-0000-0000-000000000000.png";
+        when(dentalServiceImageStorageService.store(any())).thenReturn(filename);
+
+        mockMvc.perform(multipart("/api/admin/services/images")
+                        .file("file", new byte[]{1, 2, 3})
+                        .with(user("admin@example.com").roles("ADMIN")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.imageUrl").value(
+                        "http://localhost/api/services/images/" + filename
+                ));
     }
 
     @Test
@@ -189,6 +239,42 @@ class DentalServiceControllerSecurityTest {
     }
 
     @Test
+    void shouldRejectNonHttpImageUrl() throws Exception {
+        mockMvc.perform(post("/api/admin/services")
+                        .with(user("admin@example.com").roles("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Cạo vôi răng",
+                                  "price": 300000.00,
+                                  "imageUrl": "data:image/png;base64,AAAA"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[?(@.field == 'imageUrl')]").exists());
+    }
+
+    @Test
+    void shouldRejectImageUrlLongerThanDatabaseColumn() throws Exception {
+        String imageUrl = "https://example.com/" + "a".repeat(1001);
+
+        mockMvc.perform(post("/api/admin/services")
+                        .with(user("admin@example.com").roles("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Cạo vôi răng",
+                                  "price": 300000.00,
+                                  "imageUrl": "%s"
+                                }
+                                """.formatted(imageUrl)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[?(@.field == 'imageUrl')]").exists());
+    }
+
+    @Test
     void shouldValidatePublicPagination() throws Exception {
         mockMvc.perform(get("/api/services").param("page", "-1"))
                 .andExpect(status().isBadRequest())
@@ -201,6 +287,7 @@ class DentalServiceControllerSecurityTest {
                 "Cạo vôi răng",
                 "Làm sạch cao răng",
                 new BigDecimal("300000.00"),
+                "https://cdn.example.com/dental-services/scaling.webp",
                 active,
                 Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2026-01-02T00:00:00Z")
@@ -212,7 +299,8 @@ class DentalServiceControllerSecurityTest {
                 {
                   "name": "Cạo vôi răng",
                   "description": "Làm sạch cao răng",
-                  "price": 300000.00
+                  "price": 300000.00,
+                  "imageUrl": "https://cdn.example.com/dental-services/scaling.webp"
                 }
                 """;
     }
