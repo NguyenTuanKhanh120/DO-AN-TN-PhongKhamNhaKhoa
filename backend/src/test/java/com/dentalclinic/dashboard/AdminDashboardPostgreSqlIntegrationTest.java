@@ -107,19 +107,20 @@ class AdminDashboardPostgreSqlIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        long baselinePatients = patientRepository.count();
         long baselineDoctors = doctorRepository.count();
         AppointmentDailySummary baselineDaily = appointmentRepository
                 .summarizeScheduledRange(
                         TODAY_START,
                         TOMORROW_START,
+                        AppointmentStatus.CHECKED_IN,
+                        AppointmentStatus.IN_PROGRESS,
                         AppointmentStatus.COMPLETED,
                         AppointmentStatus.CANCELLED,
                         AppointmentStatus.NO_SHOW
                 );
         fixture = createFixture(
-                baselinePatients,
                 baselineDoctors,
+                baselineDaily.getPatientsVisitedToday(),
                 baselineDaily.getTodayAppointments(),
                 baselineDaily.getCompletedToday(),
                 baselineDaily.getCancelledToday(),
@@ -134,8 +135,8 @@ class AdminDashboardPostgreSqlIntegrationTest {
         mockMvc.perform(get("/api/admin/dashboard/summary")
                         .header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalPatients")
-                        .value(fixture.expectedPatients()))
+                .andExpect(jsonPath("$.data.patientsVisitedToday")
+                        .value(fixture.expectedPatientsVisitedToday()))
                 .andExpect(jsonPath("$.data.totalDoctors")
                         .value(fixture.expectedDoctors()))
                 .andExpect(jsonPath("$.data.todayAppointments")
@@ -149,8 +150,8 @@ class AdminDashboardPostgreSqlIntegrationTest {
     }
 
     private Fixture createFixture(
-            long baselinePatients,
             long baselineDoctors,
+            long baselinePatientsVisitedToday,
             long baselineTodayAppointments,
             long baselineCompletedToday,
             long baselineCancelledToday,
@@ -168,6 +169,12 @@ class AdminDashboardPostgreSqlIntegrationTest {
                 Role.PATIENT
         );
         Patient patient = savePatient(patientUser);
+        User secondPatientUser = saveUser(
+                "phase24-second-patient-" + marker + "@example.com",
+                "Bệnh nhân thứ hai Phase 24",
+                Role.PATIENT
+        );
+        Patient secondPatient = savePatient(secondPatientUser);
         User doctorUser = saveUser(
                 "phase24-doctor-" + marker + "@example.com",
                 "Bác sĩ Phase 24",
@@ -189,6 +196,12 @@ class AdminDashboardPostgreSqlIntegrationTest {
                 mapping,
                 Instant.parse("2026-10-11T21:00:00Z"),
                 AppointmentStatus.COMPLETED
+        );
+        saveAppointment(
+                secondPatient,
+                mapping,
+                Instant.parse("2026-10-11T23:00:00Z"),
+                AppointmentStatus.IN_PROGRESS
         );
         saveAppointment(
                 patient,
@@ -224,9 +237,9 @@ class AdminDashboardPostgreSqlIntegrationTest {
 
         return new Fixture(
                 admin.getEmail(),
-                baselinePatients + 1,
+                baselinePatientsVisitedToday + 2,
                 baselineDoctors + 1,
-                baselineTodayAppointments + 6,
+                baselineTodayAppointments + 7,
                 baselineCompletedToday + 2,
                 baselineCancelledToday + 1,
                 baselineNoShowToday + 1
@@ -316,7 +329,7 @@ class AdminDashboardPostgreSqlIntegrationTest {
 
     private record Fixture(
             String adminEmail,
-            long expectedPatients,
+            long expectedPatientsVisitedToday,
             long expectedDoctors,
             long expectedTodayAppointments,
             long expectedCompletedToday,

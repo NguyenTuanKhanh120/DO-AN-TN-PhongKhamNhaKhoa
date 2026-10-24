@@ -148,6 +148,12 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(document.path("paths").path("/api/doctor/schedules").has("put")).isFalse();
         assertThat(document.path("paths").path("/api/doctor/schedules").has("delete")).isFalse();
 
+        JsonNode currentDoctorServices = operation(document, "/api/doctor/services", "get");
+        assertThat(currentDoctorServices.path("tags").get(0).asText())
+                .isEqualTo("Doctor Services");
+        assertThat(currentDoctorServices.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
+                .isTrue();
+
         JsonNode doctorCalendar = operation(
                 document,
                 "/api/doctors/{doctorId}/calendar",
@@ -195,6 +201,10 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(schemas.has("CreateStaffRequest")).isTrue();
         assertThat(schemas.has("BookAppointmentRequest")).isTrue();
         assertThat(schemas.has("DashboardSummaryResponse")).isTrue();
+        assertThat(schemas.path("DashboardSummaryResponse").path("properties").has("patientsVisitedToday"))
+                .isTrue();
+        assertThat(schemas.path("DashboardSummaryResponse").path("properties").has("totalPatients"))
+                .isFalse();
         assertThat(schemas.has("CreateDoctorDayOffRequest")).isFalse();
         assertThat(schemas.has("CreateDoctorDayOffResponse")).isFalse();
         assertThat(schemas.path("CalendarAvailabilityStatus").toString())
@@ -209,6 +219,8 @@ class OpenApiDocumentationIntegrationTest {
                 .isTrue();
         assertThat(schemas.path("DentalServiceResponse").path("properties").has("imageUrl"))
                 .isTrue();
+        assertThat(schemas.path("DoctorAssignedServiceResponse").path("properties")
+                .has("durationMinutes")).isTrue();
         JsonNode serviceImageUpload = operation(document, "/api/admin/services/images", "post");
         assertThat(serviceImageUpload.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
                 .isTrue();

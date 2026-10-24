@@ -1,6 +1,7 @@
 package com.dentalclinic.doctor;
 
 import com.dentalclinic.doctor.entity.Doctor;
+import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.doctor.entity.DoctorServiceId;
 import com.dentalclinic.doctor.entity.DoctorStatus;
 import com.dentalclinic.doctor.repository.DoctorRepository;
@@ -221,6 +222,59 @@ class DoctorServiceMappingPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.code").value("RESOURCE_CONFLICT"));
     }
 
+    @Test
+    void shouldReturnOnlyActiveServicesAssignedToAuthenticatedDoctor() throws Exception {
+        String marker = UUID.randomUUID().toString();
+        User doctorUser = saveUser(
+                "assigned-services-doctor-" + marker + "@example.com",
+                "Bác sĩ dịch vụ được phân công",
+                Role.DOCTOR
+        );
+        Doctor doctor = saveDoctor(doctorUser, marker);
+        DentalService serviceB = saveService("B Dịch vụ " + marker, "500000.00");
+        DentalService serviceA = saveService("A Dịch vụ " + marker, "300000.00");
+        DentalService inactiveAssigned = saveService(
+                "C Dịch vụ ngừng hoạt động " + marker,
+                "700000.00"
+        );
+        inactiveAssigned.setActive(false);
+        dentalServiceRepository.saveAndFlush(inactiveAssigned);
+        saveMapping(doctor, serviceB);
+        saveMapping(doctor, inactiveAssigned);
+        saveMapping(doctor, serviceA);
+        saveService("D Dịch vụ chưa phân công " + marker, "900000.00");
+
+        String doctorToken = login(doctorUser.getEmail());
+        mockMvc.perform(get("/api/doctor/services")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(doctorToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("Lấy danh sách dịch vụ của bác sĩ thành công"))
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].id").value(serviceA.getId().toString()))
+                .andExpect(jsonPath("$.data[0].name").value(serviceA.getName()))
+                .andExpect(jsonPath("$.data[0].description").value(serviceA.getDescription()))
+                .andExpect(jsonPath("$.data[0].price").value(300000.00))
+                .andExpect(jsonPath("$.data[0].durationMinutes").value(60))
+                .andExpect(jsonPath("$.data[0].imageUrl").value(serviceA.getImageUrl()))
+                .andExpect(jsonPath("$.data[0].active").value(true))
+                .andExpect(jsonPath("$.data[1].id").value(serviceB.getId().toString()))
+                .andExpect(jsonPath("$.data[1].active").value(true));
+
+        User emptyDoctorUser = saveUser(
+                "empty-services-doctor-" + marker + "@example.com",
+                "Bác sĩ chưa có dịch vụ",
+                Role.DOCTOR
+        );
+        saveDoctor(emptyDoctorUser, marker + "-empty");
+        String emptyDoctorToken = login(emptyDoctorUser.getEmail());
+        mockMvc.perform(get("/api/doctor/services")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(emptyDoctorToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
     private User saveUser(String email, String fullName, Role role) {
         User user = new User();
         user.setEmail(email);
@@ -258,6 +312,14 @@ class DoctorServiceMappingPostgreSqlIntegrationTest {
         dentalService.setImageUrl("https://cdn.example.com/dental-services/mapping-test.webp");
         dentalService.setActive(true);
         return dentalServiceRepository.saveAndFlush(dentalService);
+    }
+
+    private void saveMapping(Doctor doctor, DentalService dentalService) {
+        DoctorService mapping = new DoctorService();
+        mapping.setId(new DoctorServiceId(doctor.getId(), dentalService.getId()));
+        mapping.setDoctor(doctor);
+        mapping.setService(dentalService);
+        doctorServiceRepository.saveAndFlush(mapping);
     }
 
     private String login(String email) throws Exception {

@@ -86,7 +86,7 @@ class AdminDashboardControllerSecurityTest {
     @Test
     void shouldReturnDashboardSummaryToAdmin() throws Exception {
         DashboardSummaryResponse response = new DashboardSummaryResponse(
-                120,
+                11,
                 8,
                 25,
                 14,
@@ -98,7 +98,7 @@ class AdminDashboardControllerSecurityTest {
         mockMvc.perform(get("/api/admin/dashboard/summary")
                         .with(user(principal())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalPatients").value(120))
+                .andExpect(jsonPath("$.data.patientsVisitedToday").value(11))
                 .andExpect(jsonPath("$.data.totalDoctors").value(8))
                 .andExpect(jsonPath("$.data.todayAppointments").value(25))
                 .andExpect(jsonPath("$.data.completedToday").value(14))

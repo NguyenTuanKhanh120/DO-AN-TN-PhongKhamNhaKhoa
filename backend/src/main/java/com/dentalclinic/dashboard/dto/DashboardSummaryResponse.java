@@ -1,7 +1,7 @@
 package com.dentalclinic.dashboard.dto;
 
 public record DashboardSummaryResponse(
-        long totalPatients,
+        long patientsVisitedToday,
         long totalDoctors,
         long todayAppointments,
         long completedToday,

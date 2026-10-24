@@ -7,7 +7,6 @@ import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.dashboard.dto.DashboardSummaryResponse;
 import com.dentalclinic.dashboard.service.AdminDashboardService;
 import com.dentalclinic.doctor.repository.DoctorRepository;
-import com.dentalclinic.patient.repository.PatientRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,9 +28,6 @@ class AdminDashboardServiceTest {
     private static final Instant FIXED_NOW = Instant.parse("2026-10-10T17:30:00Z");
 
     @Mock
-    private PatientRepository patientRepository;
-
-    @Mock
     private DoctorRepository doctorRepository;
 
     @Mock
@@ -45,7 +41,6 @@ class AdminDashboardServiceTest {
     @BeforeEach
     void setUp() {
         adminDashboardService = new AdminDashboardService(
-                patientRepository,
                 doctorRepository,
                 appointmentRepository,
                 new ClinicTimeProvider(Clock.fixed(FIXED_NOW, CLINIC_ZONE))
@@ -56,15 +51,17 @@ class AdminDashboardServiceTest {
     void shouldReturnSummaryForCurrentClinicDate() {
         Instant expectedStart = Instant.parse("2026-10-10T17:00:00Z");
         Instant expectedEnd = Instant.parse("2026-10-11T17:00:00Z");
-        when(patientRepository.count()).thenReturn(120L);
         when(doctorRepository.count()).thenReturn(8L);
         when(appointmentRepository.summarizeScheduledRange(
                 expectedStart,
                 expectedEnd,
+                AppointmentStatus.CHECKED_IN,
+                AppointmentStatus.IN_PROGRESS,
                 AppointmentStatus.COMPLETED,
                 AppointmentStatus.CANCELLED,
                 AppointmentStatus.NO_SHOW
         )).thenReturn(dailySummary);
+        when(dailySummary.getPatientsVisitedToday()).thenReturn(11L);
         when(dailySummary.getTodayAppointments()).thenReturn(25L);
         when(dailySummary.getCompletedToday()).thenReturn(14L);
         when(dailySummary.getCancelledToday()).thenReturn(3L);
@@ -73,7 +70,7 @@ class AdminDashboardServiceTest {
         DashboardSummaryResponse result = adminDashboardService.getSummary();
 
         assertThat(result).isEqualTo(new DashboardSummaryResponse(
-                120,
+                11,
                 8,
                 25,
                 14,
@@ -83,6 +80,8 @@ class AdminDashboardServiceTest {
         verify(appointmentRepository).summarizeScheduledRange(
                 expectedStart,
                 expectedEnd,
+                AppointmentStatus.CHECKED_IN,
+                AppointmentStatus.IN_PROGRESS,
                 AppointmentStatus.COMPLETED,
                 AppointmentStatus.CANCELLED,
                 AppointmentStatus.NO_SHOW

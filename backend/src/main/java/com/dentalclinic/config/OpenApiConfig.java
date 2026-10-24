@@ -340,6 +340,9 @@ public class OpenApiConfig {
         if (path.startsWith("/api/doctor/schedules")) {
             return "Doctor Schedules";
         }
+        if (path.startsWith("/api/doctor/services")) {
+            return "Doctor Services";
+        }
         if (path.contains("available-slots")) {
             return "Available Slots";
         }

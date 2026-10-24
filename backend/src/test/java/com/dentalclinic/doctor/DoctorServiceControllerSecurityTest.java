@@ -1,6 +1,7 @@
 package com.dentalclinic.doctor;
 
 import com.dentalclinic.auth.security.CustomUserDetailsService;
+import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.auth.service.AuthSessionService;
 import com.dentalclinic.auth.security.JwtAuthenticationFilter;
 import com.dentalclinic.auth.security.JwtTokenProvider;
@@ -9,10 +10,14 @@ import com.dentalclinic.common.exception.GlobalExceptionHandler;
 import com.dentalclinic.config.SecurityConfig;
 import com.dentalclinic.doctor.controller.AdminDoctorServiceController;
 import com.dentalclinic.doctor.controller.DoctorServiceController;
+import com.dentalclinic.doctor.dto.DoctorAssignedServiceResponse;
 import com.dentalclinic.doctor.dto.DoctorResponse;
 import com.dentalclinic.doctor.entity.DoctorStatus;
 import com.dentalclinic.doctor.service.DoctorServiceMappingService;
 import com.dentalclinic.service.dto.DentalServiceResponse;
+import com.dentalclinic.user.entity.Role;
+import com.dentalclinic.user.entity.User;
+import com.dentalclinic.user.entity.UserStatus;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Encoders;
 import org.junit.jupiter.api.Test;
@@ -95,6 +100,40 @@ class DoctorServiceControllerSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value(response.id().toString()))
                 .andExpect(jsonPath("$.data[0].fullName").value(response.fullName()));
+    }
+
+    @Test
+    void shouldRequireAuthenticationForCurrentDoctorServices() throws Exception {
+        mockMvc.perform(get("/api/doctor/services"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    void shouldRejectNonDoctorForCurrentDoctorServices() throws Exception {
+        mockMvc.perform(get("/api/doctor/services")
+                        .with(user(principal(Role.PATIENT))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    void shouldReturnAssignedServicesForAuthenticatedDoctor() throws Exception {
+        UserPrincipal doctor = principal(Role.DOCTOR);
+        DoctorAssignedServiceResponse response = assignedServiceResponse();
+        when(doctorServiceMappingService.getMyActiveServices(doctor.getId()))
+                .thenReturn(List.of(response));
+
+        mockMvc.perform(get("/api/doctor/services").with(user(doctor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("Lấy danh sách dịch vụ của bác sĩ thành công"))
+                .andExpect(jsonPath("$.data[0].id").value(response.id().toString()))
+                .andExpect(jsonPath("$.data[0].durationMinutes")
+                        .value(response.durationMinutes()))
+                .andExpect(jsonPath("$.data[0].active").value(true));
+
+        verify(doctorServiceMappingService).getMyActiveServices(doctor.getId());
     }
 
     @Test
@@ -184,6 +223,29 @@ class DoctorServiceControllerSecurityTest {
                 Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2026-01-02T00:00:00Z")
         );
+    }
+
+    private DoctorAssignedServiceResponse assignedServiceResponse() {
+        return new DoctorAssignedServiceResponse(
+                UUID.randomUUID(),
+                "Cạo vôi răng",
+                "Làm sạch cao răng",
+                new BigDecimal("300000.00"),
+                60,
+                "https://cdn.example.com/dental-services/scaling.webp",
+                true
+        );
+    }
+
+    private UserPrincipal principal(Role role) {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setEmail(role.name().toLowerCase() + "@example.com");
+        user.setPasswordHash("bcrypt-hash");
+        user.setFullName("Người dùng kiểm thử");
+        user.setRole(role);
+        user.setStatus(UserStatus.ACTIVE);
+        return UserPrincipal.from(user);
     }
 
     private DoctorResponse doctorResponse() {

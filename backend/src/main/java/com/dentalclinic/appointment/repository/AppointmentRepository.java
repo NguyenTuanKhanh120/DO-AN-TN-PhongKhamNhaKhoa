@@ -195,7 +195,11 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     );
 
     @Query("""
-            select count(appointment) as todayAppointments,
+            select count(distinct case
+                              when appointment.status in (:checkedInStatus, :inProgressStatus, :completedStatus)
+                              then appointment.patient.id else null
+                          end) as patientsVisitedToday,
+                   count(appointment) as todayAppointments,
                    coalesce(sum(case when appointment.status = :completedStatus
                                      then 1 else 0 end), 0) as completedToday,
                    coalesce(sum(case when appointment.status = :cancelledStatus
@@ -209,6 +213,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     AppointmentDailySummary summarizeScheduledRange(
             @Param("rangeStart") Instant rangeStart,
             @Param("rangeEnd") Instant rangeEnd,
+            @Param("checkedInStatus") AppointmentStatus checkedInStatus,
+            @Param("inProgressStatus") AppointmentStatus inProgressStatus,
             @Param("completedStatus") AppointmentStatus completedStatus,
             @Param("cancelledStatus") AppointmentStatus cancelledStatus,
             @Param("noShowStatus") AppointmentStatus noShowStatus
