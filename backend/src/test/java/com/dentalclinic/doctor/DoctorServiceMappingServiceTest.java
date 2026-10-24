@@ -3,6 +3,7 @@ package com.dentalclinic.doctor;
 import com.dentalclinic.common.constant.ErrorCode;
 import com.dentalclinic.common.exception.BusinessException;
 import com.dentalclinic.common.exception.NotFoundException;
+import com.dentalclinic.doctor.dto.DoctorAssignedServiceResponse;
 import com.dentalclinic.doctor.dto.DoctorResponse;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
@@ -64,7 +65,8 @@ class DoctorServiceMappingServiceTest {
         service = new DoctorServiceMappingService(
                 doctorRepository,
                 dentalServiceRepository,
-                doctorServiceRepository
+                doctorServiceRepository,
+                60
         );
     }
 
@@ -86,6 +88,54 @@ class DoctorServiceMappingServiceTest {
             assertThat(item.imageUrl()).isEqualTo(dentalService.getImageUrl());
             assertThat(item.active()).isTrue();
         });
+    }
+
+    @Test
+    void shouldReturnActiveServicesAssignedToAuthenticatedDoctor() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService("Cạo vôi răng");
+        when(doctorRepository.findByUserId(doctor.getUser().getId()))
+                .thenReturn(Optional.of(doctor));
+        when(doctorServiceRepository.findAllWithActiveServiceByDoctorId(doctor.getId()))
+                .thenReturn(List.of(mapping(doctor, dentalService)));
+
+        List<DoctorAssignedServiceResponse> response =
+                service.getMyActiveServices(doctor.getUser().getId());
+
+        assertThat(response).singleElement().satisfies(item -> {
+            assertThat(item.id()).isEqualTo(dentalService.getId());
+            assertThat(item.name()).isEqualTo(dentalService.getName());
+            assertThat(item.description()).isEqualTo(dentalService.getDescription());
+            assertThat(item.price()).isEqualByComparingTo(dentalService.getPrice());
+            assertThat(item.durationMinutes()).isEqualTo(60);
+            assertThat(item.imageUrl()).isEqualTo(dentalService.getImageUrl());
+            assertThat(item.active()).isTrue();
+        });
+        verify(doctorServiceRepository).findAllWithActiveServiceByDoctorId(doctor.getId());
+    }
+
+    @Test
+    void shouldReturnEmptyAssignedServicesForDoctorWithoutMappings() {
+        Doctor doctor = doctor();
+        when(doctorRepository.findByUserId(doctor.getUser().getId()))
+                .thenReturn(Optional.of(doctor));
+        when(doctorServiceRepository.findAllWithActiveServiceByDoctorId(doctor.getId()))
+                .thenReturn(List.of());
+
+        assertThat(service.getMyActiveServices(doctor.getUser().getId())).isEmpty();
+    }
+
+    @Test
+    void shouldRejectAuthenticatedDoctorWithoutDoctorProfile() {
+        UUID userId = UUID.randomUUID();
+        when(doctorRepository.findByUserId(userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getMyActiveServices(userId))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Không tìm thấy hồ sơ bác sĩ");
+
+        verify(doctorServiceRepository, never())
+                .findAllWithActiveServiceByDoctorId(org.mockito.ArgumentMatchers.any());
     }
 
     @Test

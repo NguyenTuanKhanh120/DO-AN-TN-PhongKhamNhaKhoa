@@ -261,7 +261,7 @@ export interface AdminUser {
 }
 
 export interface DashboardSummary {
-  totalPatients: number;
+  patientsVisitedToday: number;
   totalDoctors: number;
   todayAppointments: number;
   completedToday: number;

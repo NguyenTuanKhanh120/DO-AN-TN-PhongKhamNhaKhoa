@@ -4,6 +4,7 @@ import com.dentalclinic.common.constant.ErrorCode;
 import com.dentalclinic.common.exception.BusinessException;
 import com.dentalclinic.common.exception.ConflictException;
 import com.dentalclinic.common.exception.NotFoundException;
+import com.dentalclinic.doctor.dto.DoctorAssignedServiceResponse;
 import com.dentalclinic.doctor.dto.DoctorResponse;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
@@ -15,6 +16,7 @@ import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,15 +33,21 @@ public class DoctorServiceMappingService {
     private final DoctorRepository doctorRepository;
     private final DentalServiceRepository dentalServiceRepository;
     private final DoctorServiceRepository doctorServiceRepository;
+    private final long slotDurationMinutes;
 
     public DoctorServiceMappingService(
             DoctorRepository doctorRepository,
             DentalServiceRepository dentalServiceRepository,
-            DoctorServiceRepository doctorServiceRepository
+            DoctorServiceRepository doctorServiceRepository,
+            @Value("${clinic.appointment.slot-duration-minutes:60}") long slotDurationMinutes
     ) {
+        if (slotDurationMinutes <= 0) {
+            throw new IllegalArgumentException("Cấu hình thời lượng slot không hợp lệ");
+        }
         this.doctorRepository = doctorRepository;
         this.dentalServiceRepository = dentalServiceRepository;
         this.doctorServiceRepository = doctorServiceRepository;
+        this.slotDurationMinutes = slotDurationMinutes;
     }
 
     @Transactional(readOnly = true)
@@ -62,6 +70,16 @@ public class DoctorServiceMappingService {
                 ).stream()
                 .map(DoctorService::getDoctor)
                 .map(this::toDoctorResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DoctorAssignedServiceResponse> getMyActiveServices(UUID authenticatedUserId) {
+        Doctor doctor = doctorRepository.findByUserId(authenticatedUserId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bác sĩ"));
+        return doctorServiceRepository.findAllWithActiveServiceByDoctorId(doctor.getId()).stream()
+                .map(DoctorService::getService)
+                .map(this::toAssignedServiceResponse)
                 .toList();
     }
 
@@ -134,6 +152,18 @@ public class DoctorServiceMappingService {
                 dentalService.isActive(),
                 dentalService.getCreatedAt(),
                 dentalService.getUpdatedAt()
+        );
+    }
+
+    private DoctorAssignedServiceResponse toAssignedServiceResponse(DentalService dentalService) {
+        return new DoctorAssignedServiceResponse(
+                dentalService.getId(),
+                dentalService.getName(),
+                dentalService.getDescription(),
+                dentalService.getPrice(),
+                slotDurationMinutes,
+                dentalService.getImageUrl(),
+                dentalService.isActive()
         );
     }
 

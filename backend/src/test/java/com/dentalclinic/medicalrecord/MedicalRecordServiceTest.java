@@ -307,10 +307,10 @@ class MedicalRecordServiceTest {
     }
 
     @Test
-    void shouldReturnOfficialMedicalRecordForOwningDoctor() {
+    void shouldReturnOfficialMedicalRecordForCompletedAppointment() {
         UUID authenticatedUserId = UUID.randomUUID();
         Doctor doctor = doctor(authenticatedUserId);
-        Appointment appointment = appointment(AppointmentStatus.IN_PROGRESS);
+        Appointment appointment = appointment(AppointmentStatus.COMPLETED);
         MedicalRecord medicalRecord = medicalRecord(appointment);
         when(doctorRepository.findByUserId(authenticatedUserId))
                 .thenReturn(Optional.of(doctor));

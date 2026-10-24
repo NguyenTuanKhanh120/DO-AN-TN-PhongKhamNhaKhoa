@@ -22,6 +22,16 @@ public interface DoctorServiceRepository extends JpaRepository<DoctorService, Do
     List<DoctorService> findAllWithServiceByDoctorId(@Param("doctorId") UUID doctorId);
 
     @Query("""
+            select distinct doctorService
+            from DoctorService doctorService
+            join fetch doctorService.service dentalService
+            where doctorService.doctor.id = :doctorId
+              and dentalService.active = true
+            order by dentalService.name asc, dentalService.id asc
+            """)
+    List<DoctorService> findAllWithActiveServiceByDoctorId(@Param("doctorId") UUID doctorId);
+
+    @Query("""
             select doctorService
             from DoctorService doctorService
             join fetch doctorService.doctor doctor

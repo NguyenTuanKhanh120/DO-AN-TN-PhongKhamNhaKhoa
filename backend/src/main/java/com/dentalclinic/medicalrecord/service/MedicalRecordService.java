@@ -92,7 +92,7 @@ public class MedicalRecordService {
         Appointment appointment = appointmentRepository
                 .findDetailedByIdAndDoctorId(appointmentId, doctor.getId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch hẹn"));
-        requireInProgress(appointment);
+        requireReadable(appointment);
         MedicalRecord medicalRecord = medicalRecordRepository.findByAppointmentId(appointmentId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy bệnh án"));
         return medicalRecordMapper.toResponse(medicalRecord);
@@ -112,6 +112,15 @@ public class MedicalRecordService {
         if (appointment.getStatus() != AppointmentStatus.IN_PROGRESS) {
             throw new ConflictException(
                     "Chỉ có thể nhập bệnh án cho lịch hẹn đang ở trạng thái IN_PROGRESS"
+            );
+        }
+    }
+
+    private void requireReadable(Appointment appointment) {
+        if (appointment.getStatus() != AppointmentStatus.IN_PROGRESS
+                && appointment.getStatus() != AppointmentStatus.COMPLETED) {
+            throw new ConflictException(
+                    "Chỉ có thể xem bệnh án của ca khám đang thực hiện hoặc đã hoàn thành"
             );
         }
     }

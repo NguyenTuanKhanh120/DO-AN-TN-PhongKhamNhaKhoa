@@ -6,7 +6,6 @@ import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.dashboard.dto.DashboardSummaryResponse;
 import com.dentalclinic.doctor.repository.DoctorRepository;
-import com.dentalclinic.patient.repository.PatientRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,18 +16,15 @@ import java.time.LocalTime;
 @Service
 public class AdminDashboardService {
 
-    private final PatientRepository patientRepository;
     private final DoctorRepository doctorRepository;
     private final AppointmentRepository appointmentRepository;
     private final ClinicTimeProvider clinicTimeProvider;
 
     public AdminDashboardService(
-            PatientRepository patientRepository,
             DoctorRepository doctorRepository,
             AppointmentRepository appointmentRepository,
             ClinicTimeProvider clinicTimeProvider
     ) {
-        this.patientRepository = patientRepository;
         this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
         this.clinicTimeProvider = clinicTimeProvider;
@@ -46,12 +42,14 @@ public class AdminDashboardService {
                 .summarizeScheduledRange(
                         rangeStart,
                         rangeEnd,
+                        AppointmentStatus.CHECKED_IN,
+                        AppointmentStatus.IN_PROGRESS,
                         AppointmentStatus.COMPLETED,
                         AppointmentStatus.CANCELLED,
                         AppointmentStatus.NO_SHOW
                 );
         return new DashboardSummaryResponse(
-                patientRepository.count(),
+                dailySummary.getPatientsVisitedToday(),
                 doctorRepository.count(),
                 dailySummary.getTodayAppointments(),
                 dailySummary.getCompletedToday(),

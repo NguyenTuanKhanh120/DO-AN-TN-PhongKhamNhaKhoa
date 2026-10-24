@@ -62,7 +62,7 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Patients can view paginated medical history and individual completed examination results, including doctor, service, prescription and follow-up guidance.
 - Medical-history queries derive ownership from the authenticated patient and hide unfinished or other patients' medical records.
 - Admins can inspect each appointment's chronological audit timeline with action, actor, reason, JSONB details and timestamp.
-- Admin dashboard summary reports patient and doctor totals plus today's appointment status counts using the clinic timezone.
+- Admin dashboard summary reports unique patients who arrived today, doctor totals and today's appointment status counts using the clinic timezone.
 - PostgreSQL integration tests cover the appointment lifecycle, transaction rollback and concurrent booking/rescheduling races.
 - A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V11, all 15 active tables, session/token constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
 - OpenAPI 3 documentation exposes typed request/response schemas, reusable error responses and JWT Bearer authorization.
@@ -224,6 +224,7 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `PUT /api/admin/services/{id}`
 - `PATCH /api/admin/services/{id}/status`
 - `GET /api/doctors/{doctorId}/services`
+- `GET /api/doctor/services` (DOCTOR; active services assigned to the authenticated doctor)
 - `GET /api/doctors/{doctorId}/schedule`
 - `GET /api/doctors/{doctorId}/available-slots?serviceId={serviceId}&date={yyyy-MM-dd}`
 - `GET /api/doctors/{doctorId}/calendar?serviceId={serviceId}&fromDate={yyyy-MM-dd}&toDate={yyyy-MM-dd}` (dates optional; defaults to today through today + 29 days)
