@@ -42,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -233,6 +234,35 @@ class DoctorCalendarServiceTest {
                 afternoon -> assertThat(afternoon.status())
                         .isEqualTo(CalendarAvailabilityStatus.FULL)
         );
+    }
+
+    @Test
+    void shouldBuildDoctorOnlyCalendarWithoutLookingUpDentalServiceMapping() {
+        when(doctorRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+        when(doctorScheduleRepository.findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(
+                doctor.getId()
+        )).thenReturn(List.of(
+                schedule(doctor, (short) 1, ScheduleSession.MORNING, "08:00", "11:00")
+        ));
+        when(appointmentRepository.findOccupiedStartTimes(
+                doctor.getId(),
+                toInstant(MONDAY, LocalTime.MIN),
+                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
+                AppointmentStatus.CANCELLED
+        )).thenReturn(List.of());
+
+        DoctorCalendarResponse response = slotService.getDoctorCalendar(
+                doctor.getId(),
+                MONDAY,
+                MONDAY
+        );
+
+        assertThat(response.doctorId()).isEqualTo(doctor.getId());
+        assertThat(response.serviceId()).isNull();
+        assertThat(response.days()).singleElement().satisfies(day ->
+                assertThat(day.sessions().getFirst().availableSlotCount()).isEqualTo(2)
+        );
+        verifyNoInteractions(dentalServiceRepository, doctorServiceRepository);
     }
 
     private List<DoctorSchedule> defaultSchedules(Doctor scheduleDoctor) {

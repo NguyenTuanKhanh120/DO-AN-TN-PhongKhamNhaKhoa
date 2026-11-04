@@ -1,0 +1,863 @@
+{
+  "datasetId": "nidcr-dental-knowledge-vi",
+  "version": "1.0.0",
+  "title": "Kiến thức nha khoa tiếng Việt được biên soạn từ NIDCR",
+  "description": "Bộ dữ liệu RAG định hướng triệu chứng, yếu tố liên quan, kiến thức chăm sóc và nhóm chuyên môn nha khoa. Nội dung được diễn giải bằng tiếng Việt từ các trang thông tin sức khỏe của NIDCR/NIH.",
+  "language": "vi",
+  "sourceLanguage": "en",
+  "generatedAt": "2026-10-28",
+  "recordCount": 16,
+  "embeddingTextField": "content",
+  "clinicalReviewStatus": "PENDING_CLINICAL_REVIEW",
+  "translationMethod": "AI_ASSISTED_PARAPHRASE",
+  "curationNote": "Các trường content, symptoms, possibleFactors và careKnowledge được diễn giải từ nguồn NIDCR. serviceCategoryHints và specializationHints là gợi ý ánh xạ cho dự án, không phải tuyên bố nguyên văn của NIDCR và phải được đối chiếu với dịch vụ, bác sĩ đang hoạt động trong database.",
+  "requiresDatabaseServiceMapping": true,
+  "intendedUses": [
+    "RAG_RETRIEVAL",
+    "SYMPTOM_ORIENTATION",
+    "SERVICE_CATEGORY_HINT",
+    "SPECIALIZATION_HINT"
+  ],
+  "excludedContent": [
+    "CLINIC_WORKFLOW",
+    "APPOINTMENT_BOOKING_GUIDE",
+    "APPOINTMENT_RESCHEDULE_GUIDE",
+    "APPOINTMENT_CANCELLATION_GUIDE",
+    "APPROVED_SAFETY_WARNING_DOCUMENTS",
+    "LIVE_DOCTOR_DATA",
+    "LIVE_SERVICE_DATA",
+    "LIVE_SLOT_DATA",
+    "PATIENT_DATA",
+    "IMAGES"
+  ],
+  "records": [
+    {
+      "id": "NIDCR-VI-001",
+      "slug": "tooth-decay",
+      "title": "Sâu răng",
+      "category": "DENTAL_CONDITION",
+      "content": "Sâu răng hình thành khi vi khuẩn trong miệng sử dụng đường và tinh bột từ thức ăn để tạo axit làm mất khoáng men răng. Giai đoạn sớm có thể chưa gây triệu chứng và đôi khi xuất hiện đốm trắng trên bề mặt răng. Khi tổn thương tiến triển, người bệnh có thể đau răng, ê buốt với đồ ngọt, nóng hoặc lạnh. Nhiễm trùng quanh răng có thể đi kèm ổ mủ, đau, sưng vùng mặt hoặc sốt. Fluoride, vệ sinh răng miệng đều đặn và hạn chế thực phẩm nhiều đường giúp bảo vệ bề mặt răng.",
+      "symptoms": [
+        "đau răng",
+        "ê buốt răng",
+        "nhạy cảm với đồ ngọt",
+        "nhạy cảm với thức ăn nóng hoặc lạnh",
+        "đốm trắng, nâu hoặc đen trên răng",
+        "lỗ trên bề mặt răng",
+        "sưng vùng mặt liên quan răng"
+      ],
+      "possibleFactors": [
+        "mảng bám vi khuẩn",
+        "thường xuyên dùng thực phẩm nhiều đường hoặc tinh bột",
+        "men răng mất khoáng lặp lại",
+        "vệ sinh răng miệng chưa đầy đủ"
+      ],
+      "careKnowledge": [
+        "đánh răng hai lần mỗi ngày với kem đánh răng có fluoride",
+        "làm sạch kẽ răng đều đặn",
+        "hạn chế đồ uống và thực phẩm nhiều đường",
+        "duy trì kiểm tra răng miệng định kỳ"
+      ],
+      "serviceCategoryHints": [
+        "khám nha khoa tổng quát",
+        "điều trị sâu răng và phục hồi răng"
+      ],
+      "specializationHints": [
+        "nha khoa tổng quát",
+        "nha khoa phục hồi"
+      ],
+      "keywords": [
+        "sâu răng",
+        "lỗ sâu",
+        "đau răng",
+        "ê buốt",
+        "men răng",
+        "fluoride"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Tooth Decay",
+        "url": "https://www.nidcr.nih.gov/health-info/tooth-decay",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-002",
+      "slug": "periodontal-gum-disease",
+      "title": "Bệnh nha chu và bệnh nướu",
+      "category": "DENTAL_CONDITION",
+      "content": "Bệnh nha chu là tình trạng viêm và nhiễm trùng các mô nâng đỡ răng. Mảng bám không được làm sạch có thể cứng thành cao răng, tạo điều kiện cho vi khuẩn gây viêm nướu và tổn thương mô quanh răng. Biểu hiện thường gặp gồm nướu đỏ, sưng, đau hoặc dễ chảy máu; nướu tụt; hơi thở có mùi kéo dài; răng nhạy cảm hoặc lung lay; đau khi nhai. Hút thuốc, tuổi cao, đái tháo đường, yếu tố di truyền và một số bệnh toàn thân có thể làm tăng nguy cơ hoặc mức độ bệnh.",
+      "symptoms": [
+        "nướu đỏ",
+        "nướu sưng",
+        "nướu đau",
+        "chảy máu nướu",
+        "tụt nướu",
+        "hôi miệng kéo dài",
+        "răng nhạy cảm",
+        "răng lung lay",
+        "đau khi nhai"
+      ],
+      "possibleFactors": [
+        "mảng bám và cao răng",
+        "hút thuốc hoặc sử dụng thuốc lá",
+        "đái tháo đường",
+        "tuổi cao",
+        "yếu tố di truyền",
+        "vệ sinh răng miệng chưa đầy đủ"
+      ],
+      "careKnowledge": [
+        "đánh răng hai lần mỗi ngày với kem đánh răng có fluoride",
+        "làm sạch kẽ răng để giảm mảng bám",
+        "duy trì làm sạch răng chuyên nghiệp định kỳ",
+        "hạn chế sử dụng thuốc lá"
+      ],
+      "serviceCategoryHints": [
+        "khám và đánh giá nha chu",
+        "vệ sinh răng miệng chuyên nghiệp"
+      ],
+      "specializationHints": [
+        "nha chu",
+        "nha khoa tổng quát"
+      ],
+      "keywords": [
+        "viêm nướu",
+        "viêm nha chu",
+        "chảy máu chân răng",
+        "cao răng",
+        "tụt nướu",
+        "răng lung lay"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Periodontal (Gum) Disease",
+        "url": "https://www.nidcr.nih.gov/health-info/gum-disease",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-003",
+      "slug": "dry-mouth",
+      "title": "Khô miệng",
+      "category": "ORAL_CONDITION",
+      "content": "Khô miệng xảy ra khi lượng nước bọt không đủ để giữ ẩm khoang miệng. Tình trạng kéo dài có thể gây cảm giác miệng khô dính, khô họng, khó nhai, nuốt, nếm hoặc nói; môi nứt; bề mặt lưỡi khô ráp; loét miệng; hôi miệng hoặc nhiễm trùng tái diễn. Một số thuốc, bệnh Sjögren, HIV/AIDS, đái tháo đường, điều trị ung thư vùng đầu cổ hoặc tổn thương thần kinh có thể làm giảm tiết nước bọt. Uống nước đều, duy trì vệ sinh miệng và dùng sản phẩm không đường có thể hỗ trợ giữ ẩm miệng.",
+      "symptoms": [
+        "miệng khô và dính",
+        "khô họng",
+        "khó nhai",
+        "khó nuốt",
+        "khó nói",
+        "thay đổi vị giác",
+        "môi nứt",
+        "lưỡi khô ráp",
+        "loét miệng",
+        "hôi miệng"
+      ],
+      "possibleFactors": [
+        "tác dụng phụ của thuốc",
+        "bệnh Sjögren",
+        "đái tháo đường",
+        "HIV/AIDS",
+        "xạ trị vùng đầu cổ",
+        "hóa trị hoặc liệu pháp miễn dịch",
+        "tổn thương thần kinh vùng đầu cổ"
+      ],
+      "careKnowledge": [
+        "uống nước đều trong ngày",
+        "giữ vệ sinh răng miệng",
+        "nhai kẹo cao su không đường nếu phù hợp",
+        "hạn chế thuốc lá, đồ uống có cồn và quá nhiều caffeine"
+      ],
+      "serviceCategoryHints": [
+        "khám khô miệng và đánh giá nguy cơ sâu răng",
+        "chăm sóc dự phòng răng miệng"
+      ],
+      "specializationHints": [
+        "nha khoa tổng quát",
+        "bệnh học miệng"
+      ],
+      "keywords": [
+        "khô miệng",
+        "ít nước bọt",
+        "khô họng",
+        "lưỡi khô",
+        "hôi miệng"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Dry Mouth",
+        "url": "https://www.nidcr.nih.gov/health-info/dry-mouth",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-004",
+      "slug": "bruxism",
+      "title": "Nghiến hoặc siết răng",
+      "category": "ORAL_HABIT_CONDITION",
+      "content": "Nghiến răng là hành vi nghiến, siết hoặc chà răng khi thức hoặc khi ngủ. Trường hợp nặng có thể làm răng mòn, sứt, nứt hoặc lung lay; gây đau và ê buốt răng; căng, đau hoặc mỏi cơ hàm; đau đầu và đau vùng mặt. Các yếu tố được ghi nhận có liên quan gồm căng thẳng tâm lý, yếu tố di truyền, rượu, caffeine, hút thuốc và một số thuốc. Việc theo dõi thời điểm xuất hiện triệu chứng và duy trì kiểm tra răng định kỳ giúp đánh giá tác động lên răng và cơ hàm.",
+      "symptoms": [
+        "nghiến răng",
+        "siết chặt hàm",
+        "răng bị mòn",
+        "răng sứt hoặc nứt",
+        "răng lung lay",
+        "đau hoặc ê buốt răng",
+        "đau cơ hàm",
+        "mỏi hàm",
+        "đau đầu",
+        "đau vùng mặt"
+      ],
+      "possibleFactors": [
+        "căng thẳng hoặc lo âu",
+        "yếu tố di truyền",
+        "sử dụng nhiều caffeine",
+        "uống rượu",
+        "hút thuốc",
+        "một số thuốc ảnh hưởng thần kinh"
+      ],
+      "careKnowledge": [
+        "ghi nhận thời điểm nghiến hoặc siết răng",
+        "theo dõi đau hàm và đau đầu liên quan",
+        "duy trì kiểm tra tình trạng mòn và nứt răng"
+      ],
+      "serviceCategoryHints": [
+        "khám nghiến răng và đánh giá tổn thương răng",
+        "khám đau cơ hàm"
+      ],
+      "specializationHints": [
+        "nha khoa tổng quát",
+        "đau miệng và hàm mặt"
+      ],
+      "keywords": [
+        "nghiến răng",
+        "siết răng",
+        "mòn răng",
+        "mỏi hàm",
+        "đau cơ hàm"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Bruxism",
+        "url": "https://www.nidcr.nih.gov/health-info/bruxism",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-005",
+      "slug": "temporomandibular-disorders",
+      "title": "Rối loạn khớp thái dương hàm",
+      "category": "OROFACIAL_PAIN_CONDITION",
+      "content": "Rối loạn khớp thái dương hàm là nhóm tình trạng gây đau hoặc rối loạn chức năng ở khớp hàm và các cơ điều khiển vận động hàm. Biểu hiện có thể gồm đau cơ nhai hoặc khớp hàm, đau lan lên mặt hay cổ, cứng hàm, hạn chế há miệng, kẹt hàm, tiếng lục cục có đau, chóng mặt hoặc thay đổi cảm giác khớp cắn. Tiếng khớp đơn thuần không kèm đau có thể gặp ở người bình thường. Đau vùng miệng, hàm và mặt cũng có thể xuất phát từ nguyên nhân khác nên dữ liệu này chỉ dùng để định hướng nhóm khám.",
+      "symptoms": [
+        "đau khớp hàm",
+        "đau cơ nhai",
+        "đau lan lên mặt hoặc cổ",
+        "cứng hàm",
+        "hạn chế há miệng",
+        "kẹt hàm",
+        "tiếng khớp hàm kèm đau",
+        "thay đổi cảm giác khớp cắn"
+      ],
+      "possibleFactors": [
+        "rối loạn tại khớp hàm",
+        "rối loạn cơ nhai",
+        "đau đầu liên quan vùng hàm mặt",
+        "thói quen siết hoặc nghiến răng"
+      ],
+      "careKnowledge": [
+        "ghi nhận vị trí và thời điểm đau",
+        "theo dõi yếu tố làm đau tăng hoặc giảm",
+        "hạn chế thói quen siết hàm, nhai kẹo cao su hoặc cắn móng tay"
+      ],
+      "serviceCategoryHints": [
+        "khám khớp thái dương hàm",
+        "khám đau vùng miệng và hàm mặt"
+      ],
+      "specializationHints": [
+        "khớp thái dương hàm",
+        "đau miệng và hàm mặt"
+      ],
+      "keywords": [
+        "khớp thái dương hàm",
+        "TMD",
+        "đau hàm",
+        "kẹt hàm",
+        "há miệng khó",
+        "khớp hàm kêu"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "TMD (Temporomandibular Disorders)",
+        "url": "https://www.nidcr.nih.gov/health-info/tmd",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-006",
+      "slug": "burning-mouth-syndrome",
+      "title": "Hội chứng bỏng rát miệng",
+      "category": "ORAL_PAIN_CONDITION",
+      "content": "Hội chứng bỏng rát miệng gây cảm giác nóng rát, châm chích hoặc như bị bỏng trong miệng, thường gặp ở lưỡi, vòm miệng hoặc môi. Cảm giác đau có thể kéo dài, đi kèm khô miệng, tê từng lúc hoặc vị kim loại và thay đổi vị giác. Tổn thương thần kinh kiểm soát đau và vị giác được xem là một cơ chế liên quan. Một số tình trạng khác như khô miệng, nhiễm nấm miệng, dị ứng vật liệu nha khoa, trào ngược, căng thẳng, thay đổi nội tiết, thiếu vitamin B hoặc sắt cũng có thể tạo cảm giác tương tự.",
+      "symptoms": [
+        "nóng rát trong miệng",
+        "châm chích ở lưỡi hoặc môi",
+        "tê miệng từng lúc",
+        "khô miệng",
+        "vị kim loại",
+        "thay đổi vị giác"
+      ],
+      "possibleFactors": [
+        "thay đổi chức năng thần kinh cảm giác",
+        "khô miệng",
+        "nhiễm nấm miệng",
+        "dị ứng vật liệu hoặc sản phẩm nha khoa",
+        "trào ngược axit",
+        "căng thẳng tâm lý",
+        "thiếu vitamin B hoặc sắt"
+      ],
+      "careKnowledge": [
+        "ghi nhận vị trí, thời điểm và mức độ nóng rát",
+        "theo dõi thay đổi vị giác hoặc cảm giác khô miệng",
+        "hạn chế các yếu tố gây kích ứng miệng nếu nhận thấy liên quan"
+      ],
+      "serviceCategoryHints": [
+        "khám bệnh lý niêm mạc miệng",
+        "khám đau vùng miệng"
+      ],
+      "specializationHints": [
+        "bệnh học miệng",
+        "đau miệng và hàm mặt"
+      ],
+      "keywords": [
+        "bỏng rát miệng",
+        "nóng lưỡi",
+        "rát lưỡi",
+        "vị kim loại",
+        "đau miệng"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Burning Mouth Syndrome",
+        "url": "https://www.nidcr.nih.gov/health-info/burning-mouth",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-007",
+      "slug": "fever-blisters",
+      "title": "Mụn nước quanh môi do herpes",
+      "category": "ORAL_LESION",
+      "content": "Mụn nước quanh môi, còn gọi là herpes môi, thường xuất hiện thành cụm bóng nước chứa dịch ở bên ngoài miệng và quanh bờ môi. Trước khi tổn thương xuất hiện có thể có cảm giác nóng rát hoặc châm chích. Một số người có thể kèm mệt, sốt hoặc sưng hạch. Nguyên nhân thường liên quan virus herpes simplex type 1. Tổn thương này khác với loét áp-tơ vì herpes môi thường nằm ngoài khoang miệng và có dạng nhiều mụn nước nhỏ.",
+      "symptoms": [
+        "cụm mụn nước quanh môi",
+        "mụn nước chứa dịch",
+        "nóng rát trước khi nổi mụn",
+        "châm chích quanh môi",
+        "đau vùng tổn thương",
+        "sưng hạch"
+      ],
+      "possibleFactors": [
+        "nhiễm virus herpes simplex type 1",
+        "virus tái hoạt động sau giai đoạn tiềm ẩn"
+      ],
+      "careKnowledge": [
+        "phân biệt tổn thương ngoài môi với loét nằm trong miệng",
+        "ghi nhận vị trí và hình thái tổn thương",
+        "giữ vệ sinh vùng miệng và môi"
+      ],
+      "serviceCategoryHints": [
+        "khám tổn thương môi và niêm mạc miệng"
+      ],
+      "specializationHints": [
+        "bệnh học miệng",
+        "nha khoa tổng quát"
+      ],
+      "keywords": [
+        "herpes môi",
+        "mụn nước quanh môi",
+        "mụn rộp môi",
+        "nóng rát môi"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Fever Blisters & Canker Sores",
+        "url": "https://www.nidcr.nih.gov/health-info/fever-blisters-canker-sores",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-008",
+      "slug": "canker-sores",
+      "title": "Loét áp-tơ trong miệng",
+      "category": "ORAL_LESION",
+      "content": "Loét áp-tơ thường là một vết loét tròn màu trắng hoặc vàng, có viền đỏ và nằm bên trong miệng như mặt trong môi, má, nướu hoặc lưỡi. Vết loét có thể gây đau khi ăn, uống hoặc nói; đôi khi có cảm giác nóng rát hoặc châm chích trước khi xuất hiện. Nguyên nhân chính xác chưa được xác định. Một số yếu tố có thể liên quan gồm chấn thương do cắn môi hoặc má, căng thẳng, thay đổi nội tiết và thiếu folate, sắt hoặc vitamin B12.",
+      "symptoms": [
+        "vết loét tròn trong miệng",
+        "vết loét trắng hoặc vàng có viền đỏ",
+        "đau khi ăn uống",
+        "đau khi nói",
+        "nóng rát trước khi xuất hiện vết loét"
+      ],
+      "possibleFactors": [
+        "chấn thương do cắn môi hoặc má",
+        "căng thẳng",
+        "thay đổi nội tiết",
+        "thiếu folate",
+        "thiếu sắt",
+        "thiếu vitamin B12"
+      ],
+      "careKnowledge": [
+        "phân biệt vết loét trong miệng với mụn nước ngoài môi",
+        "ghi nhận số lượng, vị trí và tần suất tái phát",
+        "duy trì vệ sinh miệng nhẹ nhàng"
+      ],
+      "serviceCategoryHints": [
+        "khám tổn thương niêm mạc miệng"
+      ],
+      "specializationHints": [
+        "bệnh học miệng",
+        "nha khoa tổng quát"
+      ],
+      "keywords": [
+        "loét áp-tơ",
+        "nhiệt miệng",
+        "loét miệng",
+        "đau niêm mạc miệng"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Fever Blisters & Canker Sores",
+        "url": "https://www.nidcr.nih.gov/health-info/fever-blisters-canker-sores",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-009",
+      "slug": "taste-disorders",
+      "title": "Rối loạn vị giác",
+      "category": "ORAL_SENSORY_CONDITION",
+      "content": "Rối loạn vị giác có thể biểu hiện bằng vị mặn, ôi, đắng hoặc kim loại kéo dài; giảm khả năng cảm nhận vị; hoặc mất hoàn toàn vị giác. Nhiều trường hợp người bệnh nghĩ mình mất vị giác nhưng thực tế có thay đổi về khứu giác. Các yếu tố liên quan có thể gồm nhiễm trùng đường hô hấp hoặc tai giữa, vệ sinh miệng kém, bệnh răng miệng, đau miệng, hàm giả không phù hợp, một số thuốc, chấn thương đầu, phẫu thuật tai mũi họng, nhổ răng khôn hoặc xạ trị vùng đầu cổ.",
+      "symptoms": [
+        "vị kim loại kéo dài",
+        "vị mặn hoặc đắng bất thường",
+        "giảm cảm nhận vị",
+        "mất vị giác",
+        "thay đổi vị giác"
+      ],
+      "possibleFactors": [
+        "nhiễm trùng đường hô hấp hoặc tai giữa",
+        "vệ sinh răng miệng chưa đầy đủ",
+        "bệnh răng miệng",
+        "hàm giả không phù hợp",
+        "một số thuốc",
+        "chấn thương đầu",
+        "nhổ răng khôn",
+        "xạ trị vùng đầu cổ"
+      ],
+      "careKnowledge": [
+        "duy trì vệ sinh răng, nướu và lưỡi",
+        "ghi nhận loại vị bất thường và thời điểm xuất hiện",
+        "theo dõi mối liên hệ với thuốc hoặc bệnh gần đây"
+      ],
+      "serviceCategoryHints": [
+        "khám thay đổi vị giác và sức khỏe răng miệng"
+      ],
+      "specializationHints": [
+        "bệnh học miệng",
+        "nha khoa tổng quát",
+        "tai mũi họng"
+      ],
+      "keywords": [
+        "rối loạn vị giác",
+        "mất vị giác",
+        "giảm vị giác",
+        "vị kim loại",
+        "miệng có vị lạ"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Taste Disorders",
+        "url": "https://www.nidcr.nih.gov/health-info/taste-disorders",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-010",
+      "slug": "salivary-gland-disorders",
+      "title": "Rối loạn tuyến nước bọt",
+      "category": "SALIVARY_CONDITION",
+      "content": "Tuyến nước bọt tạo nước bọt để hỗ trợ nhai, nuốt, cảm nhận vị và bảo vệ khoang miệng. Khi tuyến bị tổn thương hoặc giảm hoạt động, người bệnh có thể khô miệng, khó nhai hoặc nuốt, thay đổi vị giác và tăng nguy cơ sâu răng hoặc nhiễm trùng miệng. Sỏi hoặc hẹp ống tuyến có thể cản dòng nước bọt, làm tuyến sưng và đau. Nhiễm trùng, một số thuốc, bệnh tự miễn như Sjögren, HIV/AIDS, đái tháo đường hoặc khối bất thường tại tuyến cũng có thể liên quan đến triệu chứng tuyến nước bọt.",
+      "symptoms": [
+        "sưng vùng tuyến nước bọt",
+        "đau vùng dưới hàm hoặc trước tai",
+        "khô miệng",
+        "khó nhai",
+        "khó nuốt",
+        "thay đổi vị giác",
+        "nhiễm trùng miệng tái diễn"
+      ],
+      "possibleFactors": [
+        "sỏi hoặc tắc ống tuyến nước bọt",
+        "nhiễm trùng tuyến nước bọt",
+        "tác dụng phụ của nhiều thuốc",
+        "bệnh Sjögren",
+        "HIV/AIDS",
+        "đái tháo đường",
+        "khối bất thường tại tuyến nước bọt"
+      ],
+      "careKnowledge": [
+        "uống đủ nước",
+        "giữ vệ sinh miệng",
+        "ghi nhận vị trí sưng đau và mối liên hệ với bữa ăn",
+        "nhai sản phẩm không đường nếu phù hợp để hỗ trợ tiết nước bọt"
+      ],
+      "serviceCategoryHints": [
+        "khám tuyến nước bọt và khô miệng"
+      ],
+      "specializationHints": [
+        "bệnh học miệng",
+        "phẫu thuật miệng và hàm mặt"
+      ],
+      "keywords": [
+        "tuyến nước bọt",
+        "sỏi tuyến nước bọt",
+        "sưng dưới hàm",
+        "đau tuyến nước bọt",
+        "ít nước bọt"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Saliva & Salivary Gland Disorders",
+        "url": "https://www.nidcr.nih.gov/health-info/saliva-salivary-gland-disorders",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-011",
+      "slug": "sjogrens-disease",
+      "title": "Bệnh Sjögren và sức khỏe răng miệng",
+      "category": "SYSTEMIC_ORAL_HEALTH",
+      "content": "Sjögren là bệnh tự miễn làm giảm hoạt động của các tuyến tạo nước mắt và nước bọt. Biểu hiện chính gồm khô miệng và khô mắt. Khô miệng có thể làm thay đổi vị giác, khiến nhai hoặc nuốt khó và làm tăng nguy cơ sâu răng, mất răng hoặc nhiễm trùng miệng. Người bệnh cũng có thể mệt mỏi, đau cơ khớp, khô da hoặc tê châm chích ở tay chân. Vệ sinh răng miệng với fluoride, làm sạch kẽ răng, hạn chế đường và giữ ẩm miệng là những kiến thức chăm sóc liên quan.",
+      "symptoms": [
+        "khô miệng kéo dài",
+        "khô mắt",
+        "khó nhai",
+        "khó nuốt",
+        "thay đổi vị giác",
+        "mệt mỏi kéo dài",
+        "đau cơ hoặc khớp"
+      ],
+      "possibleFactors": [
+        "rối loạn tự miễn ảnh hưởng tuyến nước mắt và tuyến nước bọt",
+        "yếu tố di truyền và môi trường có thể cùng liên quan"
+      ],
+      "careKnowledge": [
+        "giữ ẩm miệng bằng cách uống nước đều",
+        "dùng kem đánh răng có fluoride",
+        "làm sạch kẽ răng",
+        "hạn chế đồ ăn và thức uống nhiều đường"
+      ],
+      "serviceCategoryHints": [
+        "khám khô miệng và đánh giá nguy cơ sâu răng",
+        "chăm sóc dự phòng răng miệng"
+      ],
+      "specializationHints": [
+        "bệnh học miệng",
+        "nha khoa tổng quát"
+      ],
+      "keywords": [
+        "Sjögren",
+        "khô miệng",
+        "khô mắt",
+        "ít nước bọt",
+        "khó nuốt"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Sjögren's Disease",
+        "url": "https://www.nidcr.nih.gov/health-info/sjogrens-disease",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-012",
+      "slug": "diabetes-and-oral-health",
+      "title": "Đái tháo đường và sức khỏe răng miệng",
+      "category": "SYSTEMIC_ORAL_HEALTH",
+      "content": "Đái tháo đường kiểm soát chưa tốt có thể làm tăng nguy cơ gặp vấn đề trong miệng, đặc biệt là bệnh nướu. Ngược lại, bệnh nướu có thể khiến việc kiểm soát đường huyết khó hơn. Các biểu hiện răng miệng có thể gồm nướu sưng hoặc chảy máu, khô miệng, đau rát, mảng trắng trong miệng hoặc vị khó chịu. Đường trong nước bọt tăng và khả năng chống nhiễm trùng suy giảm có thể góp phần gây nấm miệng. Kiểm soát đường huyết, vệ sinh răng miệng và kiểm tra nha khoa định kỳ hỗ trợ duy trì sức khỏe miệng.",
+      "symptoms": [
+        "nướu sưng",
+        "chảy máu nướu",
+        "khô miệng",
+        "đau rát trong miệng",
+        "mảng trắng trong miệng",
+        "vị khó chịu trong miệng"
+      ],
+      "possibleFactors": [
+        "đường huyết kiểm soát chưa tốt",
+        "giảm khả năng chống nhiễm trùng",
+        "tăng glucose trong nước bọt",
+        "mối liên hệ hai chiều giữa đái tháo đường và bệnh nướu"
+      ],
+      "careKnowledge": [
+        "duy trì kiểm soát đường huyết theo kế hoạch chăm sóc hiện có",
+        "đánh răng và làm sạch kẽ răng đều đặn",
+        "duy trì kiểm tra nha khoa định kỳ",
+        "theo dõi thay đổi ở nướu và niêm mạc miệng"
+      ],
+      "serviceCategoryHints": [
+        "khám nha chu",
+        "khám sức khỏe răng miệng tổng quát"
+      ],
+      "specializationHints": [
+        "nha chu",
+        "nha khoa tổng quát"
+      ],
+      "keywords": [
+        "đái tháo đường",
+        "tiểu đường",
+        "chảy máu nướu",
+        "khô miệng",
+        "nấm miệng"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Diabetes & Oral Health",
+        "url": "https://www.nidcr.nih.gov/health-info/diabetes",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-013",
+      "slug": "hiv-aids-and-oral-health",
+      "title": "HIV/AIDS và sức khỏe răng miệng",
+      "category": "SYSTEMIC_ORAL_HEALTH",
+      "content": "Người nhiễm HIV có nguy cơ cao hơn đối với một số vấn đề răng miệng do hệ miễn dịch suy yếu. Các tình trạng có thể gặp gồm khô miệng kéo dài, viêm nướu hoặc nha chu, loét áp-tơ, mụn nước quanh môi, nấm miệng, mảng trắng thô trên lưỡi, mụn cóc miệng và sâu răng. Khô miệng có thể gây cảm giác dính, nóng rát, môi nứt và làm tăng nguy cơ sâu răng hoặc nhiễm trùng. Giữ ẩm miệng, vệ sinh răng miệng và hạn chế thuốc lá hoặc đồ uống có cồn là các kiến thức chăm sóc liên quan.",
+      "symptoms": [
+        "khô miệng kéo dài",
+        "nướu viêm hoặc chảy máu",
+        "loét trong miệng",
+        "mảng trắng hoặc vàng trong miệng",
+        "mảng trắng thô trên lưỡi",
+        "mụn nước quanh môi",
+        "nóng rát trong miệng",
+        "môi nứt"
+      ],
+      "possibleFactors": [
+        "suy giảm miễn dịch liên quan HIV",
+        "khả năng chống nhiễm trùng trong khoang miệng giảm",
+        "khô miệng"
+      ],
+      "careKnowledge": [
+        "uống nước hoặc đồ uống không đường đều đặn",
+        "giữ vệ sinh răng miệng",
+        "hạn chế thuốc lá và đồ uống có cồn",
+        "theo dõi thay đổi ở lưỡi, nướu và niêm mạc miệng"
+      ],
+      "serviceCategoryHints": [
+        "khám bệnh lý niêm mạc miệng",
+        "khám nha chu và sức khỏe răng miệng tổng quát"
+      ],
+      "specializationHints": [
+        "bệnh học miệng",
+        "nha chu",
+        "nha khoa tổng quát"
+      ],
+      "keywords": [
+        "HIV",
+        "AIDS",
+        "nấm miệng",
+        "mảng trắng lưỡi",
+        "khô miệng",
+        "loét miệng"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "HIV/AIDS & Oral Health",
+        "url": "https://www.nidcr.nih.gov/health-info/hiv-aids",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-014",
+      "slug": "oral-cancer",
+      "title": "Ung thư miệng",
+      "category": "ORAL_LESION",
+      "content": "Ung thư miệng có thể phát triển ở lưỡi, niêm mạc miệng, nướu, dưới lưỡi, gốc lưỡi hoặc vùng họng phía sau miệng. Dấu hiệu có thể gồm vết loét hoặc vùng kích ứng kéo dài, khối hoặc vùng dày bất thường, mảng trắng hay đỏ, đau hoặc chảy máu trong miệng, tê lưỡi, khó nhai, nuốt, nói hoặc cử động hàm và lưỡi. Thuốc lá, sử dụng nhiều rượu, HPV, tuổi cao, ánh nắng đối với môi và chế độ ăn ít rau quả là các yếu tố nguy cơ được ghi nhận.",
+      "symptoms": [
+        "vết loét miệng kéo dài",
+        "khối hoặc vùng dày trong miệng",
+        "mảng trắng hoặc đỏ trong miệng",
+        "đau hoặc chảy máu trong miệng",
+        "tê lưỡi hoặc vùng miệng",
+        "khó nhai",
+        "khó nuốt",
+        "khó nói",
+        "khó cử động hàm hoặc lưỡi",
+        "khối vùng cổ"
+      ],
+      "possibleFactors": [
+        "sử dụng thuốc lá",
+        "sử dụng nhiều đồ uống có cồn",
+        "nhiễm HPV",
+        "tuổi cao",
+        "phơi nắng kéo dài ở môi",
+        "chế độ ăn ít rau và trái cây"
+      ],
+      "careKnowledge": [
+        "quan sát những thay đổi bất thường ở môi, lưỡi và niêm mạc miệng",
+        "ghi nhận thời gian tồn tại của tổn thương",
+        "duy trì kiểm tra răng miệng định kỳ"
+      ],
+      "serviceCategoryHints": [
+        "khám tổn thương niêm mạc miệng",
+        "sàng lọc bất thường vùng miệng"
+      ],
+      "specializationHints": [
+        "bệnh học miệng",
+        "phẫu thuật miệng và hàm mặt"
+      ],
+      "keywords": [
+        "ung thư miệng",
+        "mảng trắng trong miệng",
+        "mảng đỏ trong miệng",
+        "loét miệng kéo dài",
+        "khối trong miệng"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Oral Cancer",
+        "url": "https://www.nidcr.nih.gov/health-info/oral-cancer",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-015",
+      "slug": "trigeminal-neuralgia",
+      "title": "Đau dây thần kinh sinh ba",
+      "category": "OROFACIAL_PAIN_CONDITION",
+      "content": "Đau dây thần kinh sinh ba là tình trạng đau mạn tính ảnh hưởng dây thần kinh truyền cảm giác vùng mặt và miệng. Một dạng thường gây các cơn đau dữ dội, ngắn, giống điện giật, như dao đâm hoặc nhói ở một bên mặt; cơn đau có thể khởi phát khi chạm nhẹ, rửa mặt, cạo râu, đánh răng, ăn uống, nói hoặc gặp không khí lạnh. Một dạng khác gây đau âm ỉ, nóng rát hoặc đau liên tục. Vì đau có thể xuất hiện ở hàm trên, hàm dưới hoặc trong miệng, người bệnh có thể nhầm với đau do răng.",
+      "symptoms": [
+        "đau mặt như điện giật",
+        "đau nhói hoặc như dao đâm",
+        "đau một bên mặt",
+        "đau khi chạm nhẹ vào mặt",
+        "đau khi đánh răng",
+        "đau khi ăn uống hoặc nói",
+        "đau nóng rát liên tục ở mặt hoặc hàm"
+      ],
+      "possibleFactors": [
+        "mạch máu chèn ép dây thần kinh sinh ba",
+        "tổn thương lớp bảo vệ dây thần kinh",
+        "bệnh đa xơ cứng",
+        "tình trạng viêm",
+        "khối hoặc bất thường mạch máu chèn ép dây thần kinh"
+      ],
+      "careKnowledge": [
+        "ghi nhận tính chất cơn đau",
+        "ghi nhận yếu tố khởi phát",
+        "ghi nhận vị trí và thời lượng cơn đau",
+        "phân biệt đau vùng hàm mặt với đau xuất phát trực tiếp từ răng"
+      ],
+      "serviceCategoryHints": [
+        "khám đau vùng miệng và hàm mặt",
+        "khám loại trừ nguyên nhân từ răng"
+      ],
+      "specializationHints": [
+        "đau miệng và hàm mặt",
+        "nha khoa tổng quát",
+        "thần kinh"
+      ],
+      "keywords": [
+        "đau dây thần kinh sinh ba",
+        "đau mặt như điện giật",
+        "đau nửa mặt",
+        "đau hàm không rõ nguyên nhân",
+        "đau khi chạm mặt"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Trigeminal Neuralgia",
+        "url": "https://www.nidcr.nih.gov/health-info/trigeminal-neuralgia",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    },
+    {
+      "id": "NIDCR-VI-016",
+      "slug": "oral-hygiene",
+      "title": "Vệ sinh và chăm sóc răng miệng",
+      "category": "PREVENTIVE_ORAL_CARE",
+      "content": "Mảng bám là lớp vi khuẩn bám trên răng, có thể góp phần gây sâu răng và bệnh nướu nếu không được làm sạch. Chăm sóc răng miệng hằng ngày gồm đánh sạch tất cả các mặt răng bằng kem đánh răng có fluoride và làm sạch vùng kẽ răng. Cao răng đã hình thành không thể loại bỏ hoàn toàn chỉ bằng đánh răng tại nhà. Chế độ ăn cân bằng, hạn chế đồ ngọt và đồ uống nhiều đường, tránh thuốc lá và duy trì kiểm tra răng miệng định kỳ giúp bảo vệ răng và nướu.",
+      "symptoms": [],
+      "possibleFactors": [
+        "mảng bám tích tụ",
+        "không làm sạch kẽ răng",
+        "thường xuyên dùng đồ ăn hoặc thức uống nhiều đường",
+        "sử dụng thuốc lá"
+      ],
+      "careKnowledge": [
+        "đánh răng hai lần mỗi ngày với kem đánh răng có fluoride",
+        "làm sạch kẽ răng đều đặn",
+        "thay bàn chải khi lông bàn chải bị mòn",
+        "hạn chế đồ ngọt và đồ uống nhiều đường",
+        "duy trì kiểm tra và làm sạch răng chuyên nghiệp định kỳ"
+      ],
+      "serviceCategoryHints": [
+        "tư vấn chăm sóc răng miệng",
+        "khám nha khoa dự phòng",
+        "vệ sinh răng miệng chuyên nghiệp"
+      ],
+      "specializationHints": [
+        "nha khoa tổng quát",
+        "nha khoa dự phòng"
+      ],
+      "keywords": [
+        "vệ sinh răng miệng",
+        "đánh răng",
+        "chỉ nha khoa",
+        "mảng bám",
+        "fluoride",
+        "chăm sóc răng"
+      ],
+      "source": {
+        "publisher": "National Institute of Dental and Craniofacial Research",
+        "organization": "National Institutes of Health",
+        "title": "Oral Hygiene",
+        "url": "https://www.nidcr.nih.gov/health-info/oral-hygiene",
+        "retrievedAt": "2026-10-28",
+        "contentType": "OFFICIAL_HEALTH_INFORMATION"
+      }
+    }
+  ]
+}

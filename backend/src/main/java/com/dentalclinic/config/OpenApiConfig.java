@@ -55,7 +55,8 @@ public class OpenApiConfig {
             "POST /api/admin/services/images",
             "POST /api/admin/doctors/{doctorId}/schedules",
             "POST /api/patient/appointments",
-            "POST /api/doctor/appointments/{id}/medical-record"
+            "POST /api/doctor/appointments/{id}/medical-record",
+            "POST /api/chat/messages"
     );
 
     @Bean
@@ -101,6 +102,12 @@ public class OpenApiConfig {
                         new Tag().name("Staff Payments").description("Nhân viên thu tiền trực tiếp tại quầy"),
                         new Tag().name("Admin Payments").description("Admin tra cứu và xác nhận thanh toán dự phòng"),
                         new Tag().name("Patient Medical History").description("Lịch sử bệnh án của bệnh nhân"),
+                        new Tag().name("Patient Chatbot").description(
+                                "Chatbot RAG dành riêng cho bệnh nhân, trả gợi ý dịch vụ, bác sĩ và slot đã xác minh"
+                        ),
+                        new Tag().name("Admin AI Knowledge").description(
+                                "Theo dõi, đồng bộ thủ công và kiểm thử truy xuất kho tri thức RAG"
+                        ),
                         new Tag().name("Admin Appointments").description("Tra cứu và audit lịch hẹn"),
                         new Tag().name("Admin Dashboard").description("Thống kê tổng quan phòng khám")
                 ));
@@ -294,6 +301,12 @@ public class OpenApiConfig {
         }
         if (path.startsWith("/api/patients/")) {
             return "Patient Profile";
+        }
+        if (path.startsWith("/api/chat/")) {
+            return "Patient Chatbot";
+        }
+        if (path.startsWith("/api/admin/ai/knowledge")) {
+            return "Admin AI Knowledge";
         }
         if (path.startsWith("/api/admin/dashboard")) {
             return "Admin Dashboard";
