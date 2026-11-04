@@ -185,6 +185,75 @@ class DentalServiceManagementServiceTest {
     }
 
     @Test
+    void shouldReturnAllActiveServicesUsingRepositoryOrder() {
+        DentalService cleaning = dentalService("Cạo vôi răng", "Làm sạch cao răng");
+        DentalService generalExamination = dentalService(
+                "Khám răng tổng quát",
+                "Kiểm tra sức khỏe răng miệng"
+        );
+        when(dentalServiceRepository.findAllByActiveTrueOrderByNameAscIdAsc())
+                .thenReturn(List.of(cleaning, generalExamination));
+
+        List<DentalServiceResponse> response = service.getActiveServices();
+
+        assertThat(response).extracting(DentalServiceResponse::name)
+                .containsExactly("Cạo vôi răng", "Khám răng tổng quát");
+        assertThat(response).allMatch(DentalServiceResponse::active);
+    }
+
+    @Test
+    void shouldMatchOnlyRelevantActiveServicesFromRagCategoryHints() {
+        DentalService generalExamination = dentalService(
+                "Khám răng tổng quát",
+                "Kiểm tra tổng quát răng và nướu"
+        );
+        DentalService cleaning = dentalService(
+                "Cạo vôi răng",
+                "Làm sạch cao răng và đánh bóng"
+        );
+        DentalService whitening = dentalService(
+                "Tẩy trắng răng",
+                "Cải thiện màu sắc răng"
+        );
+        when(dentalServiceRepository.findAllByActiveTrueOrderByNameAscIdAsc())
+                .thenReturn(List.of(cleaning, generalExamination, whitening));
+
+        List<DentalServiceResponse> response = service.findActiveServicesMatchingCategoryHints(
+                List.of(
+                        "Khám nha khoa tổng quát",
+                        "Vệ sinh răng miệng chuyên nghiệp",
+                        "khám nha khoa tổng quát"
+                )
+        );
+
+        assertThat(response).extracting(DentalServiceResponse::id)
+                .containsExactly(cleaning.getId(), generalExamination.getId());
+    }
+
+    @Test
+    void shouldReturnEmptyWhenRagHintsDoNotMatchAnyRealService() {
+        DentalService whitening = dentalService(
+                "Tẩy trắng răng",
+                "Cải thiện màu sắc răng"
+        );
+        when(dentalServiceRepository.findAllByActiveTrueOrderByNameAscIdAsc())
+                .thenReturn(List.of(whitening));
+
+        assertThat(service.findActiveServicesMatchingCategoryHints(
+                List.of("Khám khớp thái dương hàm")
+        )).isEmpty();
+    }
+
+    @Test
+    void shouldNotQueryDatabaseWhenRagCategoryHintsAreEmpty() {
+        assertThat(service.findActiveServicesMatchingCategoryHints(List.of(" ", "")))
+                .isEmpty();
+
+        verify(dentalServiceRepository, never())
+                .findAllByActiveTrueOrderByNameAscIdAsc();
+    }
+
+    @Test
     void shouldFailWhenServiceDoesNotExist() {
         UUID serviceId = UUID.randomUUID();
         when(dentalServiceRepository.findById(serviceId)).thenReturn(Optional.empty());
@@ -203,6 +272,14 @@ class DentalServiceManagementServiceTest {
         dentalService.setActive(active);
         dentalService.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
         dentalService.setUpdatedAt(Instant.parse("2026-01-02T00:00:00Z"));
+        return dentalService;
+    }
+
+    private DentalService dentalService(String name, String description) {
+        DentalService dentalService = dentalService(true);
+        dentalService.setId(UUID.randomUUID());
+        dentalService.setName(name);
+        dentalService.setDescription(description);
         return dentalService;
     }
 }

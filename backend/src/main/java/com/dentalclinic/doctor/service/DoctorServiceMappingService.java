@@ -6,9 +6,11 @@ import com.dentalclinic.common.exception.ConflictException;
 import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.doctor.dto.DoctorAssignedServiceResponse;
 import com.dentalclinic.doctor.dto.DoctorResponse;
+import com.dentalclinic.doctor.dto.DoctorServiceMatch;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.doctor.entity.DoctorServiceId;
+import com.dentalclinic.doctor.entity.DoctorStatus;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.service.dto.DentalServiceResponse;
@@ -80,6 +82,24 @@ public class DoctorServiceMappingService {
         return doctorServiceRepository.findAllWithActiveServiceByDoctorId(doctor.getId()).stream()
                 .map(DoctorService::getService)
                 .map(this::toAssignedServiceResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DoctorServiceMatch> getActiveDoctorMappingsByServiceIds(List<UUID> serviceIds) {
+        if (serviceIds == null || serviceIds.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> distinctServiceIds = List.copyOf(new LinkedHashSet<>(serviceIds));
+        return doctorServiceRepository.findAllActiveDoctorMappingsByServiceIds(
+                        distinctServiceIds,
+                        UserStatus.ACTIVE,
+                        DoctorStatus.ACTIVE
+                ).stream()
+                .map(mapping -> new DoctorServiceMatch(
+                        mapping.getId().getServiceId(),
+                        toDoctorResponse(mapping.getDoctor())
+                ))
                 .toList();
     }
 

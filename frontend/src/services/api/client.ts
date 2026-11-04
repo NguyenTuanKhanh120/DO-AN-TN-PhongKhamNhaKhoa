@@ -5,7 +5,7 @@ import { ApiError, toApiError } from "./errors";
 import { emitSessionEvent } from "./session-events";
 import { tokenStore } from "./token-store";
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8081";
+export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8081";
 
 interface RetryableRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
@@ -25,7 +25,7 @@ function csrfHeaders(): Record<string, string> {
   return token ? { "X-XSRF-TOKEN": decodeURIComponent(token) } : {};
 }
 
-const refreshClient = axios.create({ baseURL, withCredentials: true });
+const refreshClient = axios.create({ baseURL: apiBaseUrl, withCredentials: true });
 
 let refreshPromise: Promise<AuthResponse> | null = null;
 
@@ -59,7 +59,7 @@ export function refreshAccessToken(): Promise<AuthResponse> {
 }
 
 export const apiClient = axios.create({
-  baseURL,
+  baseURL: apiBaseUrl,
   withCredentials: true,
   headers: { "Content-Type": "application/json" },
 });

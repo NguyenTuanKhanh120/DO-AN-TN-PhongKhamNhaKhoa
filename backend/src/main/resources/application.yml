@@ -84,6 +84,30 @@ app:
   service-images:
     storage-directory: ${SERVICE_IMAGE_STORAGE_DIRECTORY:uploads/service-images}
     max-file-size-bytes: ${SERVICE_IMAGE_MAX_FILE_SIZE_BYTES:5242880}
+  ai:
+    enabled: ${AI_ENABLED:false}
+    api-key: ${GEMINI_API_KEY:}
+    chat-model: ${GEMINI_CHAT_MODEL:gemini-3.5-flash}
+    embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2}
+    embedding-dimension: ${GEMINI_EMBEDDING_DIMENSION:768}
+    temperature: ${GEMINI_CHAT_TEMPERATURE:0.2}
+    max-output-tokens: ${GEMINI_MAX_OUTPUT_TOKENS:4096}
+    thinking-budget: ${GEMINI_THINKING_BUDGET:256}
+    request-timeout: ${GEMINI_REQUEST_TIMEOUT:60s}
+    streaming-timeout: ${AI_STREAMING_TIMEOUT:75s}
+    retry:
+      max-attempts: ${GEMINI_RETRY_MAX_ATTEMPTS:2}
+      initial-delay: ${GEMINI_RETRY_INITIAL_DELAY:500ms}
+      max-delay: ${GEMINI_RETRY_MAX_DELAY:4s}
+    knowledge-base:
+      directory: ${KNOWLEDGE_BASE_DIRECTORY:../knowledge-base}
+      max-file-size-bytes: ${KNOWLEDGE_BASE_MAX_FILE_SIZE_BYTES:5242880}
+      sync-cron: '${AI_RAG_SYNC_CRON:0 */15 * * * *}'
+      sync-lock-timeout: ${AI_RAG_SYNC_LOCK_TIMEOUT:30m}
+    retrieval:
+      default-top-k: ${AI_RAG_DEFAULT_TOP_K:3}
+      max-top-k: ${AI_RAG_MAX_TOP_K:20}
+      similarity-threshold: ${AI_RAG_SIMILARITY_THRESHOLD:0.55}
 
 springdoc:
   api-docs:

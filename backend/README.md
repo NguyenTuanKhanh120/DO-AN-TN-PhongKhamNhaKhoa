@@ -1,11 +1,11 @@
 # Dental Clinic Backend
 
-Spring Boot backend for the dental clinic management system. The repository currently includes **PHASE 26.4 — Refresh Token and Server-side Sessions**.
+Spring Boot backend for the dental clinic management system, including the patient-facing Gemini/RAG dental assistant completed through **PHASE AI-15**.
 
 ## Implemented
 
 - Java 21, Spring Boot 3.5, Maven and PostgreSQL 18.
-- Flyway V1–V11 migrations for the 15-table active schema.
+- Flyway V1–V14 migrations for the 16-table active schema.
 - JPA entities and repositories for the first nine business tables.
 - Common API response, pagination and exception handling.
 - Patient registration and login with BCrypt, 15-minute JWT access tokens and rotating Refresh Tokens.
@@ -64,13 +64,21 @@ Spring Boot backend for the dental clinic management system. The repository curr
 - Admins can inspect each appointment's chronological audit timeline with action, actor, reason, JSONB details and timestamp.
 - Admin dashboard summary reports unique patients who arrived today, doctor totals and today's appointment status counts using the clinic timezone.
 - PostgreSQL integration tests cover the appointment lifecycle, transaction rollback and concurrent booking/rescheduling races.
-- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V11, all 15 active tables, session/token constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
+- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V14, all 16 active tables, session/token constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
 - OpenAPI 3 documentation exposes typed request/response schemas, reusable error responses and JWT Bearer authorization.
 - Swagger UI and OpenAPI JSON are public in development and disabled by default in production.
 - React clients are supported through an exact-origin CORS allowlist with credentialed requests for auth cookies.
 - Unit, security and PostgreSQL integration tests run without H2, Docker or an alternate database.
+- One persistent chatbot session per patient, paginated conversation history, history clearing and patient-only authorization.
+- Gemini 3.5 Flash chat and `gemini-embedding-2` integration through Spring AI, disabled safely until explicit environment configuration is supplied.
+- JSON dental knowledge ingestion, SHA-256 change detection, staged vector activation and scheduled/manual synchronization without an upload API.
+- PostgreSQL pgvector cosine retrieval with top-K, similarity threshold, source/version and clinical-review metadata filters.
+- Multi-intent Vietnamese conversation understanding for symptoms, service/doctor recommendations and available-slot lookup in any order.
+- Server-verified service, doctor and slot cards; the model cannot create or book an appointment and never receives authority over database writes.
+- SSE chatbot responses with deterministic lifecycle events, timeout/error handling and persistence only after a complete validated answer.
+- Prompt-injection boundaries, source traceability, insufficient-knowledge fallback and output rejection for UUIDs, secret markers, JWTs and Google API-key shapes.
 
-Frontend and AI chatbot features are not implemented yet.
+The React frontend includes a lazy-loaded chatbot widget for authenticated PATIENT accounts. ADMIN, DOCTOR and STAFF do not receive the widget or chatbot API access.
 
 ## Requirements
 
@@ -100,6 +108,20 @@ Copy the names from `.env.example` into the terminal or the deployment environme
 | `AUTH_COOKIE_SAME_SITE` | No | Refresh/CSRF cookie SameSite policy; defaults to `Lax` |
 | `OPENAPI_ENABLED` | No | Enables `/v3/api-docs`; defaults to `false` in production |
 | `SWAGGER_UI_ENABLED` | No | Enables Swagger UI; defaults to `false` in production |
+| `AI_ENABLED` | No | Enables Gemini chat, embeddings, RAG synchronization and chatbot generation; defaults to `false` |
+| `GEMINI_API_KEY` | When AI is enabled | Gemini credential supplied only through the runtime environment; never commit or log it |
+| `GEMINI_CHAT_MODEL` | No | Chat model, defaults to `gemini-3.5-flash` |
+| `GEMINI_EMBEDDING_MODEL` | No | Embedding model, defaults to `gemini-embedding-2` |
+| `GEMINI_EMBEDDING_DIMENSION` | No | Must remain `768` to match `vector_store.embedding` |
+| `GEMINI_MAX_OUTPUT_TOKENS` | No | Output budget, defaults to `4096`; truncated responses are rejected instead of persisted |
+| `GEMINI_THINKING_BUDGET` | No | Reasoning budget, defaults to `256` so concise chatbot answers retain enough output capacity |
+| `GEMINI_REQUEST_TIMEOUT` | No | Gemini request timeout, defaults to `60s` |
+| `AI_STREAMING_TIMEOUT` | No | Maximum SSE response duration, defaults to `75s` |
+| `GEMINI_RETRY_MAX_ATTEMPTS` | No | Total Gemini attempts, defaults to `2` (one initial request and at most one retry) |
+| `KNOWLEDGE_BASE_DIRECTORY` | No | Directory containing the curated primary JSON dataset; defaults to `../knowledge-base` |
+| `AI_RAG_SYNC_CRON` | No | Dataset change-check schedule, defaults to every 15 minutes |
+| `AI_RAG_DEFAULT_TOP_K` | No | Default retrieval result limit, defaults to `3` |
+| `AI_RAG_SIMILARITY_THRESHOLD` | No | Minimum cosine similarity, defaults to `0.55` |
 
 The remaining pool, port and appointment-rule variables are listed in [.env.example](./.env.example).
 
@@ -117,7 +139,7 @@ FROM pg_available_extensions
 WHERE name IN ('vector', 'uuid-ossp');
 ```
 
-Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql) through [V11__add_dental_service_image_url.sql](./src/main/resources/db/migration/V11__add_dental_service_image_url.sql). V6 only backfills doctors with no weekly schedule and never overwrites partial/customized schedules. V7 removes the obsolete doctor-day-off table only when it is empty. V8 similarly removes `medical_record_drafts` only when it is empty; if historical rows exist, migration stops so the unfinalized patient data can be reviewed or archived explicitly. V9 normalizes direct legacy `08:00–12:00` morning schedules to the supported `08:00–11:00` window. V10 repairs schedule times shifted by the former UTC JDBC calendar and refuses to run if shortening a legacy morning would affect an active future 11:00 appointment. V11 adds nullable `dental_services.image_url` storage for HTTP/HTTPS image references without changing existing service rows. Hibernate only validates the schema through `ddl-auto=validate`.
+Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql) through [V14__add_knowledge_sync_token.sql](./src/main/resources/db/migration/V14__add_knowledge_sync_token.sql). V6 only backfills doctors with no weekly schedule and never overwrites partial/customized schedules. V7 removes the obsolete doctor-day-off table only when it is empty. V8 similarly removes `medical_record_drafts` only when it is empty; if historical rows exist, migration stops so the unfinalized patient data can be reviewed or archived explicitly. V9 normalizes direct legacy `08:00–12:00` morning schedules to the supported `08:00–11:00` window. V10 repairs schedule times shifted by the former UTC JDBC calendar and refuses to run if shortening a legacy morning would affect an active future 11:00 appointment. V11 adds nullable `dental_services.image_url`. V12 enforces one chatbot session per user. V13 adds `knowledge_sources` state and version metadata. V14 adds the synchronization claim token used to prevent stale or concurrent synchronization from activating the wrong vector version. Hibernate only validates the schema through `ddl-auto=validate`.
 
 ## Run
 
@@ -202,6 +224,14 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `POST /api/auth/activity`
 - `POST /api/auth/unlock`
 - `GET /api/auth/session`
+- `GET /api/chat/session` (PATIENT; the current user's single session)
+- `GET /api/chat/messages?page=&size=` (PATIENT)
+- `POST /api/chat/messages` (PATIENT; non-streaming fallback)
+- `POST /api/chat/messages/stream` (PATIENT; `text/event-stream`)
+- `DELETE /api/chat/messages` (PATIENT; clears only the current user's history)
+- `GET /api/admin/ai/knowledge/status` (ADMIN)
+- `POST /api/admin/ai/knowledge/sync` (ADMIN)
+- `POST /api/admin/ai/knowledge/search-test` (ADMIN)
 - `GET /api/patients/me`
 - `PUT /api/patients/me`
 - `GET /api/admin/users`
@@ -312,6 +342,31 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 }
 ```
 
+## AI chatbot and RAG operation
+
+The chatbot is off by default. Normal backend, Flyway and non-AI APIs remain available with `AI_ENABLED=false`; chatbot generation and embedding operations return the standard AI-unavailable contract instead of silently using fabricated data.
+
+To enable it in a local shell, configure a valid key outside source control and start the backend from `backend`:
+
+```powershell
+$env:AI_ENABLED = 'true'
+# Set GEMINI_API_KEY through the terminal/deployment secret store without committing it.
+mvn spring-boot:run
+```
+
+The primary RAG dataset is `knowledge-base/nidcr_dental_knowledge_vi.json`. It currently contains 16 curated Vietnamese dental records with source URLs and `PENDING_CLINICAL_REVIEW` metadata. The accompanying filtered CSV is a research/reference dataset and is not promoted automatically into the active RAG version. Synchronization:
+
+1. discovers the configured primary JSON file directly under `KNOWLEDGE_BASE_DIRECTORY`;
+2. validates UTF-8, size, duplicate JSON keys, dataset schema and required source metadata;
+3. skips unchanged content using SHA-256;
+4. chunks and embeds into 768 dimensions;
+5. writes a staging vector version, then atomically activates it only after the whole run succeeds;
+6. preserves the previous active version when parsing, embedding or persistence fails.
+
+Use the ADMIN status and search-test APIs to verify active source/version, similarity score and provenance before enabling the feature for patients. There is intentionally no file upload endpoint: curated source files are deployed and reviewed through the repository/deployment process. Do not treat `PENDING_CLINICAL_REVIEW` content as a substitute for professional diagnosis.
+
+Successful SSE event order is `started` → one or more `token` → `metadata` → `completed`. `metadata` carries source links and only backend-verified service, doctor and slot cards. An `error` event terminates a failed or timed-out stream. The chatbot never creates an Appointment; selection and final confirmation remain in the existing patient booking flow.
+
 ## React integration notes
 
 - Configure the frontend API base URL as `http://localhost:8081` in development.
@@ -331,6 +386,9 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - A completed examination exposes an UNPAID payment until Staff, or Admin as backup, confirms actual receipt at the counter. `BANK_TRANSFER` is manual confirmation, not an online gateway.
 - Normal booking omits `previousAppointmentId`. A patient books a recommended follow-up through the same endpoint with the completed appointment ID in `previousAppointmentId`.
 - Revenue belongs to the clinic date containing `paidAt`, which may differ from the examination date.
+- Render the chatbot only for an authenticated PATIENT. Fetch the current session/history from `/api/chat`, consume SSE events in order and keep the Access Token in memory.
+- Treat service, doctor and slot cards from SSE `metadata` as the authoritative navigation data. Do not parse IDs, prices or slots from generated prose.
+- A slot card may prefill the existing booking page, but the patient must still confirm the booking and the Backend revalidates availability and locking.
 
 ## Direct payment workflow
 
@@ -378,3 +436,13 @@ mvn clean test
 ```
 
 Tests that validate PostgreSQL-specific behavior use the real PostgreSQL database, not H2 or Docker.
+
+The full frontend gates run from `frontend`:
+
+```text
+npm test
+npm run build
+npm run test:e2e
+```
+
+The browser E2E suite uses mocked HTTP/SSE responses to verify UI integration deterministically; it does not call Gemini. Unit and PostgreSQL integration tests cover RAG ranking/filtering, source traceability, one-session ownership, role security, prompt-injection boundaries, secret-shaped output rejection and streaming completion/error behavior. A live Gemini smoke test is intentionally separate because it requires `AI_ENABLED=true`, a valid external key and network availability.

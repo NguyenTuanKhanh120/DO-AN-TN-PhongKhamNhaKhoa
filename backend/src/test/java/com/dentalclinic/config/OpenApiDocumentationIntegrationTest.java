@@ -196,6 +196,59 @@ class OpenApiDocumentationIntegrationTest {
         JsonNode revenue = operation(document, "/api/admin/dashboard/revenue", "get");
         assertThat(revenue.path("tags").get(0).asText()).isEqualTo("Admin Dashboard");
 
+        JsonNode chatSession = operation(document, "/api/chat/session", "get");
+        assertThat(chatSession.path("tags").get(0).asText()).isEqualTo("Patient Chatbot");
+        assertThat(chatSession.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
+        JsonNode sendChatMessage = operation(document, "/api/chat/messages", "post");
+        assertThat(sendChatMessage.path("tags").get(0).asText()).isEqualTo("Patient Chatbot");
+        assertThat(sendChatMessage.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
+        assertOnlyResponses(sendChatMessage, "201");
+        JsonNode streamChatMessage = operation(
+                document,
+                "/api/chat/messages/stream",
+                "post"
+        );
+        assertThat(streamChatMessage.path("tags").get(0).asText())
+                .isEqualTo("Patient Chatbot");
+        assertThat(streamChatMessage.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
+                .isTrue();
+        assertOnlyResponses(streamChatMessage, "200");
+        assertThat(streamChatMessage.path("responses").path("200").path("content")
+                .has("text/event-stream")).isTrue();
+        assertThat(streamChatMessage.path("description").asText())
+                .contains("started", "token", "metadata", "completed", "error");
+        assertThat(document.path("paths").path("/api/chat/messages").has("get")).isTrue();
+        assertThat(document.path("paths").path("/api/chat/messages").has("delete")).isTrue();
+
+        JsonNode knowledgeStatus = operation(
+                document,
+                "/api/admin/ai/knowledge/status",
+                "get"
+        );
+        assertThat(knowledgeStatus.path("tags").get(0).asText())
+                .isEqualTo("Admin AI Knowledge");
+        assertThat(knowledgeStatus.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
+                .isTrue();
+        assertOnlyResponses(knowledgeStatus, "200");
+        JsonNode knowledgeSync = operation(
+                document,
+                "/api/admin/ai/knowledge/sync",
+                "post"
+        );
+        assertThat(knowledgeSync.path("tags").get(0).asText())
+                .isEqualTo("Admin AI Knowledge");
+        assertOnlyResponses(knowledgeSync, "200");
+        JsonNode knowledgeSearchTest = operation(
+                document,
+                "/api/admin/ai/knowledge/search-test",
+                "post"
+        );
+        assertThat(knowledgeSearchTest.path("tags").get(0).asText())
+                .isEqualTo("Admin AI Knowledge");
+        assertOnlyResponses(knowledgeSearchTest, "200");
+        assertThat(document.path("paths").has("/api/admin/ai/knowledge/upload")).isFalse();
+        assertThat(document.path("paths").has("/api/admin/ai/knowledge/files")).isFalse();
+
         JsonNode schemas = document.path("components").path("schemas");
         assertThat(schemas.has("RegisterRequest")).isTrue();
         assertThat(schemas.has("CreateStaffRequest")).isTrue();
@@ -232,6 +285,26 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(schemas.has("MedicalRecordResponse")).isTrue();
         assertThat(schemas.has("MedicalRecordDraftRequest")).isFalse();
         assertThat(schemas.has("MedicalRecordDraftResponse")).isFalse();
+        assertThat(schemas.has("ChatSessionResponse")).isTrue();
+        assertThat(schemas.has("ChatMessageResponse")).isTrue();
+        assertThat(schemas.has("SendChatMessageRequest")).isTrue();
+        assertThat(schemas.has("SendChatMessageResponse")).isTrue();
+        assertThat(schemas.has("KnowledgeStatusResponse")).isTrue();
+        assertThat(schemas.has("KnowledgeSyncResponse")).isTrue();
+        assertThat(schemas.has("KnowledgeSearchTestRequest")).isTrue();
+        assertThat(schemas.has("KnowledgeSearchTestResponse")).isTrue();
+        assertThat(schemas.path("SendChatMessageResponse").path("properties").has("intents"))
+                .isTrue();
+        assertThat(schemas.path("SendChatMessageResponse").path("properties").has("sources"))
+                .isTrue();
+        assertThat(schemas.path("SendChatMessageResponse").path("properties")
+                .has("suggestedServices")).isTrue();
+        assertThat(schemas.path("SendChatMessageResponse").path("properties")
+                .has("suggestedDoctors")).isTrue();
+        assertThat(schemas.path("SendChatMessageResponse").path("properties")
+                .has("suggestedSlots")).isTrue();
+        assertThat(schemas.path("SendChatMessageResponse").path("properties")
+                .has("needsClarification")).isTrue();
         assertThat(schemas.has("ErrorResponse")).isTrue();
         assertThat(schemas.has("UserPrincipal")).isFalse();
         assertAllSchemaReferencesResolve(document, schemas);

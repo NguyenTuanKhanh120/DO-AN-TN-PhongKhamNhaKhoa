@@ -126,6 +126,26 @@ public class SlotService {
         CalendarRange range = resolveCalendarRange(fromDate, toDate);
         requireDoctorService(doctorId, serviceId);
 
+        return buildCalendar(doctorId, serviceId, range);
+    }
+
+    @Transactional(readOnly = true)
+    public DoctorCalendarResponse getDoctorCalendar(
+            UUID doctorId,
+            LocalDate fromDate,
+            LocalDate toDate
+    ) {
+        CalendarRange range = resolveCalendarRange(fromDate, toDate);
+        requireActiveDoctor(doctorId);
+
+        return buildCalendar(doctorId, null, range);
+    }
+
+    private DoctorCalendarResponse buildCalendar(
+            UUID doctorId,
+            UUID serviceId,
+            CalendarRange range
+    ) {
         List<DoctorSchedule> schedules = doctorScheduleRepository
                 .findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(doctorId)
                 .stream()
@@ -244,9 +264,7 @@ public class SlotService {
     }
 
     private DoctorService requireDoctorService(UUID doctorId, UUID serviceId) {
-        Doctor doctor = doctorRepository.findById(doctorId)
-                .orElseThrow(() -> new NotFoundException("Không tìm thấy bác sĩ"));
-        validateDoctorAvailability(doctor);
+        requireActiveDoctor(doctorId);
 
         DentalService dentalService = dentalServiceRepository.findById(serviceId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy dịch vụ nha khoa"));
@@ -260,6 +278,12 @@ public class SlotService {
                         ErrorCode.INVALID_REQUEST,
                         "Bác sĩ không cung cấp dịch vụ nha khoa đã chọn"
                 ));
+    }
+
+    private void requireActiveDoctor(UUID doctorId) {
+        Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy bác sĩ"));
+        validateDoctorAvailability(doctor);
     }
 
     private CalendarRange resolveCalendarRange(LocalDate requestedFrom, LocalDate requestedTo) {

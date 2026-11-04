@@ -19,13 +19,29 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.text.Normalizer;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 public class DentalServiceManagementService {
 
     private static final char LIKE_ESCAPE = '\\';
+    private static final double RECOMMENDATION_MATCH_THRESHOLD = 0.5;
+    private static final int MAX_RECOMMENDATION_HINTS = 50;
+    private static final Pattern CLEANING_TERMS = Pattern.compile(
+            "\\b(?:ve sinh|lam sach|cao voi)\\b"
+    );
+    private static final Set<String> GENERIC_RECOMMENDATION_TERMS = Set.of(
+            "cham", "chuyen", "co", "danh", "dieu", "dich", "gia", "kham",
+            "khoa", "mieng", "nghiep", "nha", "nguy", "rang", "soc", "suc",
+            "tri", "tu", "van", "va", "vu"
+    );
 
     private final DentalServiceRepository dentalServiceRepository;
 
@@ -54,6 +70,40 @@ public class DentalServiceManagementService {
     @Transactional(readOnly = true)
     public DentalServiceResponse getService(UUID serviceId) {
         return toResponse(findService(serviceId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<DentalServiceResponse> getActiveServices() {
+        return dentalServiceRepository.findAllByActiveTrueOrderByNameAscIdAsc().stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DentalServiceResponse> findActiveServicesMatchingCategoryHints(
+            List<String> categoryHints
+    ) {
+        List<String> normalizedHints = normalizeRecommendationHints(categoryHints);
+        if (normalizedHints.isEmpty()) {
+            return List.of();
+        }
+        return dentalServiceRepository.findAllByActiveTrueOrderByNameAscIdAsc().stream()
+                .map(service -> new ServiceRecommendationMatch(
+                        service,
+                        bestRecommendationScore(service, normalizedHints)
+                ))
+                .filter(match -> match.score() >= RECOMMENDATION_MATCH_THRESHOLD)
+                .sorted(Comparator
+                        .comparingDouble(ServiceRecommendationMatch::score)
+                        .reversed()
+                        .thenComparing(
+                                match -> match.service().getName(),
+                                String.CASE_INSENSITIVE_ORDER
+                        )
+                        .thenComparing(match -> match.service().getId()))
+                .map(ServiceRecommendationMatch::service)
+                .map(this::toResponse)
+                .toList();
     }
 
     @Transactional
@@ -168,5 +218,79 @@ public class DentalServiceManagementService {
                 .replace("\\", "\\\\")
                 .replace("%", "\\%")
                 .replace("_", "\\_");
+    }
+
+    private List<String> normalizeRecommendationHints(List<String> categoryHints) {
+        if (categoryHints == null || categoryHints.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String hint : categoryHints) {
+            String value = normalizeRecommendationText(hint);
+            if (!value.isBlank()) {
+                normalized.add(value);
+            }
+            if (normalized.size() == MAX_RECOMMENDATION_HINTS) {
+                break;
+            }
+        }
+        return List.copyOf(normalized);
+    }
+
+    private double bestRecommendationScore(
+            DentalService service,
+            List<String> normalizedHints
+    ) {
+        Set<String> serviceTerms = significantTerms(
+                normalizeRecommendationText(
+                        service.getName() + " " + (service.getDescription() == null
+                                ? ""
+                                : service.getDescription())
+                )
+        );
+        return normalizedHints.stream()
+                .map(this::significantTerms)
+                .mapToDouble(hintTerms -> recommendationScore(hintTerms, serviceTerms))
+                .max()
+                .orElse(0.0);
+    }
+
+    private double recommendationScore(Set<String> hintTerms, Set<String> serviceTerms) {
+        if (hintTerms.isEmpty() || serviceTerms.isEmpty()) {
+            return 0.0;
+        }
+        long sharedTerms = hintTerms.stream().filter(serviceTerms::contains).count();
+        if (sharedTerms == 0) {
+            return 0.0;
+        }
+        return (double) sharedTerms / Math.min(hintTerms.size(), serviceTerms.size());
+    }
+
+    private Set<String> significantTerms(String value) {
+        LinkedHashSet<String> terms = new LinkedHashSet<>();
+        for (String term : value.split(" ")) {
+            if (!term.isBlank() && !GENERIC_RECOMMENDATION_TERMS.contains(term)) {
+                terms.add(term);
+            }
+        }
+        return Set.copyOf(terms);
+    }
+
+    private String normalizeRecommendationText(String value) {
+        String normalized = Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(Locale.ROOT)
+                .replace('đ', 'd');
+        normalized = CLEANING_TERMS.matcher(normalized).replaceAll(" lam_sach ");
+        return normalized
+                .replaceAll("[^a-z0-9_]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
+    }
+
+    private record ServiceRecommendationMatch(
+            DentalService service,
+            double score
+    ) {
     }
 }

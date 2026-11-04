@@ -107,6 +107,7 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "doctor_schedules",
                 "doctor_services",
                 "doctors",
+                "knowledge_sources",
                 "medical_records",
                 "patients",
                 "payments",
@@ -302,6 +303,56 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(imageUrlColumn.get("data_type")).isEqualTo("character varying");
         assertThat(imageUrlColumn.get("character_maximum_length")).isEqualTo(1000);
         assertThat(imageUrlColumn.get("is_nullable")).isEqualTo("YES");
+
+        Boolean knowledgeSourceMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '13'",
+                Boolean.class
+        );
+        List<String> knowledgeSourceStatuses = jdbcTemplate.queryForList(
+                "select unnest(enum_range(null::knowledge_source_status_enum))::text",
+                String.class
+        );
+        Integer knowledgeSourceTrigger = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_trigger trigger_metadata
+                        join pg_class relation on relation.oid = trigger_metadata.tgrelid
+                        where relation.relname = 'knowledge_sources'
+                          and trigger_metadata.tgname = 'trg_knowledge_sources_updated_at'
+                          and not trigger_metadata.tgisinternal
+                        """,
+                Integer.class
+        );
+        Integer sourceKeyUniqueConstraint = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_constraint
+                        where conname = 'uq_knowledge_sources_key'
+                          and contype = 'u'
+                        """,
+                Integer.class
+        );
+        Boolean knowledgeSyncMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '14'",
+                Boolean.class
+        );
+        Map<String, Object> syncTokenColumn = jdbcTemplate.queryForMap(
+                """
+                        select data_type, is_nullable
+                        from information_schema.columns
+                        where table_schema = 'public'
+                          and table_name = 'knowledge_sources'
+                          and column_name = 'sync_token'
+                        """
+        );
+        assertThat(knowledgeSourceMigrationSucceeded).isTrue();
+        assertThat(knowledgeSyncMigrationSucceeded).isTrue();
+        assertThat(knowledgeSourceStatuses)
+                .containsExactly("PENDING", "SYNCING", "SUCCESS", "FAILED");
+        assertThat(knowledgeSourceTrigger).isEqualTo(1);
+        assertThat(sourceKeyUniqueConstraint).isEqualTo(1);
+        assertThat(syncTokenColumn.get("data_type")).isEqualTo("uuid");
+        assertThat(syncTokenColumn.get("is_nullable")).isEqualTo("YES");
     }
 
     @Test
@@ -323,6 +374,34 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(sqlException.getSQLState()).isEqualTo("P0001");
         assertThat(sqlException.getMessage()).contains(
                 "Refusing to drop medical_record_drafts because it contains unfinalized patient data"
+        );
+    }
+
+    @Test
+    void shouldRefuseUniqueChatSessionMigrationWhenDuplicateUsersExist() throws Exception {
+        UUID duplicatedUserId = UUID.randomUUID();
+        jdbcTemplate.execute("""
+                create temporary table chat_sessions (
+                    id uuid primary key default uuid_generate_v4(),
+                    user_id uuid not null
+                ) on commit drop
+                """);
+        jdbcTemplate.update(
+                "insert into chat_sessions (user_id) values (?), (?)",
+                duplicatedUserId,
+                duplicatedUserId
+        );
+        String migrationSql = new ClassPathResource(
+                "db/migration/V12__enforce_one_chat_session_per_user.sql"
+        ).getContentAsString(StandardCharsets.UTF_8);
+
+        Throwable failure = catchThrowable(() -> jdbcTemplate.execute(migrationSql));
+
+        assertThat(failure).isInstanceOf(DataAccessException.class);
+        SQLException sqlException = findSqlException(failure);
+        assertThat(sqlException.getSQLState()).isEqualTo("P0001");
+        assertThat(sqlException.getMessage()).contains(
+                "Refusing to enforce one chat session per user"
         );
     }
 

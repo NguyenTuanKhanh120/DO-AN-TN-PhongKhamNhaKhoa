@@ -27,6 +27,8 @@ public enum ErrorCode {
     INVALID_IMAGE_FILE(HttpStatus.BAD_REQUEST, "Ảnh dịch vụ không hợp lệ"),
     IMAGE_FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "Ảnh dịch vụ không được vượt quá 5 MB"),
     IMAGE_STORAGE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "Không thể lưu ảnh dịch vụ"),
+    AI_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Trợ lý AI hiện không khả dụng"),
+    KNOWLEDGE_BASE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Kho kiến thức hiện không khả dụng"),
     SCHEDULE_ALREADY_EXISTS(HttpStatus.CONFLICT, "Lịch làm việc cho ngày và buổi này đã tồn tại"),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "Phương thức HTTP không được hỗ trợ"),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Đã xảy ra lỗi hệ thống");

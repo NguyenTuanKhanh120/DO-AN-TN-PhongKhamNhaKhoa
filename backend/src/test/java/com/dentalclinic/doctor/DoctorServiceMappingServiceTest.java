@@ -5,6 +5,7 @@ import com.dentalclinic.common.exception.BusinessException;
 import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.doctor.dto.DoctorAssignedServiceResponse;
 import com.dentalclinic.doctor.dto.DoctorResponse;
+import com.dentalclinic.doctor.dto.DoctorServiceMatch;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.doctor.entity.DoctorServiceId;
@@ -169,6 +170,44 @@ class DoctorServiceMappingServiceTest {
             assertThat(item.fullName()).isEqualTo(doctor.getUser().getFullName());
             assertThat(item.workingStatus()).isEqualTo(DoctorStatus.ACTIVE);
         });
+    }
+
+    @Test
+    void shouldReturnOnlyActiveDoctorMappingsForVerifiedServices() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService("Khám răng tổng quát");
+        DoctorService mapping = mapping(doctor, dentalService);
+        when(doctorServiceRepository.findAllActiveDoctorMappingsByServiceIds(
+                List.of(dentalService.getId()),
+                UserStatus.ACTIVE,
+                DoctorStatus.ACTIVE
+        )).thenReturn(List.of(mapping));
+
+        List<DoctorServiceMatch> response = service.getActiveDoctorMappingsByServiceIds(
+                List.of(dentalService.getId(), dentalService.getId())
+        );
+
+        assertThat(response).singleElement().satisfies(match -> {
+            assertThat(match.serviceId()).isEqualTo(dentalService.getId());
+            assertThat(match.doctor().id()).isEqualTo(doctor.getId());
+            assertThat(match.doctor().workingStatus()).isEqualTo(DoctorStatus.ACTIVE);
+        });
+        verify(doctorServiceRepository).findAllActiveDoctorMappingsByServiceIds(
+                List.of(dentalService.getId()),
+                UserStatus.ACTIVE,
+                DoctorStatus.ACTIVE
+        );
+    }
+
+    @Test
+    void shouldNotQueryDoctorMappingsWhenVerifiedServiceIdsAreEmpty() {
+        assertThat(service.getActiveDoctorMappingsByServiceIds(List.of())).isEmpty();
+
+        verify(doctorServiceRepository, never()).findAllActiveDoctorMappingsByServiceIds(
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
     }
 
     @Test
