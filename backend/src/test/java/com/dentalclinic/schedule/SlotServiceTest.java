@@ -85,9 +85,7 @@ class SlotServiceTest {
                 doctorScheduleRepository,
                 appointmentRepository,
                 timeProvider,
-                new SchedulingPolicy(timeProvider),
-                60,
-                120
+                new SchedulingPolicy(timeProvider)
         );
     }
 
@@ -106,15 +104,12 @@ class SlotServiceTest {
         AppointmentQueueOccupancy occupiedCase = occupancy(
                 NEXT_MONDAY,
                 ScheduleSession.AFTERNOON,
-                (short) 1,
-                LocalTime.of(14, 0)
+                (short) 1
         );
         when(appointmentRepository.findActiveQueueOccupancies(
                 doctor.getId(),
                 NEXT_MONDAY,
                 NEXT_MONDAY,
-                toInstant(NEXT_MONDAY, LocalTime.MIN),
-                toInstant(NEXT_MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         )).thenReturn(List.of(occupiedCase));
 
@@ -151,8 +146,6 @@ class SlotServiceTest {
                 doctor.getId(),
                 NEXT_MONDAY,
                 NEXT_MONDAY,
-                toInstant(NEXT_MONDAY, LocalTime.MIN),
-                toInstant(NEXT_MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         )).thenReturn(List.of());
 
@@ -191,8 +184,6 @@ class SlotServiceTest {
                 doctor.getId(),
                 followingMonday,
                 followingMonday,
-                toInstant(followingMonday, LocalTime.MIN),
-                toInstant(followingMonday.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         )).thenReturn(List.of());
 
@@ -228,47 +219,8 @@ class SlotServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         );
-    }
-
-    @Test
-    void shouldConservativelyOccupyBothCasesForTwoLegacyAppointments() {
-        Doctor doctor = doctor();
-        DentalService dentalService = dentalService(true);
-        stubValidDoctorAndService(doctor, dentalService);
-        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
-                doctor.getId(), (short) 1
-        )).thenReturn(List.of(schedule(
-                doctor,
-                ScheduleSession.MORNING,
-                "08:00",
-                "11:00"
-        )));
-        AppointmentQueueOccupancy firstLegacy = legacyOccupancy(
-                NEXT_MONDAY,
-                LocalTime.of(8, 0)
-        );
-        AppointmentQueueOccupancy secondLegacy = legacyOccupancy(
-                NEXT_MONDAY,
-                LocalTime.of(9, 0)
-        );
-        when(appointmentRepository.findActiveQueueOccupancies(
-                doctor.getId(),
-                NEXT_MONDAY,
-                NEXT_MONDAY,
-                toInstant(NEXT_MONDAY, LocalTime.MIN),
-                toInstant(NEXT_MONDAY.plusDays(1), LocalTime.MIN),
-                activeStatuses()
-        )).thenReturn(List.of(firstLegacy, secondLegacy));
-
-        assertThat(slotService.getAvailableSlots(
-                doctor.getId(),
-                dentalService.getId(),
-                NEXT_MONDAY
-        )).isEmpty();
     }
 
     @Test
@@ -314,8 +266,6 @@ class SlotServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         );
     }
@@ -399,8 +349,6 @@ class SlotServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         )).thenReturn(List.of());
 
@@ -440,8 +388,6 @@ class SlotServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         );
     }
@@ -461,14 +407,11 @@ class SlotServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         )).thenReturn(List.of(occupancy(
                 MONDAY,
                 ScheduleSession.AFTERNOON,
-                (short) 1,
-                LocalTime.of(14, 0)
+                (short) 1
         )));
 
         assertThatThrownBy(() -> beforeCutoffService.requireAvailableCase(
@@ -497,15 +440,12 @@ class SlotServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         )).thenReturn(List.of(occupancy(
                 currentAppointmentId,
                 MONDAY,
                 ScheduleSession.AFTERNOON,
-                (short) 2,
-                LocalTime.of(15, 30)
+                (short) 2
         )));
 
         DoctorService result = beforeCutoffService.requireAvailableRescheduleCase(
@@ -536,15 +476,12 @@ class SlotServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         )).thenReturn(List.of(occupancy(
                 UUID.randomUUID(),
                 MONDAY,
                 ScheduleSession.AFTERNOON,
-                (short) 2,
-                LocalTime.of(15, 30)
+                (short) 2
         )));
 
         assertThatThrownBy(() -> beforeCutoffService.requireAvailableRescheduleCase(
@@ -580,239 +517,6 @@ class SlotServiceTest {
                 UUID.randomUUID()
         )).isInstanceOf(BusinessException.class)
                 .hasMessage("Không thể đổi sang ngày đã qua thời hạn 05:00");
-    }
-
-    @Test
-    void shouldReturnDoctorServiceWhenRequestedSlotIsAvailable() {
-        Doctor doctor = doctor();
-        DentalService dentalService = dentalService(true);
-        DoctorService mapping = stubValidDoctorAndService(doctor, dentalService);
-        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
-                doctor.getId(),
-                (short) 1
-        )).thenReturn(List.of(schedule(
-                doctor,
-                ScheduleSession.AFTERNOON,
-                "14:00",
-                "17:00"
-        )));
-        Instant requestedStart = toInstant(MONDAY, LocalTime.of(14, 0));
-        when(appointmentRepository.existsOccupiedStart(
-                doctor.getId(),
-                requestedStart,
-                AppointmentStatus.CANCELLED
-        )).thenReturn(false);
-
-        DoctorService result = slotService.requireAvailableSlot(
-                doctor.getId(),
-                dentalService.getId(),
-                requestedStart
-        );
-
-        assertThat(result).isSameAs(mapping);
-    }
-
-    @Test
-    void shouldRejectOccupiedRequestedSlot() {
-        Doctor doctor = doctor();
-        DentalService dentalService = dentalService(true);
-        stubValidDoctorAndService(doctor, dentalService);
-        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
-                doctor.getId(),
-                (short) 1
-        )).thenReturn(List.of(schedule(
-                doctor,
-                ScheduleSession.AFTERNOON,
-                "14:00",
-                "17:00"
-        )));
-        Instant requestedStart = toInstant(MONDAY, LocalTime.of(14, 0));
-        when(appointmentRepository.existsOccupiedStart(
-                doctor.getId(),
-                requestedStart,
-                AppointmentStatus.CANCELLED
-        )).thenReturn(true);
-
-        assertThatThrownBy(() -> slotService.requireAvailableSlot(
-                doctor.getId(),
-                dentalService.getId(),
-                requestedStart
-        )).isInstanceOf(ConflictException.class)
-                .hasMessage("Khung giờ vừa được người khác đặt. Vui lòng chọn khung giờ khác");
-    }
-
-    @Test
-    void shouldRejectRequestedTimeThatIsNotAConfiguredSlotStart() {
-        Doctor doctor = doctor();
-        DentalService dentalService = dentalService(true);
-        stubValidDoctorAndService(doctor, dentalService);
-        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
-                doctor.getId(),
-                (short) 1
-        )).thenReturn(List.of(schedule(
-                doctor,
-                ScheduleSession.AFTERNOON,
-                "14:00",
-                "17:00"
-        )));
-
-        assertThatThrownBy(() -> slotService.requireAvailableSlot(
-                doctor.getId(),
-                dentalService.getId(),
-                toInstant(MONDAY, LocalTime.of(14, 30))
-        )).isInstanceOf(BusinessException.class)
-                .hasMessage("Khung giờ không thuộc lịch làm việc của bác sĩ");
-
-        verify(appointmentRepository, never()).existsOccupiedStart(
-                doctor.getId(),
-                toInstant(MONDAY, LocalTime.of(14, 30)),
-                AppointmentStatus.CANCELLED
-        );
-    }
-
-    @Test
-    void shouldRejectRequestedSlotInsideTwoHourAdvanceWindow() {
-        Doctor doctor = doctor();
-        DentalService dentalService = dentalService(true);
-        stubValidDoctorAndService(doctor, dentalService);
-        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
-                doctor.getId(),
-                (short) 1
-        )).thenReturn(List.of(schedule(
-                doctor,
-                ScheduleSession.MORNING,
-                "08:00",
-                "11:00"
-        )));
-
-        assertThatThrownBy(() -> slotService.requireAvailableSlot(
-                doctor.getId(),
-                dentalService.getId(),
-                toInstant(MONDAY, LocalTime.of(10, 0))
-        )).isInstanceOf(BusinessException.class)
-                .hasMessage("Bạn cần đặt lịch trước giờ khám ít nhất 2 giờ");
-    }
-
-    @Test
-    void shouldAllowRequestedSlotAtTwoHourAdvanceBoundary() {
-        Doctor doctor = doctor();
-        DentalService dentalService = dentalService(true);
-        DoctorService mapping = stubValidDoctorAndService(doctor, dentalService);
-        SlotService boundaryService = slotServiceAt(Instant.parse("2026-10-12T05:00:00Z"));
-        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
-                doctor.getId(),
-                (short) 1
-        )).thenReturn(List.of(schedule(
-                doctor,
-                ScheduleSession.AFTERNOON,
-                "14:00",
-                "17:00"
-        )));
-        Instant requestedStart = toInstant(MONDAY, LocalTime.of(14, 0));
-        when(appointmentRepository.existsOccupiedStart(
-                doctor.getId(),
-                requestedStart,
-                AppointmentStatus.CANCELLED
-        )).thenReturn(false);
-
-        DoctorService result = boundaryService.requireAvailableSlot(
-                doctor.getId(),
-                dentalService.getId(),
-                requestedStart
-        );
-
-        assertThat(result).isSameAs(mapping);
-    }
-
-    @Test
-    void shouldAllowFutureRescheduleSlotInsideBookingAdvanceWindow() {
-        Doctor doctor = doctor();
-        DentalService dentalService = dentalService(true);
-        DoctorService mapping = stubValidDoctorAndService(doctor, dentalService);
-        SlotService nearStartService = slotServiceAt(Instant.parse("2026-10-12T05:30:00Z"));
-        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
-                doctor.getId(),
-                (short) 1
-        )).thenReturn(List.of(schedule(
-                doctor,
-                ScheduleSession.AFTERNOON,
-                "14:00",
-                "17:00"
-        )));
-        Instant requestedStart = toInstant(MONDAY, LocalTime.of(14, 0));
-        when(appointmentRepository.existsOccupiedStart(
-                doctor.getId(),
-                requestedStart,
-                AppointmentStatus.CANCELLED
-        )).thenReturn(false);
-
-        DoctorService result = nearStartService.requireAvailableRescheduleSlot(
-                doctor.getId(),
-                dentalService.getId(),
-                requestedStart
-        );
-
-        assertThat(result).isSameAs(mapping);
-    }
-
-    @Test
-    void shouldRejectPastRescheduleSlot() {
-        Doctor doctor = doctor();
-        DentalService dentalService = dentalService(true);
-        stubValidDoctorAndService(doctor, dentalService);
-        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
-                doctor.getId(),
-                (short) 1
-        )).thenReturn(List.of(schedule(
-                doctor,
-                ScheduleSession.MORNING,
-                "08:00",
-                "11:00"
-        )));
-        Instant requestedStart = toInstant(MONDAY, LocalTime.of(9, 0));
-
-        assertThatThrownBy(() -> slotService.requireAvailableRescheduleSlot(
-                doctor.getId(),
-                dentalService.getId(),
-                requestedStart
-        )).isInstanceOf(BusinessException.class)
-                .hasMessage("Khung giờ mới phải nằm trong tương lai");
-
-        verify(appointmentRepository, never()).existsOccupiedStart(
-                doctor.getId(),
-                requestedStart,
-                AppointmentStatus.CANCELLED
-        );
-    }
-
-    @Test
-    void shouldRejectOccupiedRescheduleSlotWithRollbackMessage() {
-        Doctor doctor = doctor();
-        DentalService dentalService = dentalService(true);
-        stubValidDoctorAndService(doctor, dentalService);
-        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
-                doctor.getId(),
-                (short) 1
-        )).thenReturn(List.of(schedule(
-                doctor,
-                ScheduleSession.MORNING,
-                "08:00",
-                "11:00"
-        )));
-        Instant requestedStart = toInstant(NEXT_MONDAY, LocalTime.of(10, 0));
-        when(appointmentRepository.existsOccupiedStart(
-                doctor.getId(),
-                requestedStart,
-                AppointmentStatus.CANCELLED
-        )).thenReturn(true);
-
-        assertThatThrownBy(() -> slotService.requireAvailableRescheduleSlot(
-                doctor.getId(),
-                dentalService.getId(),
-                requestedStart
-        )).isInstanceOf(ConflictException.class)
-                .hasMessage("Khung giờ mới vừa được người khác đặt. Lịch hiện tại của bạn vẫn "
-                        + "được giữ nguyên. Vui lòng chọn khung giờ khác.");
     }
 
     @Test
@@ -855,15 +559,6 @@ class SlotServiceTest {
         return mapping;
     }
 
-    private void stubNoOccupiedAppointments(Doctor doctor) {
-        when(appointmentRepository.findOccupiedStartTimes(
-                doctor.getId(),
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
-                AppointmentStatus.CANCELLED
-        )).thenReturn(List.of());
-    }
-
     private List<AppointmentStatus> activeStatuses() {
         return List.of(
                 AppointmentStatus.BOOKED,
@@ -875,20 +570,17 @@ class SlotServiceTest {
     private AppointmentQueueOccupancy occupancy(
             LocalDate date,
             ScheduleSession session,
-            Short queueNumber,
-            LocalTime legacyStartTime
+            Short queueNumber
     ) {
-        return occupancy(null, date, session, queueNumber, legacyStartTime);
+        return occupancy(null, date, session, queueNumber);
     }
 
     private AppointmentQueueOccupancy occupancy(
             UUID appointmentId,
             LocalDate date,
             ScheduleSession session,
-            Short queueNumber,
-            LocalTime legacyStartTime
+            Short queueNumber
     ) {
-        Instant scheduledStartAt = toInstant(date, legacyStartTime);
         return new AppointmentQueueOccupancy() {
             @Override
             public UUID getAppointmentId() {
@@ -908,36 +600,6 @@ class SlotServiceTest {
             @Override
             public Short getQueueNumber() {
                 return queueNumber;
-            }
-
-            @Override
-            public Instant getScheduledStartAt() {
-                return scheduledStartAt;
-            }
-        };
-    }
-
-    private AppointmentQueueOccupancy legacyOccupancy(LocalDate date, LocalTime startTime) {
-        Instant scheduledStartAt = toInstant(date, startTime);
-        return new AppointmentQueueOccupancy() {
-            @Override
-            public LocalDate getAppointmentDate() {
-                return null;
-            }
-
-            @Override
-            public ScheduleSession getSession() {
-                return null;
-            }
-
-            @Override
-            public Short getQueueNumber() {
-                return null;
-            }
-
-            @Override
-            public Instant getScheduledStartAt() {
-                return scheduledStartAt;
             }
         };
     }

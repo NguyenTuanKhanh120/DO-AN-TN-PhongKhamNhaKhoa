@@ -119,8 +119,6 @@ class AppointmentBookingPostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "appointment-booking-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
-        registry.add("clinic.appointment.booking-min-advance-minutes", () -> 120);
     }
 
     @AfterEach
@@ -344,34 +342,6 @@ class AppointmentBookingPostgreSqlIntegrationTest {
         assertThat(countActivePatientSession(
                 fixture.firstPatientId(), ScheduleSession.AFTERNOON
         )).isEqualTo(1);
-    }
-
-    @Test
-    void shouldTreatLegacyActiveAppointmentAsOccupyingPatientSession() throws Exception {
-        fixture = createFixture();
-        String patientToken = login(fixture.firstPatientEmail());
-        jdbcTemplate.update("""
-                insert into appointments (
-                    patient_id,
-                    doctor_id,
-                    service_id,
-                    scheduled_start_at,
-                    status
-                ) values (?, ?, ?, ?, 'BOOKED')
-                """,
-                fixture.firstPatientId(),
-                fixture.secondDoctorId(),
-                fixture.secondServiceId(),
-                Timestamp.from(toInstant(MONDAY, LocalTime.of(14, 30)))
-        );
-
-        mockMvc.perform(post("/api/patient/appointments")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bookingBody(toInstant(MONDAY, LocalTime.of(15, 30)))))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message")
-                        .value("Bạn đã có một lịch khám đang hoạt động trong buổi này"));
     }
 
     @Test

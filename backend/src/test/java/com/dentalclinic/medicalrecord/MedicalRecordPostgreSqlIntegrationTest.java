@@ -2,6 +2,7 @@ package com.dentalclinic.medicalrecord;
 
 import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.AppointmentQueueFixtureSupport;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
@@ -363,6 +364,11 @@ class MedicalRecordPostgreSqlIntegrationTest {
                 Role.PATIENT
         );
         Patient patient = savePatient(patientUser);
+        Patient otherDoctorPatient = savePatient(saveUser(
+                "phase19-patient-other-doctor-" + marker + "@example.com",
+                "Bệnh nhân Phase 19 bác sĩ khác",
+                Role.PATIENT
+        ));
         DentalService service = saveService("Dịch vụ Phase 19 " + marker);
         DoctorService firstMapping = saveMapping(firstDoctor, service);
         DoctorService secondMapping = saveMapping(secondDoctor, service);
@@ -376,7 +382,7 @@ class MedicalRecordPostgreSqlIntegrationTest {
         Appointment booked = saveAppointment(
                 patient,
                 firstMapping,
-                Instant.parse("2026-10-12T04:00:00Z"),
+                Instant.parse("2026-10-12T07:00:00Z"),
                 AppointmentStatus.BOOKED
         );
         Appointment completed = saveAppointment(
@@ -389,7 +395,7 @@ class MedicalRecordPostgreSqlIntegrationTest {
         completed.setActualEndAt(Instant.parse("2026-10-12T05:45:00Z"));
         appointmentRepository.saveAndFlush(completed);
         Appointment otherDoctor = saveAppointment(
-                patient,
+                otherDoctorPatient,
                 secondMapping,
                 Instant.parse("2026-10-12T03:00:00Z"),
                 AppointmentStatus.IN_PROGRESS
@@ -460,6 +466,7 @@ class MedicalRecordPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setScheduledStartAt(scheduledStartAt);
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(appointment, scheduledStartAt);
         appointment.setStatus(status);
         if (status == AppointmentStatus.IN_PROGRESS) {
             appointment.setCheckedInAt(scheduledStartAt.minusSeconds(300));

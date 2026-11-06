@@ -219,6 +219,7 @@ class AppointmentNoShowServiceTest {
         Appointment appointment = new Appointment();
         appointment.setId(UUID.randomUUID());
         appointment.setScheduledStartAt(scheduledStartAt);
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(appointment, scheduledStartAt);
         appointment.setStatus(status);
         return appointment;
     }

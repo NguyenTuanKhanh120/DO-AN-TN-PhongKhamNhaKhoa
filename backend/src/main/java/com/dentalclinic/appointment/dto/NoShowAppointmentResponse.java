@@ -12,7 +12,7 @@ public record NoShowAppointmentResponse(
         AppointmentStatus status,
         LocalDate appointmentDate,
         ScheduleSession session,
-        Integer queueNumber,
+        int queueNumber,
         OffsetDateTime estimatedStartAt,
         OffsetDateTime noShowAt
 ) {

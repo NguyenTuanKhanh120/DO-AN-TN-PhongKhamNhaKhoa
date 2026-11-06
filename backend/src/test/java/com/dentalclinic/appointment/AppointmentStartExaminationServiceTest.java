@@ -295,13 +295,10 @@ class AppointmentStartExaminationServiceTest {
     }
 
     @Test
-    void shouldAllowLegacyCheckedInAppointmentToContinue() {
+    void shouldAllowCheckedInAppointmentToContinue() {
         UUID authenticatedUserId = UUID.randomUUID();
         Doctor doctor = doctor(authenticatedUserId);
         Appointment appointment = appointment(AppointmentStatus.CHECKED_IN);
-        appointment.setAppointmentDate(null);
-        appointment.setSession(null);
-        appointment.setQueueNumber(null);
         when(doctorRepository.findForUpdateByUserId(authenticatedUserId))
                 .thenReturn(Optional.of(doctor));
         when(appointmentRepository.findForUpdateByIdAndDoctorId(

@@ -90,9 +90,7 @@ class DoctorCalendarServiceTest {
                 doctorScheduleRepository,
                 appointmentRepository,
                 timeProvider,
-                new SchedulingPolicy(timeProvider),
-                60,
-                120
+                new SchedulingPolicy(timeProvider)
         );
     }
 
@@ -122,8 +120,6 @@ class DoctorCalendarServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY.plusDays(29),
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(30), LocalTime.MIN),
                 activeStatuses()
         )).thenReturn(occupancies);
 
@@ -180,8 +176,6 @@ class DoctorCalendarServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY.plusDays(29),
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(30), LocalTime.MIN),
                 activeStatuses()
         );
     }
@@ -226,8 +220,6 @@ class DoctorCalendarServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         )).thenReturn(List.of());
 
@@ -260,8 +252,6 @@ class DoctorCalendarServiceTest {
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
                 activeStatuses()
         )).thenReturn(List.of());
 
@@ -301,15 +291,10 @@ class DoctorCalendarServiceTest {
             ScheduleSession session,
             int queueNumber
     ) {
-        LocalTime startTime = switch (session) {
-            case MORNING -> queueNumber == 1 ? LocalTime.of(8, 0) : LocalTime.of(9, 30);
-            case AFTERNOON -> queueNumber == 1 ? LocalTime.of(14, 0) : LocalTime.of(15, 30);
-        };
         AppointmentQueueOccupancy occupancy = mock(AppointmentQueueOccupancy.class);
         when(occupancy.getAppointmentDate()).thenReturn(date);
         when(occupancy.getSession()).thenReturn(session);
         when(occupancy.getQueueNumber()).thenReturn((short) queueNumber);
-        when(occupancy.getScheduledStartAt()).thenReturn(toInstant(date, startTime));
         return occupancy;
     }
 

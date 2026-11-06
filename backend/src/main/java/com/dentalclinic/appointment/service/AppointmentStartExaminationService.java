@@ -98,9 +98,7 @@ public class AppointmentStartExaminationService {
                 appointment.getStatus(),
                 appointment.getAppointmentDate(),
                 appointment.getSession(),
-                appointment.getQueueNumber() == null
-                        ? null
-                        : appointment.getQueueNumber().intValue(),
+                appointment.getQueueNumber().intValue(),
                 toClinicOffset(appointment.getScheduledStartAt()),
                 toClinicOffsetOrNull(appointment.getCheckedInAt()),
                 toClinicOffset(actualStartAt)
@@ -112,12 +110,6 @@ public class AppointmentStartExaminationService {
             Appointment appointment,
             Instant actualStartAt
     ) {
-        if (appointment.getAppointmentDate() == null
-                || appointment.getSession() == null
-                || appointment.getQueueNumber() == null) {
-            return;
-        }
-
         Instant sessionStartAt = clinicTimeProvider.toInstant(
                 appointment.getAppointmentDate(),
                 schedulingPolicy.sessionStart(appointment.getSession())
@@ -156,11 +148,9 @@ public class AppointmentStartExaminationService {
                 "estimated_start_at",
                 toClinicOffset(appointment.getScheduledStartAt()).toString()
         );
-        if (appointment.getAppointmentDate() != null) {
-            details.put("appointment_date", appointment.getAppointmentDate().toString());
-            details.put("session", appointment.getSession().name());
-            details.put("queue_number", appointment.getQueueNumber());
-        }
+        details.put("appointment_date", appointment.getAppointmentDate().toString());
+        details.put("session", appointment.getSession().name());
+        details.put("queue_number", appointment.getQueueNumber());
         OffsetDateTime checkedInAt = toClinicOffsetOrNull(appointment.getCheckedInAt());
         if (checkedInAt == null) {
             details.putNull("checked_in_at");

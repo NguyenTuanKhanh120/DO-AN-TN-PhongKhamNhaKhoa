@@ -231,10 +231,10 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
         Appointment inProgress = saveAppointment(
                 checkedInAppointment.getPatient(),
                 checkedInAppointment.getDoctorService(),
-                Instant.parse("2026-10-12T00:00:00Z"),
+                Instant.parse("2026-10-10T00:00:00Z"),
                 AppointmentStatus.IN_PROGRESS,
-                Instant.parse("2026-10-11T23:55:00Z"),
-                Instant.parse("2026-10-12T00:05:00Z")
+                Instant.parse("2026-10-09T23:55:00Z"),
+                Instant.parse("2026-10-10T00:05:00Z")
         );
         String token = login(fixture.firstDoctorEmail());
 
@@ -298,19 +298,19 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
     }
 
     @Test
-    void shouldAllowLegacyCheckedInAppointmentToContinue() throws Exception {
+    void shouldAllowCheckedInAppointmentToContinue() throws Exception {
         String token = login(fixture.firstDoctorEmail());
 
         mockMvc.perform(patch(
                         "/api/doctor/appointments/{id}/start",
-                        fixture.legacyCheckedInAppointmentId()
+                        fixture.checkedInContinuationAppointmentId()
                 ).header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.data.checkedInAt")
                         .value("2026-10-12T08:55:00+07:00"));
 
-        assertThat(statusOf(fixture.legacyCheckedInAppointmentId()))
+        assertThat(statusOf(fixture.checkedInContinuationAppointmentId()))
                 .isEqualTo("IN_PROGRESS");
     }
 
@@ -340,6 +340,12 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 Role.PATIENT
         );
         Patient secondPatient = savePatient(secondPatientUser);
+        User thirdPatientUser = saveUser(
+                "phase17-patient-c-" + marker + "@example.com",
+                "Bệnh nhân Phase 17 C",
+                Role.PATIENT
+        );
+        Patient thirdPatient = savePatient(thirdPatientUser);
         DentalService service = saveService("Dịch vụ Phase 17 " + marker);
         DoctorService firstMapping = saveMapping(firstDoctor, service);
         DoctorService secondMapping = saveMapping(secondDoctor, service);
@@ -374,17 +380,17 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 null
         );
         Appointment otherDoctor = saveAppointment(
-                patient,
+                thirdPatient,
                 secondMapping,
                 Instant.parse("2026-10-12T03:00:00Z"),
                 AppointmentStatus.BOOKED,
                 null,
                 null
         );
-        Appointment legacyCheckedIn = saveAppointment(
+        Appointment checkedInContinuation = saveAppointment(
                 patient,
                 firstMapping,
-                Instant.parse("2026-10-12T05:00:00Z"),
+                Instant.parse("2026-10-11T01:00:00Z"),
                 AppointmentStatus.CHECKED_IN,
                 CHECKED_IN_AT,
                 null
@@ -398,7 +404,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 queueTwo.getId(),
                 booked.getId(),
                 otherDoctor.getId(),
-                legacyCheckedIn.getId()
+                checkedInContinuation.getId()
         );
     }
 
@@ -459,6 +465,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setScheduledStartAt(startAt);
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(appointment, startAt);
         appointment.setStatus(status);
         appointment.setCheckedInAt(checkedInAt);
         appointment.setActualStartAt(actualStartAt);
@@ -573,7 +580,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
             UUID queueTwoAppointmentId,
             UUID bookedAppointmentId,
             UUID otherDoctorAppointmentId,
-            UUID legacyCheckedInAppointmentId
+            UUID checkedInContinuationAppointmentId
     ) {
     }
 

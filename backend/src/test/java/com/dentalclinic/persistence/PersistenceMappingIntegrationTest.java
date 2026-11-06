@@ -4,6 +4,7 @@ import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentAction;
 import com.dentalclinic.appointment.entity.AppointmentHistory;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.AppointmentQueueFixtureSupport;
 import com.dentalclinic.appointment.repository.AppointmentHistoryRepository;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.auth.entity.AuthSession;
@@ -154,6 +155,10 @@ class PersistenceMappingIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setScheduledStartAt(Instant.parse("2030-01-07T01:00:00Z"));
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(
+                appointment,
+                appointment.getScheduledStartAt()
+        );
         appointment.setStatus(AppointmentStatus.BOOKED);
         appointmentRepository.saveAndFlush(appointment);
 

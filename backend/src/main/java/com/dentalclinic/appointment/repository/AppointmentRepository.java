@@ -132,45 +132,23 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     );
 
     @Query("""
-            select appointment.scheduledStartAt
-            from Appointment appointment
-            where appointment.doctorService.doctor.id = :doctorId
-              and appointment.scheduledStartAt >= :rangeStart
-              and appointment.scheduledStartAt < :rangeEnd
-              and appointment.status <> :cancelledStatus
-            """)
-    List<Instant> findOccupiedStartTimes(
-            @Param("doctorId") UUID doctorId,
-            @Param("rangeStart") Instant rangeStart,
-            @Param("rangeEnd") Instant rangeEnd,
-            @Param("cancelledStatus") AppointmentStatus cancelledStatus
-    );
-
-    @Query("""
             select appointment.id as appointmentId,
                    appointment.appointmentDate as appointmentDate,
                    appointment.session as session,
-                   appointment.queueNumber as queueNumber,
-                   appointment.scheduledStartAt as scheduledStartAt
+                   appointment.queueNumber as queueNumber
             from Appointment appointment
             where appointment.doctorService.doctor.id = :doctorId
               and appointment.status in :activeStatuses
-              and (
-                    appointment.appointmentDate between :fromDate and :toDate
-                    or (
-                        appointment.appointmentDate is null
-                        and appointment.scheduledStartAt >= :rangeStart
-                        and appointment.scheduledStartAt < :rangeEnd
-                    )
-                  )
-            order by appointment.scheduledStartAt asc, appointment.id asc
+              and appointment.appointmentDate between :fromDate and :toDate
+            order by appointment.appointmentDate asc,
+                     appointment.session asc,
+                     appointment.queueNumber asc,
+                     appointment.id asc
             """)
     List<AppointmentQueueOccupancy> findActiveQueueOccupancies(
             @Param("doctorId") UUID doctorId,
             @Param("fromDate") LocalDate fromDate,
             @Param("toDate") LocalDate toDate,
-            @Param("rangeStart") Instant rangeStart,
-            @Param("rangeEnd") Instant rangeEnd,
             @Param("activeStatuses") List<AppointmentStatus> activeStatuses
     );
 
@@ -186,19 +164,6 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
             @Param("doctorId") UUID doctorId,
             @Param("statuses") List<AppointmentStatus> statuses,
             @Param("fromTime") Instant fromTime
-    );
-
-    @Query("""
-            select (count(appointment) > 0)
-            from Appointment appointment
-            where appointment.doctorService.doctor.id = :doctorId
-              and appointment.scheduledStartAt = :scheduledStartAt
-              and appointment.status <> :cancelledStatus
-            """)
-    boolean existsOccupiedStart(
-            @Param("doctorId") UUID doctorId,
-            @Param("scheduledStartAt") Instant scheduledStartAt,
-            @Param("cancelledStatus") AppointmentStatus cancelledStatus
     );
 
     @Query("""
@@ -247,24 +212,13 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
             from Appointment appointment
             where appointment.patient.id = :patientId
               and appointment.status in :activeStatuses
-              and (
-                    (
-                        appointment.appointmentDate = :appointmentDate
-                        and appointment.session = :session
-                    )
-                    or (
-                        appointment.appointmentDate is null
-                        and appointment.scheduledStartAt >= :sessionStartAt
-                        and appointment.scheduledStartAt < :sessionEndAt
-                    )
-                  )
+              and appointment.appointmentDate = :appointmentDate
+              and appointment.session = :session
             """)
     boolean existsActivePatientSession(
             @Param("patientId") UUID patientId,
             @Param("appointmentDate") LocalDate appointmentDate,
             @Param("session") ScheduleSession session,
-            @Param("sessionStartAt") Instant sessionStartAt,
-            @Param("sessionEndAt") Instant sessionEndAt,
             @Param("activeStatuses") Collection<AppointmentStatus> activeStatuses
     );
 
@@ -274,25 +228,14 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
             where appointment.id <> :excludedAppointmentId
               and appointment.patient.id = :patientId
               and appointment.status in :activeStatuses
-              and (
-                    (
-                        appointment.appointmentDate = :appointmentDate
-                        and appointment.session = :session
-                    )
-                    or (
-                        appointment.appointmentDate is null
-                        and appointment.scheduledStartAt >= :sessionStartAt
-                        and appointment.scheduledStartAt < :sessionEndAt
-                    )
-                  )
+              and appointment.appointmentDate = :appointmentDate
+              and appointment.session = :session
             """)
     boolean existsOtherActivePatientSession(
             @Param("excludedAppointmentId") UUID excludedAppointmentId,
             @Param("patientId") UUID patientId,
             @Param("appointmentDate") LocalDate appointmentDate,
             @Param("session") ScheduleSession session,
-            @Param("sessionStartAt") Instant sessionStartAt,
-            @Param("sessionEndAt") Instant sessionEndAt,
             @Param("activeStatuses") Collection<AppointmentStatus> activeStatuses
     );
 

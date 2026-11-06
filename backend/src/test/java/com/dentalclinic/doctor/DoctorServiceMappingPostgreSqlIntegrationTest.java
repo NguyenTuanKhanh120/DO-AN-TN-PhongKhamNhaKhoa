@@ -197,8 +197,15 @@ class DoctorServiceMappingPostgreSqlIntegrationTest {
                             doctor_id,
                             service_id,
                             scheduled_start_at,
+                            appointment_date,
+                            session,
+                            queue_number,
                             status
-                        ) values (?, ?, ?, cast(? as timestamptz), cast(? as appointment_status_enum))
+                        ) values (
+                            ?, ?, ?, cast(? as timestamptz),
+                            date '2030-01-01', 'MORNING', 1,
+                            cast(? as appointment_status_enum)
+                        )
                         """,
                 patient.getId(),
                 doctor.getId(),
@@ -255,7 +262,7 @@ class DoctorServiceMappingPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data[0].name").value(serviceA.getName()))
                 .andExpect(jsonPath("$.data[0].description").value(serviceA.getDescription()))
                 .andExpect(jsonPath("$.data[0].price").value(300000.00))
-                .andExpect(jsonPath("$.data[0].durationMinutes").value(60))
+                .andExpect(jsonPath("$.data[0].durationMinutes").doesNotExist())
                 .andExpect(jsonPath("$.data[0].imageUrl").value(serviceA.getImageUrl()))
                 .andExpect(jsonPath("$.data[0].active").value(true))
                 .andExpect(jsonPath("$.data[1].id").value(serviceB.getId().toString()))

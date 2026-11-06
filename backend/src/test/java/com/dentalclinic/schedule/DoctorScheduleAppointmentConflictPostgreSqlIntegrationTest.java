@@ -2,6 +2,7 @@ package com.dentalclinic.schedule;
 
 import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.AppointmentQueueFixtureSupport;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.common.exception.ConflictException;
 import com.dentalclinic.doctor.entity.Doctor;
@@ -90,7 +91,6 @@ class DoctorScheduleAppointmentConflictPostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "doctor-schedule-conflict-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
     }
 
     @Test
@@ -110,6 +110,10 @@ class DoctorScheduleAppointmentConflictPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(mapping);
         appointment.setScheduledStartAt(FUTURE_MONDAY.atTime(8, 0).atZone(CLINIC_ZONE).toInstant());
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(
+                appointment,
+                appointment.getScheduledStartAt()
+        );
         appointment.setStatus(AppointmentStatus.BOOKED);
         appointmentRepository.saveAndFlush(appointment);
 

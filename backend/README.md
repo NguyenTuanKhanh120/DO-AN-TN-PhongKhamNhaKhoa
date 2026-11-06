@@ -5,7 +5,7 @@ Spring Boot backend for the dental clinic management system, including the patie
 ## Implemented
 
 - Java 21, Spring Boot 3.5, Maven and PostgreSQL 18.
-- Flyway V1–V14 migrations for the 16-table active schema.
+- Flyway V1–V18 migrations for the 16-table active schema.
 - JPA entities and repositories for the first nine business tables.
 - Common API response, pagination and exception handling.
 - Patient registration and login with BCrypt, 15-minute JWT access tokens and rotating Refresh Tokens.
@@ -26,25 +26,26 @@ Spring Boot backend for the dental clinic management system, including the patie
 - Public doctor-to-service and service-to-doctor lookup APIs.
 - Transactional admin replacement of doctor-service mappings with composite-key and foreign-key protection.
 - Public weekly doctor-schedule lookup.
-- Admin-owned weekly doctor-schedule CRUD for Monday-Saturday, hourly boundaries inside `08:00-11:00` and `13:00-17:00`; doctors have read-only access to their own schedules.
+- Admin-owned weekly doctor-schedule CRUD for Monday-Saturday with exact sessions `MORNING 08:00-11:00` and `AFTERNOON 14:00-17:00`; doctors have read-only access to their own schedules.
 - Weekly schedule updates/deletes take the same Doctor lock as booking and reject changes that would invalidate future active appointments.
 - Doctor availability is derived only from weekly schedules, active doctor/service mappings, current time and existing appointments.
 - Booking, rescheduling and patient follow-up creation share a pessimistic Doctor lock and recheck weekly schedule availability before writing.
-- Public available-slot calculation from weekly schedules and appointments.
-- Public rolling 30-day doctor calendar calculated with one schedule query and one occupied-slot query for the requested range.
-- Fixed 60-minute slots with active doctor/service/mapping checks and a 120-minute booking lead time.
+- Public available-case calculation from weekly schedules and active appointments. The legacy `/available-slots` route name is retained, but each item represents a queue case rather than a fixed-duration slot.
+- Public rolling 30-day doctor calendar calculated with one schedule query and one occupied-queue query for the requested range.
+- Two cases per working session: morning estimates at `08:00` and `09:30`, afternoon estimates at `14:00` and `15:30`. Estimated starts are not guaranteed examination intervals.
+- Patient online booking, self-cancellation and self-rescheduling use a single `05:00` clinic-time cutoff for the appointment date.
 - Transactional patient appointment booking with BOOK audit history.
-- PostgreSQL partial-unique-index protection for concurrent slot booking conflicts.
+- PostgreSQL partial-unique-index protection for both concurrent doctor/date/session/queue conflicts and concurrent patient/date/session conflicts.
 - Role-owned patient and doctor appointment queries plus system-wide admin queries.
 - Appointment search, status/date/entity filters, pagination and clinic-timezone responses.
-- Transactional patient cancellation with a 90-minute cutoff and CANCEL audit history.
-- Pessimistic appointment locking and PostgreSQL partial-index slot release verification.
-- Transactional patient rescheduling with a 90-minute cutoff calculated from the old appointment.
-- Same-appointment rescheduling with schedule validation, RESCHEDULE audit history and no 120-minute booking lead-time rule on the new slot.
-- PostgreSQL partial-unique-index protection that keeps the losing appointment's old slot intact during a concurrent reschedule race.
+- Transactional patient cancellation before the `05:00` daily cutoff with CANCEL audit history; the cancelled record remains for audit while its doctor queue and patient-session reservation are released.
+- Pessimistic appointment locking and PostgreSQL partial-index queue release verification.
+- Transactional patient rescheduling before the old appointment date's `05:00` cutoff, with the target date cutoff also enforced.
+- Same-appointment rescheduling with schedule validation and RESCHEDULE audit history.
+- PostgreSQL partial-unique-index protection that keeps the losing appointment's old case intact during a concurrent reschedule race.
 - New examinations start directly with doctor-owned `BOOKED → IN_PROGRESS`; no check-in endpoint is exposed.
 - Historical `CHECKED_IN` appointments remain readable and may transition to `IN_PROGRESS` for backward compatibility.
-- Per-doctor transactional locking prevents a second appointment from entering `IN_PROGRESS` before the current examination is completed.
+- Per-doctor transactional locking prevents a second appointment from entering `IN_PROGRESS`; Ca 2 also waits until Ca 1 is terminal or absent.
 - Doctor-owned NO_SHOW confirmation after the configured 15-minute grace period, with checked-in protection and NO_SHOW audit history.
 - Doctor-owned medical-record creation and update while an appointment is `IN_PROGRESS`.
 - The responsible doctor can read the official MedicalRecord after saving it and continue editing it with `PUT` while the Appointment remains `IN_PROGRESS`; no draft or autosave workflow is exposed.
@@ -64,7 +65,7 @@ Spring Boot backend for the dental clinic management system, including the patie
 - Admins can inspect each appointment's chronological audit timeline with action, actor, reason, JSONB details and timestamp.
 - Admin dashboard summary reports unique patients who arrived today, doctor totals and today's appointment status counts using the clinic timezone.
 - PostgreSQL integration tests cover the appointment lifecycle, transaction rollback and concurrent booking/rescheduling races.
-- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V14, all 16 active tables, session/token constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
+- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V18, all 16 active tables, queue/session/token constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
 - OpenAPI 3 documentation exposes typed request/response schemas, reusable error responses and JWT Bearer authorization.
 - Swagger UI and OpenAPI JSON are public in development and disabled by default in production.
 - React clients are supported through an exact-origin CORS allowlist with credentialed requests for auth cookies.
@@ -73,8 +74,8 @@ Spring Boot backend for the dental clinic management system, including the patie
 - Gemini 3.5 Flash chat and `gemini-embedding-2` integration through Spring AI, disabled safely until explicit environment configuration is supplied.
 - JSON dental knowledge ingestion, SHA-256 change detection, staged vector activation and scheduled/manual synchronization without an upload API.
 - PostgreSQL pgvector cosine retrieval with top-K, similarity threshold, source/version and clinical-review metadata filters.
-- Multi-intent Vietnamese conversation understanding for symptoms, service/doctor recommendations and available-slot lookup in any order.
-- Server-verified service, doctor and slot cards; the model cannot create or book an appointment and never receives authority over database writes.
+- Multi-intent Vietnamese conversation understanding for symptoms, service/doctor recommendations and available-case lookup in any order.
+- Server-verified service, doctor and appointment-case cards; the model cannot create or book an appointment and never receives authority over database writes.
 - SSE chatbot responses with deterministic lifecycle events, timeout/error handling and persistence only after a complete validated answer.
 - Prompt-injection boundaries, source traceability, insufficient-knowledge fallback and output rejection for UUIDs, secret markers, JWTs and Google API-key shapes.
 
@@ -141,7 +142,7 @@ FROM pg_available_extensions
 WHERE name IN ('vector', 'uuid-ossp');
 ```
 
-Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql) through [V14__add_knowledge_sync_token.sql](./src/main/resources/db/migration/V14__add_knowledge_sync_token.sql). V6 only backfills doctors with no weekly schedule and never overwrites partial/customized schedules. V7 removes the obsolete doctor-day-off table only when it is empty. V8 similarly removes `medical_record_drafts` only when it is empty; if historical rows exist, migration stops so the unfinalized patient data can be reviewed or archived explicitly. V9 normalizes direct legacy `08:00–12:00` morning schedules to the supported `08:00–11:00` window. V10 repairs schedule times shifted by the former UTC JDBC calendar and refuses to run if shortening a legacy morning would affect an active future 11:00 appointment. V11 adds nullable `dental_services.image_url`. V12 enforces one chatbot session per user. V13 adds `knowledge_sources` state and version metadata. V14 adds the synchronization claim token used to prevent stale or concurrent synchronization from activating the wrong vector version. Hibernate only validates the schema through `ddl-auto=validate`.
+Flyway applies [V1__init_schema.sql](./src/main/resources/db/migration/V1__init_schema.sql) through [V18__enforce_appointment_queue_contract.sql](./src/main/resources/db/migration/V18__enforce_appointment_queue_contract.sql). V6 backfills doctors with no weekly schedule. V7 removes the obsolete doctor-day-off table only when it is empty. V8 similarly removes `medical_record_drafts` only when it is empty. V9 and V10 normalize/repair legacy schedule times. V11 adds `dental_services.image_url`. V12 enforces one chatbot session per user. V13 and V14 add knowledge-source synchronization state. V15 expands Appointment with `appointment_date`, `session` and `queue_number`, safely backfills compatible legacy rows and adds partial unique indexes for the doctor queue and patient session. V16 standardizes all weekly schedules to Monday-Saturday `08:00-11:00` and `14:00-17:00`. V17 allows interrupted knowledge embedding synchronization to resume safely. V18 refuses to run while any Appointment has an incomplete queue model, then makes all three queue columns mandatory and removes the legacy active-slot index based on `scheduled_start_at`. The `scheduled_start_at` column remains the compatibility timestamp containing the estimated start. Hibernate only validates the schema through `ddl-auto=validate`.
 
 ## Run
 
@@ -256,9 +257,9 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `PUT /api/admin/services/{id}`
 - `PATCH /api/admin/services/{id}/status`
 - `GET /api/doctors/{doctorId}/services`
-- `GET /api/doctor/services` (DOCTOR; active services assigned to the authenticated doctor)
+- `GET /api/doctor/services` (DOCTOR; active services assigned to the authenticated doctor; no fixed `durationMinutes` is returned because examination duration is flexible)
 - `GET /api/doctors/{doctorId}/schedule`
-- `GET /api/doctors/{doctorId}/available-slots?serviceId={serviceId}&date={yyyy-MM-dd}`
+- `GET /api/doctors/{doctorId}/available-slots?serviceId={serviceId}&date={yyyy-MM-dd}` (route name retained for compatibility; returns available queue cases)
 - `GET /api/doctors/{doctorId}/calendar?serviceId={serviceId}&fromDate={yyyy-MM-dd}&toDate={yyyy-MM-dd}` (dates optional; defaults to today through today + 29 days)
 - `POST /api/patient/appointments`
 - `GET /api/patient/appointments`
@@ -298,6 +299,29 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
 - `PUT /api/admin/doctors/{doctorId}/schedules/{scheduleId}`
 - `DELETE /api/admin/doctors/{doctorId}/schedules/{scheduleId}`
 
+### Two-case scheduling contract
+
+- `MORNING` covers `08:00-11:00`: Ca 1 is estimated at `08:00`, Ca 2 at `09:30`.
+- `AFTERNOON` covers `14:00-17:00`: Ca 1 is estimated at `14:00`, Ca 2 at `15:30`.
+- `estimatedStartTime`/`estimatedStartAt` tell the patient when to arrive; they are not a guaranteed start or fixed examination duration.
+- The booking and reschedule request identifies a case with `appointmentDate`, `session` and `queueNumber` (`1` or `2`).
+- For a given day/session, one doctor queue position can have only one active Appointment and one Patient can have only one active Appointment, regardless of doctor or service.
+- `CANCELLED`, `COMPLETED` and `NO_SHOW` are terminal and do not reserve the active doctor queue or patient session. A cancelled Appointment remains in PostgreSQL for audit.
+- Online booking, self-cancellation and self-rescheduling must occur before `05:00` on the relevant appointment date in `Asia/Ho_Chi_Minh`.
+
+Example booking request:
+
+```json
+{
+  "doctorId": "<DOCTOR_ID>",
+  "serviceId": "<SERVICE_ID>",
+  "appointmentDate": "2026-11-10",
+  "session": "MORNING",
+  "queueNumber": 2,
+  "previousAppointmentId": null
+}
+```
+
 ### Doctor calendar response example
 
 ```json
@@ -308,33 +332,50 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
   "data": {
     "doctorId": "<DOCTOR_ID>",
     "serviceId": "<SERVICE_ID>",
-    "fromDate": "2026-10-22",
-    "toDate": "2026-11-20",
+    "fromDate": "2026-11-10",
+    "toDate": "2026-12-05",
     "days": [
       {
-        "date": "2026-10-22",
-        "dayOfWeek": 4,
+        "date": "2026-11-10",
+        "dayOfWeek": 2,
         "status": "AVAILABLE",
         "sessions": [
           {
             "session": "MORNING",
             "status": "AVAILABLE",
-            "availableSlotCount": 3,
+            "availableSlotCount": 2,
             "availableSlots": [
-              {"startAt": "2026-10-22T08:00:00+07:00", "endAt": "2026-10-22T09:00:00+07:00"},
-              {"startAt": "2026-10-22T09:00:00+07:00", "endAt": "2026-10-22T10:00:00+07:00"},
-              {"startAt": "2026-10-22T10:00:00+07:00", "endAt": "2026-10-22T11:00:00+07:00"}
+              {
+                "queueNumber": 1,
+                "estimatedStartTime": "08:00:00",
+                "startAt": "2026-11-10T08:00:00+07:00",
+                "endAt": "2026-11-10T11:00:00+07:00"
+              },
+              {
+                "queueNumber": 2,
+                "estimatedStartTime": "09:30:00",
+                "startAt": "2026-11-10T09:30:00+07:00",
+                "endAt": "2026-11-10T11:00:00+07:00"
+              }
             ]
           },
           {
             "session": "AFTERNOON",
             "status": "AVAILABLE",
-            "availableSlotCount": 4,
+            "availableSlotCount": 2,
             "availableSlots": [
-              {"startAt": "2026-10-22T13:00:00+07:00", "endAt": "2026-10-22T14:00:00+07:00"},
-              {"startAt": "2026-10-22T14:00:00+07:00", "endAt": "2026-10-22T15:00:00+07:00"},
-              {"startAt": "2026-10-22T15:00:00+07:00", "endAt": "2026-10-22T16:00:00+07:00"},
-              {"startAt": "2026-10-22T16:00:00+07:00", "endAt": "2026-10-22T17:00:00+07:00"}
+              {
+                "queueNumber": 1,
+                "estimatedStartTime": "14:00:00",
+                "startAt": "2026-11-10T14:00:00+07:00",
+                "endAt": "2026-11-10T17:00:00+07:00"
+              },
+              {
+                "queueNumber": 2,
+                "estimatedStartTime": "15:30:00",
+                "startAt": "2026-11-10T15:30:00+07:00",
+                "endAt": "2026-11-10T17:00:00+07:00"
+              }
             ]
           }
         ]
@@ -343,6 +384,8 @@ Pagination is zero-based and returned inside `data` with `content`, `page`, `siz
   }
 }
 ```
+
+The calendar keeps the existing `availableSlots`, `startAt` and `endAt` field names for API compatibility. Each array item is a queue case: `startAt` is its estimated start and `endAt` is the enclosing session end, not a guaranteed examination interval.
 
 ## AI chatbot and RAG operation
 
@@ -383,18 +426,19 @@ Successful SSE event order is `started` → one or more `token` → `metadata` �
 - Configure `CORS_ALLOWED_ORIGINS` with exact React origins. Wildcard origins are not used.
 - To upload a service image, send an ADMIN-authenticated multipart request to `/api/admin/services/images`, then use the returned `imageUrl` in the service create/update payload.
 - Treat `401` as an expired/missing session, `403` as insufficient permission and `409` as a recoverable business conflict.
-- A cancelled appointment may include `cancellationReason`, `cancellationSource` and `cancelledAt`. Treat an existing `cancellationSource` as immutable historical audit data; it does not affect current slot availability.
+- A cancelled appointment may include `cancellationReason`, `cancellationSource` and `cancelledAt`. Treat an existing `cancellationSource` as immutable historical audit data; a terminal Appointment no longer reserves its doctor queue or patient session.
 - Parse timestamps as ISO-8601 values. Appointment display and day-based queries follow `Asia/Ho_Chi_Minh`.
-- Load the booking month with `/api/doctors/{doctorId}/calendar`. Render the returned `days` directly and use each slot's `startAt` as the booking value. The API returns at most the rolling 30-day window; refresh it when the clinic date changes.
-- The calendar session status is `AVAILABLE`, `FULL`, `NOT_WORKING` or `UNAVAILABLE`. `NOT_WORKING` means no matching weekly schedule (including Sunday); `FULL` means scheduled slots are occupied; `UNAVAILABLE` means no slot remains bookable because of time or another booking rule.
+- Load the booking month with `/api/doctors/{doctorId}/calendar`. Render the returned `days` directly, then submit the selected case's date, `session` and `queueNumber`; do not derive a fixed duration from `startAt`/`endAt`. The API returns at most the rolling 30-day window; refresh it when the clinic date changes.
+- The calendar session status is `AVAILABLE`, `FULL`, `NOT_WORKING` or `UNAVAILABLE`. `NOT_WORKING` means no matching weekly schedule (including Sunday); `FULL` means both queue cases are occupied; `UNAVAILABLE` means no case remains bookable because the `05:00` cutoff or another booking rule applies.
+- Show the patient that the estimated start may move with the preceding examination and recommend arrival about 15 minutes early.
 - Use the documented `ApiResponse` envelope and zero-based pagination contract instead of relying on JPA entity shapes.
 - Send only `serviceId` and `quantity` when a doctor updates Payment items. Never send or calculate prices as trusted frontend data.
 - A completed examination exposes an UNPAID payment until Staff, or Admin as backup, confirms actual receipt at the counter. `BANK_TRANSFER` is manual confirmation, not an online gateway.
 - Normal booking omits `previousAppointmentId`. A patient books a recommended follow-up through the same endpoint with the completed appointment ID in `previousAppointmentId`.
 - Revenue belongs to the clinic date containing `paidAt`, which may differ from the examination date.
 - Render the chatbot only for an authenticated PATIENT. Fetch the current session/history from `/api/chat`, consume SSE events in order and keep the Access Token in memory.
-- Treat service, doctor and slot cards from SSE `metadata` as the authoritative navigation data. Do not parse IDs, prices or slots from generated prose.
-- A slot card may prefill the existing booking page, but the patient must still confirm the booking and the Backend revalidates availability and locking.
+- Treat service, doctor and appointment-case cards from SSE `metadata` as the authoritative navigation data. Do not parse IDs, prices or queue cases from generated prose.
+- An appointment-case card may prefill the existing booking page, but the patient must still confirm the booking and the Backend revalidates availability and locking.
 
 ## Direct payment workflow
 

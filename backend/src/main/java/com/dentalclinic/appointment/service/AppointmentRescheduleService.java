@@ -96,9 +96,9 @@ public class AppointmentRescheduleService {
         requireBeforeCutoff(appointment);
 
         Instant oldScheduledStartAt = appointment.getScheduledStartAt();
-        LocalDate oldAppointmentDate = resolveAppointmentDate(appointment);
+        LocalDate oldAppointmentDate = appointment.getAppointmentDate();
         ScheduleSession oldSession = appointment.getSession();
-        Short oldQueueNumber = appointment.getQueueNumber();
+        short oldQueueNumber = appointment.getQueueNumber();
         SchedulingPolicy.ScheduledCase newCase = schedulingPolicy.resolveCase(
                 request.appointmentDate(),
                 request.session(),
@@ -114,21 +114,11 @@ public class AppointmentRescheduleService {
 
         DoctorService doctorService = appointment.getDoctorService();
         UUID serviceId = doctorService.getService().getId();
-        Instant targetSessionStart = clinicTimeProvider.toInstant(
-                newCase.appointmentDate(),
-                schedulingPolicy.sessionStart(newCase.session())
-        );
-        Instant targetSessionEnd = clinicTimeProvider.toInstant(
-                newCase.appointmentDate(),
-                schedulingPolicy.sessionEnd(newCase.session())
-        );
         if (appointmentRepository.existsOtherActivePatientSession(
                 appointment.getId(),
                 patient.getId(),
                 newCase.appointmentDate(),
                 newCase.session(),
-                targetSessionStart,
-                targetSessionEnd,
                 ACTIVE_APPOINTMENT_STATUSES
         )) {
             throw new ConflictException(
@@ -178,7 +168,7 @@ public class AppointmentRescheduleService {
                 appointment.getStatus(),
                 oldAppointmentDate,
                 oldSession,
-                oldQueueNumber == null ? null : oldQueueNumber.intValue(),
+                oldQueueNumber,
                 toClinicOffset(oldScheduledStartAt),
                 newCase.appointmentDate(),
                 newCase.session(),
@@ -202,7 +192,7 @@ public class AppointmentRescheduleService {
     }
 
     private void requireBeforeCutoff(Appointment appointment) {
-        if (!schedulingPolicy.isBeforePatientDailyCutoff(resolveAppointmentDate(appointment))) {
+        if (!schedulingPolicy.isBeforePatientDailyCutoff(appointment.getAppointmentDate())) {
             throw new ConflictException(CUTOFF_MESSAGE);
         }
     }
@@ -211,7 +201,7 @@ public class AppointmentRescheduleService {
             Instant oldScheduledStartAt,
             LocalDate oldAppointmentDate,
             ScheduleSession oldSession,
-            Short oldQueueNumber,
+            short oldQueueNumber,
             SchedulingPolicy.ScheduledCase newCase,
             Instant changedAt
     ) {
@@ -219,10 +209,8 @@ public class AppointmentRescheduleService {
         ZonedDateTime newClinicTime = clinicTimeProvider.toClinicTime(newCase.estimatedStartAt());
         ObjectNode details = JsonNodeFactory.instance.objectNode();
         details.put("old_appointment_date", oldAppointmentDate.toString());
-        if (oldSession != null && oldQueueNumber != null) {
-            details.put("old_session", oldSession.name());
-            details.put("old_queue_number", oldQueueNumber);
-        }
+        details.put("old_session", oldSession.name());
+        details.put("old_queue_number", oldQueueNumber);
         details.put("new_appointment_date", newCase.appointmentDate().toString());
         details.put("new_session", newCase.session().name());
         details.put("new_queue_number", newCase.queueNumber());
@@ -230,12 +218,6 @@ public class AppointmentRescheduleService {
         details.put("new_estimated_start_at", newClinicTime.toOffsetDateTime().toString());
         details.put("changed_at", toClinicOffset(changedAt).toString());
         return details;
-    }
-
-    private LocalDate resolveAppointmentDate(Appointment appointment) {
-        return appointment.getAppointmentDate() == null
-                ? clinicTimeProvider.toClinicTime(appointment.getScheduledStartAt()).toLocalDate()
-                : appointment.getAppointmentDate();
     }
 
     private OffsetDateTime toClinicOffset(Instant instant) {

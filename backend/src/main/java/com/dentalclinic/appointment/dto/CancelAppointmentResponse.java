@@ -12,7 +12,7 @@ public record CancelAppointmentResponse(
         AppointmentStatus status,
         LocalDate appointmentDate,
         ScheduleSession session,
-        Integer queueNumber,
+        int queueNumber,
         OffsetDateTime estimatedStartAt,
         String reason,
         OffsetDateTime cancelledAt

@@ -57,15 +57,15 @@ public class Appointment {
     @Column(name = "scheduled_start_at", nullable = false)
     private Instant scheduledStartAt;
 
-    @Column(name = "appointment_date")
+    @Column(name = "appointment_date", nullable = false)
     private LocalDate appointmentDate;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "session", columnDefinition = "session_enum")
+    @Column(name = "session", nullable = false, columnDefinition = "session_enum")
     private ScheduleSession session;
 
-    @Column(name = "queue_number")
+    @Column(name = "queue_number", nullable = false)
     private Short queueNumber;
 
     @Enumerated(EnumType.STRING)

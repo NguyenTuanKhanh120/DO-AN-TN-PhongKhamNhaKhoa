@@ -2,6 +2,7 @@ package com.dentalclinic.medicalrecord;
 
 import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.AppointmentQueueFixtureSupport;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
@@ -326,6 +327,7 @@ class PatientMedicalHistoryPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setScheduledStartAt(scheduledStartAt);
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(appointment, scheduledStartAt);
         appointment.setStatus(status);
         return appointmentRepository.saveAndFlush(appointment);
     }

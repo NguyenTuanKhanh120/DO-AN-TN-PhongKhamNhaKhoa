@@ -202,8 +202,6 @@ class AppointmentBookingServiceTest {
                 eq(patient.getId()),
                 eq(LocalDate.of(2026, 10, 12)),
                 eq(ScheduleSession.AFTERNOON),
-                eq(Instant.parse("2026-10-12T07:00:00Z")),
-                eq(Instant.parse("2026-10-12T10:00:00Z")),
                 any()
         )).thenReturn(true);
 

@@ -18,7 +18,6 @@ import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,21 +34,15 @@ public class DoctorServiceMappingService {
     private final DoctorRepository doctorRepository;
     private final DentalServiceRepository dentalServiceRepository;
     private final DoctorServiceRepository doctorServiceRepository;
-    private final long slotDurationMinutes;
 
     public DoctorServiceMappingService(
             DoctorRepository doctorRepository,
             DentalServiceRepository dentalServiceRepository,
-            DoctorServiceRepository doctorServiceRepository,
-            @Value("${clinic.appointment.slot-duration-minutes:60}") long slotDurationMinutes
+            DoctorServiceRepository doctorServiceRepository
     ) {
-        if (slotDurationMinutes <= 0) {
-            throw new IllegalArgumentException("Cấu hình thời lượng slot không hợp lệ");
-        }
         this.doctorRepository = doctorRepository;
         this.dentalServiceRepository = dentalServiceRepository;
         this.doctorServiceRepository = doctorServiceRepository;
-        this.slotDurationMinutes = slotDurationMinutes;
     }
 
     @Transactional(readOnly = true)
@@ -181,7 +174,6 @@ public class DoctorServiceMappingService {
                 dentalService.getName(),
                 dentalService.getDescription(),
                 dentalService.getPrice(),
-                slotDurationMinutes,
                 dentalService.getImageUrl(),
                 dentalService.isActive()
         );

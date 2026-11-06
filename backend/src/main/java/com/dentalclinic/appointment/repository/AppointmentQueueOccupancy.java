@@ -2,7 +2,6 @@ package com.dentalclinic.appointment.repository;
 
 import com.dentalclinic.schedule.entity.ScheduleSession;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -21,6 +20,4 @@ public interface AppointmentQueueOccupancy {
     ScheduleSession getSession();
 
     Short getQueueNumber();
-
-    Instant getScheduledStartAt();
 }

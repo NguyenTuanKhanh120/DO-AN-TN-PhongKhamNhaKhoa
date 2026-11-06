@@ -15,7 +15,7 @@ Hệ thống có bốn vai trò:
 1.1. PATIENT - Bệnh nhân
      - Tự đăng ký tài khoản.
      - Quản lý hồ sơ cá nhân.
-     - Xem bác sĩ, dịch vụ, lịch làm việc, calendar và slot còn trống.
+     - Xem bác sĩ, dịch vụ, lịch làm việc, calendar và ca khám còn trống.
      - Đặt lịch, đổi lịch, hủy lịch và đặt lịch tái khám.
      - Xem lịch hẹn, bệnh án, đơn thuốc và phiếu thanh toán của chính mình.
 
@@ -81,7 +81,7 @@ Hệ thống có bốn vai trò:
      - Admin tạo, cập nhật và thay đổi trạng thái làm việc của bác sĩ.
      - Hồ sơ gồm họ tên, chuyên khoa, số giấy phép, tiểu sử, đánh giá và số
        năm kinh nghiệm.
-     - Bác sĩ không ở trạng thái ACTIVE không sinh slot đặt lịch mới.
+     - Bác sĩ không ở trạng thái ACTIVE không sinh ca đặt lịch mới.
      - Danh sách và chi tiết bác sĩ được cung cấp cho màn hình công khai.
 
 3.2. Quản lý dịch vụ nha khoa
@@ -104,10 +104,11 @@ Hệ thống có bốn vai trò:
      - Khi Admin tạo bác sĩ, Backend tự tạo 12 DoctorSchedule trong cùng
        transaction với User và Doctor.
      - Lịch mặc định áp dụng từ Thứ Hai đến Thứ Bảy:
-         + MORNING: 08:00-11:00, gồm 3 slot.
-         + AFTERNOON: 13:00-17:00, gồm 4 slot.
+         + MORNING: 08:00-11:00, Ca 1 dự kiến 08:00 và Ca 2 dự kiến 09:30.
+         + AFTERNOON: 14:00-17:00, Ca 1 dự kiến 14:00 và Ca 2 dự kiến 15:30.
      - Chủ Nhật không làm việc.
-     - Slot có thời lượng cố định 60 phút.
+     - Giờ dự kiến không phải thời lượng khám cố định; thời gian bắt đầu thực tế
+       có thể sớm hoặc muộn hơn tùy ca trước.
      - Admin được xem, thêm, sửa hoặc xóa lịch tuần trong khung giờ cho phép.
      - Không cho sửa hoặc xóa lịch nếu làm ảnh hưởng Appointment tương lai
        đang hoạt động.
@@ -116,32 +117,33 @@ Hệ thống có bốn vai trò:
        bảng doctor_days_off.
 
 
-4. CALENDAR, SLOT VÀ ĐẶT LỊCH
+4. CALENDAR, CA KHÁM VÀ ĐẶT LỊCH
 --------------------------------------------------------------------------------
 
-4.1. Calendar và slot khả dụng
-     - Slot được sinh động từ DoctorSchedule, không có bảng slots.
+4.1. Calendar và ca khả dụng
+     - Mỗi buổi sinh động hai ca từ DoctorSchedule, không có bảng slots.
      - Calendar hỗ trợ xem trong khoảng tối đa 30 ngày.
      - Trạng thái ngày gồm AVAILABLE, FULL, NOT_WORKING và UNAVAILABLE.
      - Khả năng đặt lịch được xác định từ:
          + Trạng thái bác sĩ và dịch vụ.
          + Quan hệ phân công Doctor-Service.
          + Lịch làm việc tuần.
-         + Các Appointment đã chiếm slot.
-         + Thời điểm hiện tại và quy tắc đặt trước.
+         + Các Appointment đang hoạt động đã chiếm ca.
+         + Thời điểm hiện tại và cutoff 05:00 sáng ngày khám.
      - Chủ Nhật hoặc ngày không có lịch tương ứng trả NOT_WORKING.
-     - Calendar không trả thông tin bệnh nhân đang chiếm slot.
+     - Calendar không trả thông tin bệnh nhân đang chiếm ca.
 
 4.2. Đặt lịch khám
-     - Luồng đặt lịch: Dịch vụ -> Bác sĩ -> Ngày -> Slot còn trống.
+     - Luồng đặt lịch: Dịch vụ -> Bác sĩ -> Ngày -> Buổi -> Ca 1/Ca 2.
      - Chỉ Patient đã đăng nhập được tạo Appointment.
      - Appointment mới có trạng thái BOOKED, không qua PENDING/CONFIRMED và
        không cần bác sĩ hoặc Admin duyệt.
-     - Lịch phải được đặt trước ít nhất 120 phút (2 giờ).
+     - Booking online của một ngày chỉ được thực hiện trước 05:00 sáng ngày đó.
      - Backend kiểm tra lại toàn bộ bác sĩ, dịch vụ, phân công, lịch tuần,
-       thời gian và slot trong transaction.
-     - Unique partial index và transaction bảo đảm hai bệnh nhân không thể đặt
-       cùng một bác sĩ trong cùng một slot; request thua trả HTTP 409 Conflict.
+       cutoff và ca trong transaction.
+     - Unique partial index bảo đảm một bác sĩ chỉ có một Appointment đang hoạt
+       động trên mỗi ngày/buổi/queueNumber và một Patient chỉ có một Appointment
+       đang hoạt động trong cùng ngày/buổi; request thua trả HTTP 409 Conflict.
      - Hệ thống ghi AppointmentHistory với action BOOK.
 
 4.3. Xem lịch hẹn
@@ -152,14 +154,16 @@ Hệ thống có bốn vai trò:
 
 4.4. Hủy lịch
      - Patient chỉ được hủy Appointment của mình đang ở trạng thái BOOKED.
-     - Phải hủy trước giờ hẹn ít nhất 90 phút.
+     - Phải hủy trước 05:00 sáng ngày khám.
      - Trạng thái chuyển BOOKED -> CANCELLED.
      - Lý do, nguồn hủy, thời gian và action CANCEL được ghi lịch sử.
+     - Appointment CANCELLED vẫn tồn tại để audit nhưng giải phóng ca của bác sĩ
+       và quyền đặt một lịch trong buổi của Patient. Chỉ được đặt lại trước 05:00.
 
 4.5. Đổi lịch
      - Patient chỉ được đổi Appointment của mình đang BOOKED.
-     - Điều kiện 90 phút được tính từ giờ hẹn cũ.
-     - Backend kiểm tra slot mới như khi đặt lịch và chống race condition.
+     - Phải đổi trước 05:00 sáng ngày hẹn cũ; ngày đích cũng phải chưa qua cutoff.
+     - Backend kiểm tra ca mới như khi đặt lịch và chống race condition.
      - Hệ thống cập nhật chính Appointment hiện tại, không tạo bản ghi mới.
      - Trạng thái vẫn là BOOKED và lịch sử ghi action RESCHEDULE.
 
@@ -178,6 +182,9 @@ Nhánh ngoại lệ:
 
 5.1. Bắt đầu khám
      - Bác sĩ chọn Appointment thuộc chính mình và bắt đầu khám.
+     - Ca 1 chỉ bắt đầu từ giờ mở đầu buổi; Ca 2 chỉ bắt đầu khi Ca 1 cùng bác sĩ,
+       ngày và buổi đã COMPLETED, CANCELLED, NO_SHOW hoặc không tồn tại.
+     - Hệ thống giữ nguyên queueNumber để bảo toàn lịch sử, không tự dồn Ca 2.
      - Appointment chuyển trực tiếp từ BOOKED sang IN_PROGRESS.
      - Hệ thống lưu actual_start_at và lịch sử START_EXAM.
      - Không có bước check-in mới; trạng thái CHECKED_IN chỉ còn phục vụ dữ
@@ -261,10 +268,10 @@ Nhánh ngoại lệ:
 
 7.2. Bệnh nhân tự đặt lịch tái khám
      - Patient xem chỉ định trong bệnh án đã hoàn thành.
-     - Patient tự chọn dịch vụ, bác sĩ, ngày và slot như lịch khám thường.
+     - Patient tự chọn dịch vụ, bác sĩ, ngày, buổi và ca như lịch khám thường.
      - Request đặt lịch gửi previousAppointmentId để liên kết với lần khám cũ.
      - Backend kiểm tra quyền sở hữu, trạng thái COMPLETED, chỉ định tái khám,
-       slot và ngăn tạo trùng.
+       ca, cutoff 05:00 và ngăn tạo trùng.
      - Không có bảng follow_up_appointments riêng.
 
 7.3. Lịch sử y tế
@@ -344,7 +351,7 @@ PATIENT:
     Đăng ký/đăng nhập
     -> Chọn dịch vụ
     -> Chọn bác sĩ được phân công
-    -> Xem calendar và slot
+    -> Xem calendar và ca khám
     -> Đặt lịch BOOKED
     -> Đến khám
     -> Xem bệnh án và Payment

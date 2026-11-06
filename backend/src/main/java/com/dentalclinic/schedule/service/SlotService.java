@@ -26,14 +26,11 @@ import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
 import com.dentalclinic.user.entity.UserStatus;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.DayOfWeek;
 import java.time.ZoneId;
@@ -46,7 +43,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.UUID;
 
 @Service
@@ -70,8 +66,6 @@ public class SlotService {
     private final AppointmentRepository appointmentRepository;
     private final ClinicTimeProvider clinicTimeProvider;
     private final SchedulingPolicy schedulingPolicy;
-    private final Duration slotDuration;
-    private final Duration bookingMinAdvance;
 
     public SlotService(
             DoctorRepository doctorRepository,
@@ -80,13 +74,8 @@ public class SlotService {
             DoctorScheduleRepository doctorScheduleRepository,
             AppointmentRepository appointmentRepository,
             ClinicTimeProvider clinicTimeProvider,
-            SchedulingPolicy schedulingPolicy,
-            @Value("${clinic.appointment.slot-duration-minutes:60}") long slotDurationMinutes,
-            @Value("${clinic.appointment.booking-min-advance-minutes:120}") long bookingMinAdvanceMinutes
+            SchedulingPolicy schedulingPolicy
     ) {
-        if (slotDurationMinutes <= 0 || bookingMinAdvanceMinutes < 0) {
-            throw new IllegalArgumentException("Cấu hình thời lượng slot hoặc thời gian đặt trước không hợp lệ");
-        }
         this.doctorRepository = doctorRepository;
         this.dentalServiceRepository = dentalServiceRepository;
         this.doctorServiceRepository = doctorServiceRepository;
@@ -94,8 +83,6 @@ public class SlotService {
         this.appointmentRepository = appointmentRepository;
         this.clinicTimeProvider = clinicTimeProvider;
         this.schedulingPolicy = schedulingPolicy;
-        this.slotDuration = Duration.ofMinutes(slotDurationMinutes);
-        this.bookingMinAdvance = Duration.ofMinutes(bookingMinAdvanceMinutes);
     }
 
     @Transactional(readOnly = true)
@@ -116,8 +103,7 @@ public class SlotService {
         Map<QueueKey, Set<Integer>> occupiedQueues = loadOccupiedQueues(
                 doctorId,
                 date,
-                date,
-                clinicZone
+                date
         );
         return generateCaseCandidates(context.schedules(), date, clinicZone).stream()
                 .filter(candidate -> !isOccupied(candidate, date, occupiedQueues))
@@ -164,8 +150,7 @@ public class SlotService {
         Map<QueueKey, Set<Integer>> occupiedQueues = loadOccupiedQueues(
                 doctorId,
                 range.fromDate(),
-                range.toDate(),
-                clinicZone
+                range.toDate()
         );
 
         Map<Integer, Map<ScheduleSession, DoctorSchedule>> schedulesByDay = groupSchedules(schedules);
@@ -186,29 +171,6 @@ public class SlotService {
                 range.toDate(),
                 days
         );
-    }
-
-    @Transactional(readOnly = true)
-    public DoctorService requireAvailableSlot(
-            UUID doctorId,
-            UUID serviceId,
-            Instant scheduledStartAt
-    ) {
-        SlotContext context = requireScheduledSlot(doctorId, serviceId, scheduledStartAt);
-        if (scheduledStartAt.isBefore(clinicTimeProvider.now().plus(bookingMinAdvance))) {
-            throw new BusinessException(
-                    ErrorCode.INVALID_REQUEST,
-                    "Bạn cần đặt lịch trước giờ khám ít nhất 2 giờ"
-            );
-        }
-        if (appointmentRepository.existsOccupiedStart(
-                doctorId,
-                scheduledStartAt,
-                AppointmentStatus.CANCELLED
-        )) {
-            throw slotConflict();
-        }
-        return context.doctorService();
     }
 
     @Transactional(readOnly = true)
@@ -283,7 +245,6 @@ public class SlotService {
                 doctorId,
                 appointmentDate,
                 appointmentDate,
-                clinicTimeProvider.zoneId(),
                 excludedAppointmentId
         );
         if (occupiedQueues
@@ -292,51 +253,6 @@ public class SlotService {
             throw occupiedConflict;
         }
         return context.doctorService();
-    }
-
-    @Transactional(readOnly = true)
-    public DoctorService requireAvailableRescheduleSlot(
-            UUID doctorId,
-            UUID serviceId,
-            Instant scheduledStartAt
-    ) {
-        SlotContext context = requireScheduledSlot(doctorId, serviceId, scheduledStartAt);
-        if (!scheduledStartAt.isAfter(clinicTimeProvider.now())) {
-            throw new BusinessException(
-                    ErrorCode.INVALID_REQUEST,
-                    "Khung giờ mới phải nằm trong tương lai"
-            );
-        }
-        if (appointmentRepository.existsOccupiedStart(
-                doctorId,
-                scheduledStartAt,
-                AppointmentStatus.CANCELLED
-        )) {
-            throw rescheduleSlotConflict();
-        }
-        return context.doctorService();
-    }
-
-    private SlotContext requireScheduledSlot(
-            UUID doctorId,
-            UUID serviceId,
-            Instant scheduledStartAt
-    ) {
-        ZoneId clinicZone = clinicTimeProvider.zoneId();
-        LocalDate appointmentDate = scheduledStartAt.atZone(clinicZone).toLocalDate();
-        SlotContext context = loadSlotContext(doctorId, serviceId, appointmentDate);
-        boolean scheduled = generateLegacySlotCandidates(
-                context.schedules(),
-                appointmentDate,
-                clinicZone
-        ).containsKey(scheduledStartAt);
-        if (!scheduled) {
-            throw new BusinessException(
-                    ErrorCode.INVALID_REQUEST,
-                    "Khung giờ không thuộc lịch làm việc của bác sĩ"
-            );
-        }
-        return context;
     }
 
     private SlotContext loadSlotContext(UUID doctorId, UUID serviceId, LocalDate date) {
@@ -551,28 +467,6 @@ public class SlotService {
                 .toList();
     }
 
-    private TreeMap<Instant, SlotCandidate> generateLegacySlotCandidates(
-            List<DoctorSchedule> schedules,
-            LocalDate date,
-            ZoneId clinicZone
-    ) {
-        TreeMap<Instant, SlotCandidate> candidates = new TreeMap<>();
-        for (DoctorSchedule schedule : schedules) {
-            LocalDateTime cursor = date.atTime(schedule.getStartTime());
-            LocalDateTime scheduleEnd = date.atTime(schedule.getEndTime());
-            while (!cursor.plus(slotDuration).isAfter(scheduleEnd)) {
-                ZonedDateTime startAt = cursor.atZone(clinicZone);
-                ZonedDateTime endAt = startAt.plus(slotDuration);
-                candidates.putIfAbsent(
-                        startAt.toInstant(),
-                        new SlotCandidate(schedule, startAt, endAt)
-                );
-                cursor = cursor.plus(slotDuration);
-            }
-        }
-        return candidates;
-    }
-
     private AvailableSlotResponse toResponse(LocalDate date, CaseCandidate candidate) {
         return new AvailableSlotResponse(
                 date,
@@ -588,101 +482,37 @@ public class SlotService {
     private Map<QueueKey, Set<Integer>> loadOccupiedQueues(
             UUID doctorId,
             LocalDate fromDate,
-            LocalDate toDate,
-            ZoneId clinicZone
+            LocalDate toDate
     ) {
-        return loadOccupiedQueues(doctorId, fromDate, toDate, clinicZone, null);
+        return loadOccupiedQueues(doctorId, fromDate, toDate, null);
     }
 
     private Map<QueueKey, Set<Integer>> loadOccupiedQueues(
             UUID doctorId,
             LocalDate fromDate,
             LocalDate toDate,
-            ZoneId clinicZone,
             UUID excludedAppointmentId
     ) {
-        Instant rangeStart = fromDate.atStartOfDay(clinicZone).toInstant();
-        Instant rangeEnd = toDate.plusDays(1).atStartOfDay(clinicZone).toInstant();
         List<AppointmentQueueOccupancy> occupancies = appointmentRepository
                 .findActiveQueueOccupancies(
                         doctorId,
                         fromDate,
                         toDate,
-                        rangeStart,
-                        rangeEnd,
                         ACTIVE_APPOINTMENT_STATUSES
                 );
-        Map<QueueKey, List<ResolvedOccupancy>> grouped = new HashMap<>();
+        Map<QueueKey, Set<Integer>> grouped = new HashMap<>();
         for (AppointmentQueueOccupancy occupancy : occupancies) {
             if (excludedAppointmentId != null
                     && excludedAppointmentId.equals(occupancy.getAppointmentId())) {
                 continue;
             }
-            ResolvedOccupancy resolved = resolveOccupancy(occupancy, clinicZone);
-            if (resolved != null && !resolved.date().isBefore(fromDate)
-                    && !resolved.date().isAfter(toDate)) {
-                grouped.computeIfAbsent(
-                        new QueueKey(resolved.date(), resolved.session()),
-                        ignored -> new ArrayList<>()
-                ).add(resolved);
-            }
+            grouped.computeIfAbsent(
+                    new QueueKey(occupancy.getAppointmentDate(), occupancy.getSession()),
+                    ignored -> new HashSet<>()
+            ).add(occupancy.getQueueNumber().intValue());
         }
-
-        Map<QueueKey, Set<Integer>> result = new HashMap<>();
-        grouped.forEach((key, rows) -> {
-            Set<Integer> queues = new HashSet<>();
-            if (rows.size() >= SchedulingPolicy.MAX_QUEUE_NUMBER) {
-                queues.add(SchedulingPolicy.MIN_QUEUE_NUMBER);
-                queues.add(SchedulingPolicy.MAX_QUEUE_NUMBER);
-            } else {
-                rows.stream()
-                        .map(ResolvedOccupancy::queueNumber)
-                        .forEach(queues::add);
-            }
-            result.put(key, Set.copyOf(queues));
-        });
-        return result;
-    }
-
-    private ResolvedOccupancy resolveOccupancy(
-            AppointmentQueueOccupancy occupancy,
-            ZoneId clinicZone
-    ) {
-        ZonedDateTime legacyStart = occupancy.getScheduledStartAt().atZone(clinicZone);
-        LocalDate date = occupancy.getAppointmentDate() == null
-                ? legacyStart.toLocalDate()
-                : occupancy.getAppointmentDate();
-        ScheduleSession session = occupancy.getSession() == null
-                ? legacySession(legacyStart.toLocalTime())
-                : occupancy.getSession();
-        if (session == null) {
-            return null;
-        }
-        int queueNumber = occupancy.getQueueNumber() == null
-                ? legacyQueueNumber(session, legacyStart.toLocalTime())
-                : occupancy.getQueueNumber();
-        if (queueNumber < SchedulingPolicy.MIN_QUEUE_NUMBER
-                || queueNumber > SchedulingPolicy.MAX_QUEUE_NUMBER) {
-            return null;
-        }
-        return new ResolvedOccupancy(date, session, queueNumber);
-    }
-
-    private ScheduleSession legacySession(LocalTime startTime) {
-        if (startTime.isBefore(LocalTime.NOON)) {
-            return ScheduleSession.MORNING;
-        }
-        return ScheduleSession.AFTERNOON;
-    }
-
-    private int legacyQueueNumber(ScheduleSession session, LocalTime startTime) {
-        LocalTime secondCaseStart = schedulingPolicy.estimatedStartTime(
-                session,
-                SchedulingPolicy.MAX_QUEUE_NUMBER
-        );
-        return startTime.isBefore(secondCaseStart)
-                ? SchedulingPolicy.MIN_QUEUE_NUMBER
-                : SchedulingPolicy.MAX_QUEUE_NUMBER;
+        grouped.replaceAll((ignored, queues) -> Set.copyOf(queues));
+        return Map.copyOf(grouped);
     }
 
     private boolean isOccupied(
@@ -724,13 +554,6 @@ public class SlotService {
     ) {
     }
 
-    private record SlotCandidate(
-            DoctorSchedule schedule,
-            ZonedDateTime startAt,
-            ZonedDateTime endAt
-    ) {
-    }
-
     private record CaseCandidate(
             DoctorSchedule schedule,
             int queueNumber,
@@ -739,13 +562,6 @@ public class SlotService {
     }
 
     private record QueueKey(LocalDate date, ScheduleSession session) {
-    }
-
-    private record ResolvedOccupancy(
-            LocalDate date,
-            ScheduleSession session,
-            int queueNumber
-    ) {
     }
 
     private record CalendarRange(LocalDate fromDate, LocalDate toDate) {

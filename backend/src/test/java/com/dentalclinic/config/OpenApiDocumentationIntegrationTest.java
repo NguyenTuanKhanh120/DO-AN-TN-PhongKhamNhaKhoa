@@ -273,7 +273,7 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(schemas.path("DentalServiceResponse").path("properties").has("imageUrl"))
                 .isTrue();
         assertThat(schemas.path("DoctorAssignedServiceResponse").path("properties")
-                .has("durationMinutes")).isTrue();
+                .has("durationMinutes")).isFalse();
         JsonNode serviceImageUpload = operation(document, "/api/admin/services/images", "post");
         assertThat(serviceImageUpload.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
                 .isTrue();

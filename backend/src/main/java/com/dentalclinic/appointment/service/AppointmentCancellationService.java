@@ -81,11 +81,9 @@ public class AppointmentCancellationService {
         return new CancelAppointmentResponse(
                 appointment.getId(),
                 appointment.getStatus(),
-                resolveAppointmentDate(appointment),
+                appointment.getAppointmentDate(),
                 appointment.getSession(),
-                appointment.getQueueNumber() == null
-                        ? null
-                        : appointment.getQueueNumber().intValue(),
+                appointment.getQueueNumber().intValue(),
                 toClinicOffset(appointment.getScheduledStartAt()),
                 reason,
                 toClinicOffset(cancelledAt)
@@ -99,8 +97,7 @@ public class AppointmentCancellationService {
     }
 
     private void requireBeforeCutoff(Appointment appointment) {
-        LocalDate appointmentDate = resolveAppointmentDate(appointment);
-        if (!schedulingPolicy.isBeforePatientDailyCutoff(appointmentDate)) {
+        if (!schedulingPolicy.isBeforePatientDailyCutoff(appointment.getAppointmentDate())) {
             throw new ConflictException(CUTOFF_MESSAGE);
         }
     }
@@ -110,11 +107,9 @@ public class AppointmentCancellationService {
         details.put("old_status", AppointmentStatus.BOOKED.name());
         details.put("new_status", AppointmentStatus.CANCELLED.name());
         details.put("source", "PATIENT_REQUEST");
-        if (appointment.getAppointmentDate() != null) {
-            details.put("appointment_date", appointment.getAppointmentDate().toString());
-            details.put("session", appointment.getSession().name());
-            details.put("queue_number", appointment.getQueueNumber());
-        }
+        details.put("appointment_date", appointment.getAppointmentDate().toString());
+        details.put("session", appointment.getSession().name());
+        details.put("queue_number", appointment.getQueueNumber());
         details.put(
                 "estimated_start_at",
                 toClinicOffset(appointment.getScheduledStartAt()).toString()
@@ -125,12 +120,6 @@ public class AppointmentCancellationService {
 
     private OffsetDateTime toClinicOffset(Instant instant) {
         return clinicTimeProvider.toClinicTime(instant).toOffsetDateTime();
-    }
-
-    private LocalDate resolveAppointmentDate(Appointment appointment) {
-        return appointment.getAppointmentDate() == null
-                ? clinicTimeProvider.toClinicTime(appointment.getScheduledStartAt()).toLocalDate()
-                : appointment.getAppointmentDate();
     }
 
     private String normalizeReason(String reason) {

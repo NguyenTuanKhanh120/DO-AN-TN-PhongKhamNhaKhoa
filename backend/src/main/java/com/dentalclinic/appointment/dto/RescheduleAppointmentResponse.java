@@ -13,7 +13,7 @@ public record RescheduleAppointmentResponse(
         AppointmentStatus status,
         LocalDate oldAppointmentDate,
         ScheduleSession oldSession,
-        Integer oldQueueNumber,
+        int oldQueueNumber,
         OffsetDateTime oldEstimatedStartAt,
         LocalDate appointmentDate,
         ScheduleSession session,

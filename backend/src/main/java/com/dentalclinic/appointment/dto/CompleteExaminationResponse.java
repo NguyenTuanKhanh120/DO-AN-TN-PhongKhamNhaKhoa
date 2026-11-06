@@ -12,7 +12,7 @@ public record CompleteExaminationResponse(
         AppointmentStatus status,
         LocalDate appointmentDate,
         ScheduleSession session,
-        Integer queueNumber,
+        int queueNumber,
         OffsetDateTime estimatedStartAt,
         OffsetDateTime checkedInAt,
         OffsetDateTime actualStartAt,

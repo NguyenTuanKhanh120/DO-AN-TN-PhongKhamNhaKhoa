@@ -359,6 +359,10 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "select success from flyway_schema_history where version = '15'",
                 Boolean.class
         );
+        Boolean appointmentQueueContractMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '18'",
+                Boolean.class
+        );
         List<Map<String, Object>> queueColumns = jdbcTemplate.queryForList(
                 """
                         select column_name, data_type, udt_name, is_nullable
@@ -407,6 +411,7 @@ class PostgreSql18SchemaContractIntegrationTest {
         );
 
         assertThat(appointmentQueueMigrationSucceeded).isTrue();
+        assertThat(appointmentQueueContractMigrationSucceeded).isTrue();
         assertThat(queueColumns)
                 .extracting(
                         row -> row.get("column_name"),
@@ -416,22 +421,18 @@ class PostgreSql18SchemaContractIntegrationTest {
                 )
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple(
-                                "appointment_date", "date", "date", "YES"
+                                "appointment_date", "date", "date", "NO"
                         ),
                         org.assertj.core.groups.Tuple.tuple(
-                                "queue_number", "smallint", "int2", "YES"
+                                "queue_number", "smallint", "int2", "NO"
                         ),
                         org.assertj.core.groups.Tuple.tuple(
-                                "session", "USER-DEFINED", "session_enum", "YES"
+                                "session", "USER-DEFINED", "session_enum", "NO"
                         )
                 );
-        assertThat(queueConstraints).containsExactly(
-                "ck_appointments_queue_model_complete",
-                "ck_appointments_queue_number"
-        );
+        assertThat(queueConstraints).containsExactly("ck_appointments_queue_number");
         assertThat(queueIndexes).containsExactly(
                 "ux_appointments_doctor_queue_active",
-                "ux_appointments_doctor_start_active_legacy",
                 "ux_appointments_patient_session_active"
         );
         assertThat(oldDoctorStartIndexCount).isZero();
@@ -635,6 +636,24 @@ class PostgreSql18SchemaContractIntegrationTest {
     }
 
     @Test
+    void shouldRefuseQueueContractWhenAnAppointmentIsIncomplete() throws Exception {
+        createTemporaryLegacyAppointmentsTable();
+        assertThat(executeAppointmentQueueMigration()).isNull();
+        insertTemporaryLegacyAppointment(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "2031-01-06 08:00:00+07"
+        );
+
+        Throwable failure = executeAppointmentQueueContractMigration();
+
+        assertMigrationRefusal(
+                failure,
+                "appointment(s) have an incomplete queue model"
+        );
+    }
+
+    @Test
     void shouldRefuseScheduleStandardizationWhenActiveFutureAppointmentIsOutsidePolicy()
             throws Exception {
         createTemporaryLegacyAppointmentsTable();
@@ -754,7 +773,7 @@ class PostgreSql18SchemaContractIntegrationTest {
     }
 
     @Test
-    void shouldReleaseCancelledSlotAndRejectASecondActiveAppointment() {
+    void shouldReleaseCancelledQueueAndRejectASecondActiveAppointment() {
         Fixture fixture = createFixture();
         insertAppointment(
                 fixture.patientId(),
@@ -792,7 +811,7 @@ class PostgreSql18SchemaContractIntegrationTest {
                         "CHECKED_IN"
                 ),
                 "23505",
-                "ux_appointments_doctor_start_active_legacy"
+                "ux_appointments_doctor_queue_active"
         );
     }
 
@@ -817,7 +836,7 @@ class PostgreSql18SchemaContractIntegrationTest {
     }
 
     @Test
-    void shouldRejectPartiallyPopulatedQueueModel() {
+    void shouldRequireEveryQueueColumn() {
         Fixture fixture = createFixture();
 
         assertConstraintViolation(
@@ -838,8 +857,8 @@ class PostgreSql18SchemaContractIntegrationTest {
                         Timestamp.from(APPOINTMENT_START),
                         LocalDate.of(2031, 1, 6)
                 ),
-                "23514",
-                "ck_appointments_queue_model_complete"
+                "23502",
+                "session"
         );
     }
 
@@ -966,10 +985,16 @@ class PostgreSql18SchemaContractIntegrationTest {
                                     doctor_id,
                                     service_id,
                                     scheduled_start_at,
+                                    appointment_date,
+                                    session,
+                                    queue_number,
                                     status,
                                     actual_start_at,
                                     actual_end_at
-                                ) values (?, ?, ?, ?, 'COMPLETED', ?, ?)
+                                ) values (
+                                    ?, ?, ?, ?, date '2031-01-06', 'MORNING', 1,
+                                    'COMPLETED', ?, ?
+                                )
                                 """,
                         fixture.patientId(),
                         fixture.doctorId(),
@@ -1240,8 +1265,14 @@ class PostgreSql18SchemaContractIntegrationTest {
                             doctor_id,
                             service_id,
                             scheduled_start_at,
+                            appointment_date,
+                            session,
+                            queue_number,
                             status
-                        ) values (?, ?, ?, ?, ?::appointment_status_enum)
+                        ) values (
+                            ?, ?, ?, ?, date '2031-01-06', 'MORNING', 1,
+                            ?::appointment_status_enum
+                        )
                         returning id
                         """,
                 UUID.class,
@@ -1346,6 +1377,13 @@ class PostgreSql18SchemaContractIntegrationTest {
     private Throwable executeStandardScheduleMigration() throws Exception {
         String migrationSql = new ClassPathResource(
                 "db/migration/V16__standardize_doctor_working_sessions.sql"
+        ).getContentAsString(StandardCharsets.UTF_8);
+        return catchThrowable(() -> jdbcTemplate.execute(migrationSql));
+    }
+
+    private Throwable executeAppointmentQueueContractMigration() throws Exception {
+        String migrationSql = new ClassPathResource(
+                "db/migration/V18__enforce_appointment_queue_contract.sql"
         ).getContentAsString(StandardCharsets.UTF_8);
         return catchThrowable(() -> jdbcTemplate.execute(migrationSql));
     }

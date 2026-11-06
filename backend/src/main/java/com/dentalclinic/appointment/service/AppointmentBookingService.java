@@ -85,20 +85,10 @@ public class AppointmentBookingService {
                 request.session(),
                 request.queueNumber()
         );
-        Instant sessionStartAt = clinicTimeProvider.toInstant(
-                scheduledCase.appointmentDate(),
-                schedulingPolicy.sessionStart(scheduledCase.session())
-        );
-        Instant sessionEndAt = clinicTimeProvider.toInstant(
-                scheduledCase.appointmentDate(),
-                schedulingPolicy.sessionEnd(scheduledCase.session())
-        );
         if (appointmentRepository.existsActivePatientSession(
                 patient.getId(),
                 scheduledCase.appointmentDate(),
                 scheduledCase.session(),
-                sessionStartAt,
-                sessionEndAt,
                 ACTIVE_APPOINTMENT_STATUSES
         )) {
             throw patientSessionConflict();

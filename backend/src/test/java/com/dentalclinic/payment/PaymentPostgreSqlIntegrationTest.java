@@ -2,6 +2,7 @@ package com.dentalclinic.payment;
 
 import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.AppointmentQueueFixtureSupport;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.appointment.service.AppointmentCompleteExaminationService;
 import com.dentalclinic.appointment.service.AppointmentStartExaminationService;
@@ -334,6 +335,10 @@ class PaymentPostgreSqlIntegrationTest {
                 new DoctorServiceId(doctor.getId(), original.getId())
         ).orElseThrow());
         appointment.setScheduledStartAt(Instant.now().truncatedTo(ChronoUnit.SECONDS));
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(
+                appointment,
+                appointment.getScheduledStartAt()
+        );
         appointment.setStatus(status);
         if (status == AppointmentStatus.IN_PROGRESS) {
             appointment.setCheckedInAt(Instant.now().minus(5, ChronoUnit.MINUTES));

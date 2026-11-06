@@ -379,13 +379,6 @@ public class AppointmentQueryService {
         DoctorService doctorService = appointment.getDoctorService();
         Doctor doctor = doctorService.getDoctor();
         OffsetDateTime estimatedStartAt = toClinicOffset(appointment.getScheduledStartAt());
-        LocalDate appointmentDate = appointment.getAppointmentDate() == null
-                ? estimatedStartAt.toLocalDate()
-                : appointment.getAppointmentDate();
-        ScheduleSession session = appointment.getSession();
-        Integer queueNumber = appointment.getQueueNumber() == null
-                ? null
-                : appointment.getQueueNumber().intValue();
         return new AppointmentResponse(
                 appointment.getId(),
                 patient.getId(),
@@ -399,14 +392,15 @@ public class AppointmentQueryService {
                 appointment.getPreviousAppointment() == null
                         ? null
                         : appointment.getPreviousAppointment().getId(),
-                appointmentDate,
-                session,
-                queueNumber,
-                session == null ? null : schedulingPolicy.sessionStart(session),
-                session == null ? null : schedulingPolicy.sessionEnd(session),
-                session == null || queueNumber == null
-                        ? estimatedStartAt.toLocalTime()
-                        : schedulingPolicy.estimatedStartTime(session, queueNumber),
+                appointment.getAppointmentDate(),
+                appointment.getSession(),
+                appointment.getQueueNumber().intValue(),
+                schedulingPolicy.sessionStart(appointment.getSession()),
+                schedulingPolicy.sessionEnd(appointment.getSession()),
+                schedulingPolicy.estimatedStartTime(
+                        appointment.getSession(),
+                        appointment.getQueueNumber()
+                ),
                 estimatedStartAt,
                 appointment.getStatus(),
                 toClinicOffset(appointment.getCheckedInAt()),

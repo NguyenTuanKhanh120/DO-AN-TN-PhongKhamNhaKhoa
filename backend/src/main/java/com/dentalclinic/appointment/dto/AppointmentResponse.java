@@ -22,7 +22,7 @@ public record AppointmentResponse(
         UUID previousAppointmentId,
         LocalDate appointmentDate,
         ScheduleSession session,
-        Integer queueNumber,
+        int queueNumber,
         LocalTime sessionStartTime,
         LocalTime sessionEndTime,
         LocalTime estimatedStartTime,

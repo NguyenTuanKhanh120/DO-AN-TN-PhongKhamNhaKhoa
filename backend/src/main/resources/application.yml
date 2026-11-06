@@ -43,8 +43,6 @@ server:
 clinic:
   timezone: ${CLINIC_TIMEZONE:Asia/Ho_Chi_Minh}
   appointment:
-    slot-duration-minutes: ${SLOT_DURATION_MINUTES:60}
-    booking-min-advance-minutes: ${BOOKING_MIN_ADVANCE_MINUTES:120}
     no-show-grace-minutes: ${NO_SHOW_GRACE_MINUTES:15}
     delay-warning-minutes: ${DELAY_WARNING_MINUTES:30}
 

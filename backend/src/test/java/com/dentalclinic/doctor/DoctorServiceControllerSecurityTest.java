@@ -129,8 +129,7 @@ class DoctorServiceControllerSecurityTest {
                 .andExpect(jsonPath("$.message")
                         .value("Lấy danh sách dịch vụ của bác sĩ thành công"))
                 .andExpect(jsonPath("$.data[0].id").value(response.id().toString()))
-                .andExpect(jsonPath("$.data[0].durationMinutes")
-                        .value(response.durationMinutes()))
+                .andExpect(jsonPath("$.data[0].durationMinutes").doesNotExist())
                 .andExpect(jsonPath("$.data[0].active").value(true));
 
         verify(doctorServiceMappingService).getMyActiveServices(doctor.getId());
@@ -231,7 +230,6 @@ class DoctorServiceControllerSecurityTest {
                 "Cạo vôi răng",
                 "Làm sạch cao răng",
                 new BigDecimal("300000.00"),
-                60,
                 "https://cdn.example.com/dental-services/scaling.webp",
                 true
         );

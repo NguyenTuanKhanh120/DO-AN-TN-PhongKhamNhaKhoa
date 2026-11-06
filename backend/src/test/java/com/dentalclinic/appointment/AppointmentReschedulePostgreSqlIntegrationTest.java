@@ -128,8 +128,6 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "appointment-reschedule-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
-        registry.add("clinic.appointment.booking-min-advance-minutes", () -> 120);
     }
 
     @AfterEach

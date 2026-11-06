@@ -445,6 +445,7 @@ class AppointmentHistoryPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(mapping);
         appointment.setScheduledStartAt(scheduledStartAt);
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(appointment, scheduledStartAt);
         appointment.setStatus(status);
         return appointmentRepository.saveAndFlush(appointment);
     }

@@ -92,8 +92,6 @@ class SlotEnginePostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "slot-engine-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
-        registry.add("clinic.appointment.booking-min-advance-minutes", () -> 120);
     }
 
     @Test
@@ -133,13 +131,6 @@ class SlotEnginePostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data[2].queueNumber").value(2))
                 .andExpect(jsonPath("$.data[2].estimatedStartAt")
                         .value("2026-10-12T15:30:00+07:00"));
-
-        assertThat(appointmentRepository.findOccupiedStartTimes(
-                doctor.getId(),
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
-                AppointmentStatus.CANCELLED
-        )).containsExactly(toInstant(MONDAY, LocalTime.of(14, 0)));
 
         mockMvc.perform(get("/api/doctors/{doctorId}/available-slots", doctor.getId())
                         .param("serviceId", dentalService.getId().toString())
