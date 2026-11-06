@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-11-04",
+  "outputFile": "vietnamese_dental_qa_rag.json",
+  "inputFiles": [
+    {
+      "fileName": "hungnm_vietnamese_medical_qa.parquet",
+      "sourceUrl": "https://huggingface.co/datasets/hungnm/vietnamese-medical-qa",
+      "sha256": "e75cfb2522a654739befd79c9989c49c1c6cf80f808c439baa5634ed3348ccd0",
+      "rowCount": 9335
+    },
+    {
+      "fileName": "combined_vietnamese_medical_qa.parquet",
+      "sourceUrl": "https://huggingface.co/datasets/quannguyen204/combined_medical_qa_dataset",
+      "sha256": "53fa1e684243f31c1f3c3492bbaf8fef7f36602570454eee77a761e46b6f22b3",
+      "rowCount": 43061
+    }
+  ],
+  "acceptedRecordCount": 639,
+  "acceptedBySource": {
+    "combined": 504,
+    "hungnm": 135
+  },
+  "rejectionCounts": {
+    "ASSERTIVE_DIAGNOSIS": 203,
+    "DENTAL_TOPIC_NOT_CONFIRMED_IN_QA": 68,
+    "DIRECT_PROCEDURE_DIRECTIVE": 3,
+    "DUPLICATE_ANSWER": 63,
+    "DUPLICATE_QUESTION": 143,
+    "INVALID_LENGTH": 311,
+    "LIVE_OR_COMMERCIAL_INFORMATION": 130,
+    "MEDICATION_OR_DOSAGE": 237,
+    "MEDICATION_SEEKING_QUESTION": 80,
+    "NON_DENTAL_PRIMARY_TOPIC": 27,
+    "NOT_DENTAL_QUESTION": 50483,
+    "PRESCRIPTION_DIRECTIVE": 9
+  },
+  "categoryCounts": {
+    "CARIES_RESTORATIVE": 27,
+    "ENDODONTIC_PAIN": 89,
+    "GENERAL_DENTISTRY": 63,
+    "ORAL_MEDICINE": 25,
+    "ORAL_SURGERY": 116,
+    "ORTHODONTICS": 92,
+    "PEDIATRIC_DENTISTRY": 37,
+    "PERIODONTAL_GUM": 150,
+    "PREVENTIVE_CARE": 19,
+    "PROSTHODONTICS_COSMETIC": 21
+  },
+  "schemaValidation": "PASSED",
+  "clinicalReview": "NOT_PERFORMED"
+}

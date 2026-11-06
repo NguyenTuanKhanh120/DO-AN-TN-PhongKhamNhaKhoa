@@ -14,6 +14,8 @@ public record KnowledgeSourceStatusResponse(
         String sourceVersion,
         KnowledgeSourceStatus status,
         int chunkCount,
+        int processedChunkCount,
+        int totalChunkCount,
         String embeddingModel,
         Integer embeddingDimension,
         String clinicalReviewStatus,

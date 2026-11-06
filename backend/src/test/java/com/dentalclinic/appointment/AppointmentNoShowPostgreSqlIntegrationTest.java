@@ -128,7 +128,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.id")
                         .value(fixture.eligibleAppointmentId().toString()))
                 .andExpect(jsonPath("$.data.status").value("NO_SHOW"))
-                .andExpect(jsonPath("$.data.scheduledStartAt")
+                .andExpect(jsonPath("$.data.estimatedStartAt")
                         .value("2026-10-12T09:00:00+07:00"))
                 .andExpect(jsonPath("$.data.noShowAt")
                         .value("2026-10-12T09:15:00+07:00"));
@@ -149,7 +149,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
                        reason,
                        details ->> 'old_status' as old_status,
                        details ->> 'new_status' as new_status,
-                       details ->> 'scheduled_start_at' as scheduled_start_at,
+                       details ->> 'estimated_start_at' as estimated_start_at,
                        details ->> 'no_show_at' as no_show_at
                 from appointment_histories
                 where appointment_id = ? and action = 'NO_SHOW'
@@ -159,7 +159,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
         assertThat(historyRow.get("reason")).isNull();
         assertThat(historyRow.get("old_status")).isEqualTo("BOOKED");
         assertThat(historyRow.get("new_status")).isEqualTo("NO_SHOW");
-        assertThat(historyRow.get("scheduled_start_at"))
+        assertThat(historyRow.get("estimated_start_at"))
                 .isEqualTo("2026-10-12T09:00+07:00");
         assertThat(historyRow.get("no_show_at"))
                 .isEqualTo("2026-10-12T09:15+07:00");

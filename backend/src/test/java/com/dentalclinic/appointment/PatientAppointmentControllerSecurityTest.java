@@ -22,6 +22,7 @@ import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.exception.GlobalExceptionHandler;
 import com.dentalclinic.common.response.PageResponse;
 import com.dentalclinic.config.SecurityConfig;
+import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
@@ -39,6 +40,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import javax.crypto.SecretKey;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -133,9 +136,10 @@ class PatientAppointmentControllerSecurityTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.id").value(response.id().toString()))
                 .andExpect(jsonPath("$.data.status").value("BOOKED"))
-                .andExpect(jsonPath("$.data.scheduledStartAt")
-                        .value("2026-10-12T13:00:00+07:00"))
-                .andExpect(jsonPath("$.data.scheduledEndAt")
+                .andExpect(jsonPath("$.data.appointmentDate").value("2026-10-12"))
+                .andExpect(jsonPath("$.data.session").value("AFTERNOON"))
+                .andExpect(jsonPath("$.data.queueNumber").value(1))
+                .andExpect(jsonPath("$.data.estimatedStartAt")
                         .value("2026-10-12T14:00:00+07:00"));
 
         verify(appointmentBookingService).book(
@@ -152,11 +156,11 @@ class PatientAppointmentControllerSecurityTest {
                         .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.errors.length()").value(3));
+                .andExpect(jsonPath("$.errors.length()").value(5));
     }
 
     @Test
-    void shouldRejectMalformedScheduledStartAt() throws Exception {
+    void shouldRejectMalformedAppointmentDate() throws Exception {
         mockMvc.perform(post("/api/patient/appointments")
                         .with(user(patientPrincipal()))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -164,7 +168,9 @@ class PatientAppointmentControllerSecurityTest {
                                 {
                                   "doctorId": "%s",
                                   "serviceId": "%s",
-                                  "scheduledStartAt": "2026-10-12 13:00"
+                                  "appointmentDate": "12/10/2026",
+                                  "session": "AFTERNOON",
+                                  "queueNumber": 1
                                 }
                                 """.formatted(UUID.randomUUID(), UUID.randomUUID())))
                 .andExpect(status().isBadRequest())
@@ -242,7 +248,10 @@ class PatientAppointmentControllerSecurityTest {
         CancelAppointmentResponse response = new CancelAppointmentResponse(
                 appointmentId,
                 AppointmentStatus.CANCELLED,
-                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1,
+                OffsetDateTime.parse("2026-10-12T14:00:00+07:00"),
                 "Bận việc gia đình",
                 OffsetDateTime.parse("2026-10-12T10:00:00+07:00")
         );
@@ -302,9 +311,17 @@ class PatientAppointmentControllerSecurityTest {
         RescheduleAppointmentResponse response = new RescheduleAppointmentResponse(
                 appointmentId,
                 AppointmentStatus.BOOKED,
-                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
-                OffsetDateTime.parse("2026-10-12T15:00:00+07:00"),
-                OffsetDateTime.parse("2026-10-12T16:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1,
+                OffsetDateTime.parse("2026-10-12T14:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                2,
+                LocalTime.of(14, 0),
+                LocalTime.of(17, 0),
+                LocalTime.of(15, 30),
+                OffsetDateTime.parse("2026-10-12T15:30:00+07:00"),
                 "Bận việc gia đình",
                 OffsetDateTime.parse("2026-10-12T10:00:00+07:00")
         );
@@ -319,7 +336,9 @@ class PatientAppointmentControllerSecurityTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "scheduledStartAt": "2026-10-12T15:00:00+07:00",
+                                  "appointmentDate": "2026-10-12",
+                                  "session": "AFTERNOON",
+                                  "queueNumber": 2,
                                   "reason": "Bận việc gia đình"
                                 }
                                 """))
@@ -327,12 +346,13 @@ class PatientAppointmentControllerSecurityTest {
                 .andExpect(jsonPath("$.message").value("Đổi lịch hẹn thành công"))
                 .andExpect(jsonPath("$.data.id").value(appointmentId.toString()))
                 .andExpect(jsonPath("$.data.status").value("BOOKED"))
-                .andExpect(jsonPath("$.data.oldScheduledStartAt")
-                        .value("2026-10-12T13:00:00+07:00"))
-                .andExpect(jsonPath("$.data.scheduledStartAt")
-                        .value("2026-10-12T15:00:00+07:00"))
-                .andExpect(jsonPath("$.data.scheduledEndAt")
-                        .value("2026-10-12T16:00:00+07:00"));
+                .andExpect(jsonPath("$.data.oldEstimatedStartAt")
+                        .value("2026-10-12T14:00:00+07:00"))
+                .andExpect(jsonPath("$.data.appointmentDate").value("2026-10-12"))
+                .andExpect(jsonPath("$.data.session").value("AFTERNOON"))
+                .andExpect(jsonPath("$.data.queueNumber").value(2))
+                .andExpect(jsonPath("$.data.estimatedStartAt")
+                        .value("2026-10-12T15:30:00+07:00"));
 
         verify(appointmentRescheduleService).reschedule(
                 eq(principal.getId()),
@@ -351,11 +371,11 @@ class PatientAppointmentControllerSecurityTest {
                         .content("{\"reason\":\"   \"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.errors.length()").value(2));
+                .andExpect(jsonPath("$.errors.length()").value(4));
     }
 
     @Test
-    void shouldRejectMalformedRescheduleTime() throws Exception {
+    void shouldRejectMalformedRescheduleDate() throws Exception {
         mockMvc.perform(patch(
                         "/api/patient/appointments/{id}/reschedule",
                         UUID.randomUUID()
@@ -363,7 +383,9 @@ class PatientAppointmentControllerSecurityTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "scheduledStartAt": "2026-10-12 15:00",
+                                  "appointmentDate": "12/10/2026",
+                                  "session": "AFTERNOON",
+                                  "queueNumber": 2,
                                   "reason": "Bận việc gia đình"
                                 }
                                 """))
@@ -380,7 +402,9 @@ class PatientAppointmentControllerSecurityTest {
                 {
                   "doctorId": "%s",
                   "serviceId": "%s",
-                  "scheduledStartAt": "2026-10-12T13:00:00+07:00"
+                  "appointmentDate": "2026-10-12",
+                  "session": "AFTERNOON",
+                  "queueNumber": 1
                 }
                 """.formatted(doctorId, serviceId);
     }
@@ -391,7 +415,13 @@ class PatientAppointmentControllerSecurityTest {
                 UUID.randomUUID(),
                 doctorId,
                 serviceId,
-                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
+                null,
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1,
+                LocalTime.of(14, 0),
+                LocalTime.of(17, 0),
+                LocalTime.of(14, 0),
                 OffsetDateTime.parse("2026-10-12T14:00:00+07:00"),
                 AppointmentStatus.BOOKED,
                 Instant.parse("2026-10-12T03:01:00Z")
@@ -410,7 +440,12 @@ class PatientAppointmentControllerSecurityTest {
                 UUID.randomUUID(),
                 "Trám răng",
                 null,
-                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1,
+                LocalTime.of(14, 0),
+                LocalTime.of(17, 0),
+                LocalTime.of(14, 0),
                 OffsetDateTime.parse("2026-10-12T14:00:00+07:00"),
                 AppointmentStatus.BOOKED,
                 null,

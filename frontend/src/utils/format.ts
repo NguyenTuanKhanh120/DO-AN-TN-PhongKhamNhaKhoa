@@ -39,6 +39,9 @@ export const formatMoney = (value?: number | null): string => moneyFormatter.for
 
 export const formatTime = (value?: string | null): string => value?.slice(0, 5) ?? "—";
 
+export const appointmentArrivalNotice =
+  "Vui lòng có mặt trước giờ dự kiến khoảng 15 phút. Thời gian bắt đầu thực tế có thể sớm hoặc muộn hơn tùy thời lượng khám của ca trước.";
+
 export const roleLabels: Record<Role, string> = {
   ADMIN: "Quản trị viên",
   DOCTOR: "Bác sĩ",
@@ -80,6 +83,26 @@ export const paymentMethodLabels: Record<PaymentMethod, string> = {
 export const sessionLabels: Record<ScheduleSession, string> = {
   MORNING: "Buổi sáng",
   AFTERNOON: "Buổi chiều",
+};
+
+export const formatQueueLabel = (queueNumber?: number | null): string =>
+  queueNumber ? `Ca ${queueNumber}` : "Ca chưa xác định";
+
+export const formatSessionWindow = (
+  session: ScheduleSession,
+  startTime?: string | null,
+  endTime?: string | null,
+): string => `${sessionLabels[session]}${startTime && endTime ? ` ${formatTime(startTime)}–${formatTime(endTime)}` : ""}`;
+
+export const formatAppointmentSchedule = (value: {
+  appointmentDate: string;
+  session: ScheduleSession | null;
+  queueNumber: number | null;
+  estimatedStartTime: string;
+  estimatedStartAt: string;
+}): string => {
+  if (!value.session || !value.queueNumber) return formatDateTime(value.estimatedStartAt);
+  return `${formatDate(value.appointmentDate)} · ${sessionLabels[value.session]} · ${formatQueueLabel(value.queueNumber)} · dự kiến ${formatTime(value.estimatedStartTime)}`;
 };
 
 export const calendarStatusLabels: Record<CalendarAvailabilityStatus, string> = {

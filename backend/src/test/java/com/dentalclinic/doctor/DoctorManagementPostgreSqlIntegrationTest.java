@@ -138,7 +138,7 @@ class DoctorManagementPostgreSqlIntegrationTest {
                         assertThat(schedule.getStartTime()).isEqualTo(LocalTime.of(8, 0));
                         assertThat(schedule.getEndTime()).isEqualTo(LocalTime.of(11, 0));
                     } else {
-                        assertThat(schedule.getStartTime()).isEqualTo(LocalTime.of(13, 0));
+                        assertThat(schedule.getStartTime()).isEqualTo(LocalTime.of(14, 0));
                         assertThat(schedule.getEndTime()).isEqualTo(LocalTime.of(17, 0));
                     }
                 });

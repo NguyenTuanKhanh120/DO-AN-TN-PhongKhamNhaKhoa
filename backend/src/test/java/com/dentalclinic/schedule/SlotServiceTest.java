@@ -1,6 +1,7 @@
 package com.dentalclinic.schedule;
 
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.repository.AppointmentQueueOccupancy;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.common.exception.BusinessException;
 import com.dentalclinic.common.exception.ConflictException;
@@ -17,6 +18,7 @@ import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
 import com.dentalclinic.schedule.service.SlotService;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
 import com.dentalclinic.user.entity.Role;
@@ -83,13 +85,14 @@ class SlotServiceTest {
                 doctorScheduleRepository,
                 appointmentRepository,
                 timeProvider,
+                new SchedulingPolicy(timeProvider),
                 60,
                 120
         );
     }
 
     @Test
-    void shouldGenerateAvailableSlotsAndApplyAdvanceAndOccupiedFilters() {
+    void shouldGenerateCasesAndExcludeOccupiedQueue() {
         Doctor doctor = doctor();
         DentalService dentalService = dentalService(true);
         stubValidDoctorAndService(doctor, dentalService);
@@ -98,35 +101,43 @@ class SlotServiceTest {
                 (short) 1
         )).thenReturn(List.of(
                 schedule(doctor, ScheduleSession.MORNING, "08:00", "11:00"),
-                schedule(doctor, ScheduleSession.AFTERNOON, "13:00", "17:00")
+                schedule(doctor, ScheduleSession.AFTERNOON, "14:00", "17:00")
         ));
-        Instant occupiedAt = toInstant(MONDAY, LocalTime.of(14, 0));
-        when(appointmentRepository.findOccupiedStartTimes(
+        AppointmentQueueOccupancy occupiedCase = occupancy(
+                NEXT_MONDAY,
+                ScheduleSession.AFTERNOON,
+                (short) 1,
+                LocalTime.of(14, 0)
+        );
+        when(appointmentRepository.findActiveQueueOccupancies(
                 doctor.getId(),
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
-                AppointmentStatus.CANCELLED
-        )).thenReturn(List.of(occupiedAt));
+                NEXT_MONDAY,
+                NEXT_MONDAY,
+                toInstant(NEXT_MONDAY, LocalTime.MIN),
+                toInstant(NEXT_MONDAY.plusDays(1), LocalTime.MIN),
+                activeStatuses()
+        )).thenReturn(List.of(occupiedCase));
 
         List<AvailableSlotResponse> slots = slotService.getAvailableSlots(
                 doctor.getId(),
                 dentalService.getId(),
-                MONDAY
+                NEXT_MONDAY
         );
 
-        assertThat(slots).extracting(AvailableSlotResponse::startTime)
+        assertThat(slots).extracting(AvailableSlotResponse::estimatedStartTime)
                 .containsExactly(
-                        LocalTime.of(13, 0),
-                        LocalTime.of(15, 0),
-                        LocalTime.of(16, 0)
+                        LocalTime.of(8, 0),
+                        LocalTime.of(9, 30),
+                        LocalTime.of(15, 30)
                 );
-        assertThat(slots.getFirst().session()).isEqualTo(ScheduleSession.AFTERNOON);
-        assertThat(slots.getFirst().startAt().toString()).isEqualTo("2026-10-12T13:00+07:00");
-        assertThat(slots.getFirst().endAt().toString()).isEqualTo("2026-10-12T14:00+07:00");
+        assertThat(slots.getLast().session()).isEqualTo(ScheduleSession.AFTERNOON);
+        assertThat(slots.getLast().queueNumber()).isEqualTo(2);
+        assertThat(slots.getLast().estimatedStartAt().toString())
+                .isEqualTo("2026-10-19T15:30+07:00");
     }
 
     @Test
-    void shouldGenerateThreeMorningAndFourAfternoonSlotsForDefaultSchedule() {
+    void shouldGenerateTwoMorningAndTwoAfternoonCasesForStandardSchedule() {
         Doctor doctor = doctor();
         DentalService dentalService = dentalService(true);
         stubValidDoctorAndService(doctor, dentalService);
@@ -134,34 +145,35 @@ class SlotServiceTest {
                 doctor.getId(), (short) 1
         )).thenReturn(List.of(
                 schedule(doctor, ScheduleSession.MORNING, "08:00", "11:00"),
-                schedule(doctor, ScheduleSession.AFTERNOON, "13:00", "17:00")
+                schedule(doctor, ScheduleSession.AFTERNOON, "14:00", "17:00")
         ));
-        when(appointmentRepository.findOccupiedStartTimes(
+        when(appointmentRepository.findActiveQueueOccupancies(
                 doctor.getId(),
+                NEXT_MONDAY,
+                NEXT_MONDAY,
                 toInstant(NEXT_MONDAY, LocalTime.MIN),
                 toInstant(NEXT_MONDAY.plusDays(1), LocalTime.MIN),
-                AppointmentStatus.CANCELLED
+                activeStatuses()
         )).thenReturn(List.of());
 
         List<AvailableSlotResponse> slots = slotService.getAvailableSlots(
                 doctor.getId(), dentalService.getId(), NEXT_MONDAY
         );
 
-        assertThat(slots).hasSize(7);
+        assertThat(slots).hasSize(4);
         assertThat(slots).filteredOn(slot -> slot.session() == ScheduleSession.MORNING)
-                .hasSize(3);
+                .hasSize(2);
         assertThat(slots).filteredOn(slot -> slot.session() == ScheduleSession.AFTERNOON)
-                .hasSize(4);
-        assertThat(slots).extracting(AvailableSlotResponse::startTime)
+                .hasSize(2);
+        assertThat(slots).extracting(AvailableSlotResponse::estimatedStartTime)
                 .containsExactly(
                         LocalTime.of(8, 0),
-                        LocalTime.of(9, 0),
-                        LocalTime.of(10, 0),
-                        LocalTime.of(13, 0),
+                        LocalTime.of(9, 30),
                         LocalTime.of(14, 0),
-                        LocalTime.of(15, 0),
-                        LocalTime.of(16, 0)
+                        LocalTime.of(15, 30)
                 );
+        assertThat(slots).extracting(AvailableSlotResponse::queueNumber)
+                .containsExactly(1, 2, 1, 2);
     }
 
     @Test
@@ -175,19 +187,88 @@ class SlotServiceTest {
         )).thenReturn(List.of(schedule(
                 doctor, ScheduleSession.MORNING, "08:00", "11:00"
         )));
-        when(appointmentRepository.findOccupiedStartTimes(
+        when(appointmentRepository.findActiveQueueOccupancies(
                 doctor.getId(),
+                followingMonday,
+                followingMonday,
                 toInstant(followingMonday, LocalTime.MIN),
                 toInstant(followingMonday.plusDays(1), LocalTime.MIN),
-                AppointmentStatus.CANCELLED
+                activeStatuses()
         )).thenReturn(List.of());
 
         List<AvailableSlotResponse> slots = slotService.getAvailableSlots(
                 doctor.getId(), dentalService.getId(), followingMonday
         );
 
-        assertThat(slots).hasSize(3);
+        assertThat(slots).hasSize(2);
         assertThat(slots).allMatch(slot -> slot.session() == ScheduleSession.MORNING);
+    }
+
+    @Test
+    void shouldReturnNoCasesForCurrentDateAtOrAfterDailyCutoff() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor,
+                ScheduleSession.MORNING,
+                "08:00",
+                "11:00"
+        )));
+
+        assertThat(slotService.getAvailableSlots(
+                doctor.getId(),
+                dentalService.getId(),
+                MONDAY
+        )).isEmpty();
+
+        verify(appointmentRepository, never()).findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                toInstant(MONDAY, LocalTime.MIN),
+                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
+                activeStatuses()
+        );
+    }
+
+    @Test
+    void shouldConservativelyOccupyBothCasesForTwoLegacyAppointments() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor,
+                ScheduleSession.MORNING,
+                "08:00",
+                "11:00"
+        )));
+        AppointmentQueueOccupancy firstLegacy = legacyOccupancy(
+                NEXT_MONDAY,
+                LocalTime.of(8, 0)
+        );
+        AppointmentQueueOccupancy secondLegacy = legacyOccupancy(
+                NEXT_MONDAY,
+                LocalTime.of(9, 0)
+        );
+        when(appointmentRepository.findActiveQueueOccupancies(
+                doctor.getId(),
+                NEXT_MONDAY,
+                NEXT_MONDAY,
+                toInstant(NEXT_MONDAY, LocalTime.MIN),
+                toInstant(NEXT_MONDAY.plusDays(1), LocalTime.MIN),
+                activeStatuses()
+        )).thenReturn(List.of(firstLegacy, secondLegacy));
+
+        assertThat(slotService.getAvailableSlots(
+                doctor.getId(),
+                dentalService.getId(),
+                NEXT_MONDAY
+        )).isEmpty();
     }
 
     @Test
@@ -229,11 +310,13 @@ class SlotServiceTest {
                 MONDAY
         )).isEmpty();
 
-        verify(appointmentRepository, never()).findOccupiedStartTimes(
+        verify(appointmentRepository, never()).findActiveQueueOccupancies(
                 doctor.getId(),
+                MONDAY,
+                MONDAY,
                 toInstant(MONDAY, LocalTime.MIN),
                 toInstant(MONDAY.plusDays(1), LocalTime.MIN),
-                AppointmentStatus.CANCELLED
+                activeStatuses()
         );
     }
 
@@ -302,6 +385,204 @@ class SlotServiceTest {
     }
 
     @Test
+    void shouldAllowBookingCaseAt0459WhenQueueIsAvailable() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        DoctorService mapping = stubValidDoctorAndService(doctor, dentalService);
+        SlotService beforeCutoffService = slotServiceAt(Instant.parse("2026-10-11T21:59:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor, ScheduleSession.AFTERNOON, "14:00", "17:00"
+        )));
+        when(appointmentRepository.findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                toInstant(MONDAY, LocalTime.MIN),
+                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
+                activeStatuses()
+        )).thenReturn(List.of());
+
+        DoctorService result = beforeCutoffService.requireAvailableCase(
+                doctor.getId(),
+                dentalService.getId(),
+                MONDAY,
+                ScheduleSession.AFTERNOON,
+                1
+        );
+
+        assertThat(result).isSameAs(mapping);
+    }
+
+    @Test
+    void shouldRejectBookingCaseAt0500WithoutCheckingOccupancy() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        SlotService atCutoffService = slotServiceAt(Instant.parse("2026-10-11T22:00:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor, ScheduleSession.AFTERNOON, "14:00", "17:00"
+        )));
+
+        assertThatThrownBy(() -> atCutoffService.requireAvailableCase(
+                doctor.getId(),
+                dentalService.getId(),
+                MONDAY,
+                ScheduleSession.AFTERNOON,
+                1
+        )).isInstanceOf(BusinessException.class)
+                .hasMessage("Lịch khám trong ngày phải được đặt trước 05:00");
+
+        verify(appointmentRepository, never()).findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                toInstant(MONDAY, LocalTime.MIN),
+                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
+                activeStatuses()
+        );
+    }
+
+    @Test
+    void shouldRejectOccupiedBookingCase() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        SlotService beforeCutoffService = slotServiceAt(Instant.parse("2026-10-11T21:59:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor, ScheduleSession.AFTERNOON, "14:00", "17:00"
+        )));
+        when(appointmentRepository.findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                toInstant(MONDAY, LocalTime.MIN),
+                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
+                activeStatuses()
+        )).thenReturn(List.of(occupancy(
+                MONDAY,
+                ScheduleSession.AFTERNOON,
+                (short) 1,
+                LocalTime.of(14, 0)
+        )));
+
+        assertThatThrownBy(() -> beforeCutoffService.requireAvailableCase(
+                doctor.getId(),
+                dentalService.getId(),
+                MONDAY,
+                ScheduleSession.AFTERNOON,
+                1
+        )).isInstanceOf(ConflictException.class)
+                .hasMessage("Khung giờ vừa được người khác đặt. Vui lòng chọn khung giờ khác");
+    }
+
+    @Test
+    void shouldIgnoreCurrentAppointmentWhenCheckingRescheduleCase() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        DoctorService mapping = stubValidDoctorAndService(doctor, dentalService);
+        UUID currentAppointmentId = UUID.randomUUID();
+        SlotService beforeCutoffService = slotServiceAt(Instant.parse("2026-10-11T21:59:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor, ScheduleSession.AFTERNOON, "14:00", "17:00"
+        )));
+        when(appointmentRepository.findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                toInstant(MONDAY, LocalTime.MIN),
+                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
+                activeStatuses()
+        )).thenReturn(List.of(occupancy(
+                currentAppointmentId,
+                MONDAY,
+                ScheduleSession.AFTERNOON,
+                (short) 2,
+                LocalTime.of(15, 30)
+        )));
+
+        DoctorService result = beforeCutoffService.requireAvailableRescheduleCase(
+                doctor.getId(),
+                dentalService.getId(),
+                MONDAY,
+                ScheduleSession.AFTERNOON,
+                2,
+                currentAppointmentId
+        );
+
+        assertThat(result).isSameAs(mapping);
+    }
+
+    @Test
+    void shouldRejectRescheduleCaseOccupiedByAnotherAppointment() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        UUID currentAppointmentId = UUID.randomUUID();
+        SlotService beforeCutoffService = slotServiceAt(Instant.parse("2026-10-11T21:59:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor, ScheduleSession.AFTERNOON, "14:00", "17:00"
+        )));
+        when(appointmentRepository.findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                toInstant(MONDAY, LocalTime.MIN),
+                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
+                activeStatuses()
+        )).thenReturn(List.of(occupancy(
+                UUID.randomUUID(),
+                MONDAY,
+                ScheduleSession.AFTERNOON,
+                (short) 2,
+                LocalTime.of(15, 30)
+        )));
+
+        assertThatThrownBy(() -> beforeCutoffService.requireAvailableRescheduleCase(
+                doctor.getId(),
+                dentalService.getId(),
+                MONDAY,
+                ScheduleSession.AFTERNOON,
+                2,
+                currentAppointmentId
+        )).isInstanceOf(ConflictException.class)
+                .hasMessage("Khung giờ mới vừa được người khác đặt. "
+                        + "Lịch hiện tại của bạn vẫn được giữ nguyên. Vui lòng chọn khung giờ khác.");
+    }
+
+    @Test
+    void shouldRejectRescheduleCaseAtDailyCutoff() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        SlotService atCutoffService = slotServiceAt(Instant.parse("2026-10-11T22:00:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(schedule(
+                doctor, ScheduleSession.MORNING, "08:00", "11:00"
+        )));
+
+        assertThatThrownBy(() -> atCutoffService.requireAvailableRescheduleCase(
+                doctor.getId(),
+                dentalService.getId(),
+                MONDAY,
+                ScheduleSession.MORNING,
+                1,
+                UUID.randomUUID()
+        )).isInstanceOf(BusinessException.class)
+                .hasMessage("Không thể đổi sang ngày đã qua thời hạn 05:00");
+    }
+
+    @Test
     void shouldReturnDoctorServiceWhenRequestedSlotIsAvailable() {
         Doctor doctor = doctor();
         DentalService dentalService = dentalService(true);
@@ -312,10 +593,10 @@ class SlotServiceTest {
         )).thenReturn(List.of(schedule(
                 doctor,
                 ScheduleSession.AFTERNOON,
-                "13:00",
+                "14:00",
                 "17:00"
         )));
-        Instant requestedStart = toInstant(MONDAY, LocalTime.of(13, 0));
+        Instant requestedStart = toInstant(MONDAY, LocalTime.of(14, 0));
         when(appointmentRepository.existsOccupiedStart(
                 doctor.getId(),
                 requestedStart,
@@ -342,7 +623,7 @@ class SlotServiceTest {
         )).thenReturn(List.of(schedule(
                 doctor,
                 ScheduleSession.AFTERNOON,
-                "13:00",
+                "14:00",
                 "17:00"
         )));
         Instant requestedStart = toInstant(MONDAY, LocalTime.of(14, 0));
@@ -371,20 +652,20 @@ class SlotServiceTest {
         )).thenReturn(List.of(schedule(
                 doctor,
                 ScheduleSession.AFTERNOON,
-                "13:00",
+                "14:00",
                 "17:00"
         )));
 
         assertThatThrownBy(() -> slotService.requireAvailableSlot(
                 doctor.getId(),
                 dentalService.getId(),
-                toInstant(MONDAY, LocalTime.of(13, 30))
+                toInstant(MONDAY, LocalTime.of(14, 30))
         )).isInstanceOf(BusinessException.class)
                 .hasMessage("Khung giờ không thuộc lịch làm việc của bác sĩ");
 
         verify(appointmentRepository, never()).existsOccupiedStart(
                 doctor.getId(),
-                toInstant(MONDAY, LocalTime.of(13, 30)),
+                toInstant(MONDAY, LocalTime.of(14, 30)),
                 AppointmentStatus.CANCELLED
         );
     }
@@ -417,17 +698,17 @@ class SlotServiceTest {
         Doctor doctor = doctor();
         DentalService dentalService = dentalService(true);
         DoctorService mapping = stubValidDoctorAndService(doctor, dentalService);
-        SlotService boundaryService = slotServiceAt(Instant.parse("2026-10-12T04:00:00Z"));
+        SlotService boundaryService = slotServiceAt(Instant.parse("2026-10-12T05:00:00Z"));
         when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
                 doctor.getId(),
                 (short) 1
         )).thenReturn(List.of(schedule(
                 doctor,
                 ScheduleSession.AFTERNOON,
-                "13:00",
+                "14:00",
                 "17:00"
         )));
-        Instant requestedStart = toInstant(MONDAY, LocalTime.of(13, 0));
+        Instant requestedStart = toInstant(MONDAY, LocalTime.of(14, 0));
         when(appointmentRepository.existsOccupiedStart(
                 doctor.getId(),
                 requestedStart,
@@ -455,10 +736,10 @@ class SlotServiceTest {
         )).thenReturn(List.of(schedule(
                 doctor,
                 ScheduleSession.AFTERNOON,
-                "13:00",
+                "14:00",
                 "17:00"
         )));
-        Instant requestedStart = toInstant(MONDAY, LocalTime.of(13, 0));
+        Instant requestedStart = toInstant(MONDAY, LocalTime.of(14, 0));
         when(appointmentRepository.existsOccupiedStart(
                 doctor.getId(),
                 requestedStart,
@@ -581,6 +862,84 @@ class SlotServiceTest {
                 toInstant(MONDAY.plusDays(1), LocalTime.MIN),
                 AppointmentStatus.CANCELLED
         )).thenReturn(List.of());
+    }
+
+    private List<AppointmentStatus> activeStatuses() {
+        return List.of(
+                AppointmentStatus.BOOKED,
+                AppointmentStatus.CHECKED_IN,
+                AppointmentStatus.IN_PROGRESS
+        );
+    }
+
+    private AppointmentQueueOccupancy occupancy(
+            LocalDate date,
+            ScheduleSession session,
+            Short queueNumber,
+            LocalTime legacyStartTime
+    ) {
+        return occupancy(null, date, session, queueNumber, legacyStartTime);
+    }
+
+    private AppointmentQueueOccupancy occupancy(
+            UUID appointmentId,
+            LocalDate date,
+            ScheduleSession session,
+            Short queueNumber,
+            LocalTime legacyStartTime
+    ) {
+        Instant scheduledStartAt = toInstant(date, legacyStartTime);
+        return new AppointmentQueueOccupancy() {
+            @Override
+            public UUID getAppointmentId() {
+                return appointmentId;
+            }
+
+            @Override
+            public LocalDate getAppointmentDate() {
+                return date;
+            }
+
+            @Override
+            public ScheduleSession getSession() {
+                return session;
+            }
+
+            @Override
+            public Short getQueueNumber() {
+                return queueNumber;
+            }
+
+            @Override
+            public Instant getScheduledStartAt() {
+                return scheduledStartAt;
+            }
+        };
+    }
+
+    private AppointmentQueueOccupancy legacyOccupancy(LocalDate date, LocalTime startTime) {
+        Instant scheduledStartAt = toInstant(date, startTime);
+        return new AppointmentQueueOccupancy() {
+            @Override
+            public LocalDate getAppointmentDate() {
+                return null;
+            }
+
+            @Override
+            public ScheduleSession getSession() {
+                return null;
+            }
+
+            @Override
+            public Short getQueueNumber() {
+                return null;
+            }
+
+            @Override
+            public Instant getScheduledStartAt() {
+                return scheduledStartAt;
+            }
+        };
     }
 
     private Doctor doctor() {

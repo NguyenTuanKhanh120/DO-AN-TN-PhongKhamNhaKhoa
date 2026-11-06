@@ -21,6 +21,8 @@ import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
 import com.dentalclinic.medicalrecord.entity.MedicalRecord;
 import com.dentalclinic.schedule.service.SlotService;
+import com.dentalclinic.schedule.entity.ScheduleSession;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
@@ -37,7 +39,7 @@ import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.OffsetDateTime;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
@@ -45,6 +47,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -79,6 +82,7 @@ class AppointmentBookingServiceTest {
     @BeforeEach
     void setUp() {
         ClinicTimeProvider timeProvider = new ClinicTimeProvider(Clock.fixed(FIXED_NOW, CLINIC_ZONE));
+        SchedulingPolicy schedulingPolicy = new SchedulingPolicy(timeProvider);
         bookingService = new AppointmentBookingService(
                 patientRepository,
                 doctorRepository,
@@ -86,8 +90,8 @@ class AppointmentBookingServiceTest {
                 appointmentHistoryRepository,
                 medicalRecordRepository,
                 slotService,
-                timeProvider,
-                60
+                schedulingPolicy,
+                timeProvider
         );
     }
 
@@ -100,10 +104,12 @@ class AppointmentBookingServiceTest {
                 .thenReturn(Optional.of(mapping.getDoctor()));
         when(patientRepository.findByUserId(patient.getUser().getId()))
                 .thenReturn(Optional.of(patient));
-        when(slotService.requireAvailableSlot(
+        when(slotService.requireAvailableCase(
                 request.doctorId(),
                 request.serviceId(),
-                request.scheduledStartAt().toInstant()
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1
         )).thenReturn(mapping);
         when(appointmentRepository.saveAndFlush(any(Appointment.class))).thenAnswer(invocation -> {
             Appointment appointment = invocation.getArgument(0);
@@ -126,7 +132,10 @@ class AppointmentBookingServiceTest {
         assertThat(appointment.getDoctorService()).isSameAs(mapping);
         assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.BOOKED);
         assertThat(appointment.getScheduledStartAt())
-                .isEqualTo(Instant.parse("2026-10-12T06:00:00Z"));
+                .isEqualTo(Instant.parse("2026-10-12T07:00:00Z"));
+        assertThat(appointment.getAppointmentDate()).isEqualTo(LocalDate.of(2026, 10, 12));
+        assertThat(appointment.getSession()).isEqualTo(ScheduleSession.AFTERNOON);
+        assertThat(appointment.getQueueNumber()).isEqualTo((short) 1);
 
         ArgumentCaptor<AppointmentHistory> historyCaptor =
                 ArgumentCaptor.forClass(AppointmentHistory.class);
@@ -140,15 +149,24 @@ class AppointmentBookingServiceTest {
                 .isEqualTo(mapping.getDoctor().getId().toString());
         assertThat(history.getDetails().path("service_id").asText())
                 .isEqualTo(mapping.getService().getId().toString());
-        assertThat(history.getDetails().path("scheduled_start_at").asText())
-                .isEqualTo("2026-10-12T13:00+07:00");
+        assertThat(history.getDetails().path("estimated_start_at").asText())
+                .isEqualTo("2026-10-12T14:00+07:00");
+        assertThat(history.getDetails().path("appointment_date").asText())
+                .isEqualTo("2026-10-12");
+        assertThat(history.getDetails().path("session").asText()).isEqualTo("AFTERNOON");
+        assertThat(history.getDetails().path("queue_number").asInt()).isEqualTo(1);
 
         assertThat(response.patientId()).isEqualTo(patient.getId());
         assertThat(response.doctorId()).isEqualTo(mapping.getDoctor().getId());
         assertThat(response.serviceId()).isEqualTo(mapping.getService().getId());
         assertThat(response.status()).isEqualTo(AppointmentStatus.BOOKED);
-        assertThat(response.scheduledStartAt().toString()).isEqualTo("2026-10-12T13:00+07:00");
-        assertThat(response.scheduledEndAt().toString()).isEqualTo("2026-10-12T14:00+07:00");
+        assertThat(response.appointmentDate()).isEqualTo(LocalDate.of(2026, 10, 12));
+        assertThat(response.session()).isEqualTo(ScheduleSession.AFTERNOON);
+        assertThat(response.queueNumber()).isEqualTo(1);
+        assertThat(response.sessionStartTime()).isEqualTo(java.time.LocalTime.of(14, 0));
+        assertThat(response.sessionEndTime()).isEqualTo(java.time.LocalTime.of(17, 0));
+        assertThat(response.estimatedStartTime()).isEqualTo(java.time.LocalTime.of(14, 0));
+        assertThat(response.estimatedStartAt().toString()).isEqualTo("2026-10-12T14:00+07:00");
     }
 
     @Test
@@ -157,7 +175,10 @@ class AppointmentBookingServiceTest {
         BookAppointmentRequest request = new BookAppointmentRequest(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
-                OffsetDateTime.parse("2026-10-12T13:00:00+07:00")
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1,
+                null
         );
         when(patientRepository.findByUserId(userId)).thenReturn(Optional.empty());
 
@@ -165,7 +186,36 @@ class AppointmentBookingServiceTest {
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Không tìm thấy hồ sơ bệnh nhân");
 
-        verify(slotService, never()).requireAvailableSlot(any(), any(), any());
+        verify(slotService, never()).requireAvailableCase(
+                any(), any(), any(), any(), anyInt()
+        );
+    }
+
+    @Test
+    void shouldRejectSecondActiveAppointmentForPatientInSameSession() {
+        Patient patient = patient();
+        DoctorService mapping = mapping();
+        BookAppointmentRequest request = request(mapping);
+        when(patientRepository.findByUserId(patient.getUser().getId()))
+                .thenReturn(Optional.of(patient));
+        when(appointmentRepository.existsActivePatientSession(
+                eq(patient.getId()),
+                eq(LocalDate.of(2026, 10, 12)),
+                eq(ScheduleSession.AFTERNOON),
+                eq(Instant.parse("2026-10-12T07:00:00Z")),
+                eq(Instant.parse("2026-10-12T10:00:00Z")),
+                any()
+        )).thenReturn(true);
+
+        assertThatThrownBy(() -> bookingService.book(patient.getUser().getId(), request))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Bạn đã có một lịch khám đang hoạt động trong buổi này");
+
+        verify(doctorRepository, never()).findForUpdateById(any());
+        verify(slotService, never()).requireAvailableCase(
+                any(), any(), any(), any(), anyInt()
+        );
+        verify(appointmentRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -177,10 +227,12 @@ class AppointmentBookingServiceTest {
                 .thenReturn(Optional.of(mapping.getDoctor()));
         when(patientRepository.findByUserId(patient.getUser().getId()))
                 .thenReturn(Optional.of(patient));
-        when(slotService.requireAvailableSlot(
+        when(slotService.requireAvailableCase(
                 request.doctorId(),
                 request.serviceId(),
-                request.scheduledStartAt().toInstant()
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1
         )).thenReturn(mapping);
         SQLException postgresUniqueViolation = new SQLException(
                 "duplicate key",
@@ -194,7 +246,7 @@ class AppointmentBookingServiceTest {
 
         assertThatThrownBy(() -> bookingService.book(patient.getUser().getId(), request))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("Khung giờ vừa được người khác đặt. Vui lòng chọn khung giờ khác");
+                .hasMessage("Ca khám vừa được đặt hoặc bạn đã có lịch trong buổi này. Vui lòng tải lại lịch");
 
         verify(appointmentHistoryRepository, never()).saveAndFlush(any());
     }
@@ -208,10 +260,12 @@ class AppointmentBookingServiceTest {
                 .thenReturn(Optional.of(mapping.getDoctor()));
         when(patientRepository.findByUserId(patient.getUser().getId()))
                 .thenReturn(Optional.of(patient));
-        when(slotService.requireAvailableSlot(
+        when(slotService.requireAvailableCase(
                 request.doctorId(),
                 request.serviceId(),
-                request.scheduledStartAt().toInstant()
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1
         )).thenReturn(mapping);
         DataIntegrityViolationException failure = new DataIntegrityViolationException(
                 "foreign key",
@@ -224,7 +278,7 @@ class AppointmentBookingServiceTest {
     }
 
     @Test
-    void shouldRejectBookingWhenDoctorIsOffWithoutWritingAppointment() {
+    void shouldRejectBookingWhenRequestedCaseIsUnavailableWithoutWritingAppointment() {
         Patient patient = patient();
         DoctorService mapping = mapping();
         BookAppointmentRequest request = request(mapping);
@@ -232,15 +286,16 @@ class AppointmentBookingServiceTest {
                 .thenReturn(Optional.of(mapping.getDoctor()));
         when(patientRepository.findByUserId(patient.getUser().getId()))
                 .thenReturn(Optional.of(patient));
-        when(slotService.requireAvailableSlot(
-                request.doctorId(), request.serviceId(), request.scheduledStartAt().toInstant()
+        when(slotService.requireAvailableCase(
+                request.doctorId(), request.serviceId(),
+                LocalDate.of(2026, 10, 12), ScheduleSession.AFTERNOON, 1
         )).thenThrow(new ConflictException(
-                "Bác sĩ đã nghỉ trong khung giờ này. Vui lòng chọn khung giờ khác"
+                "Ca khám vừa được người khác đặt. Vui lòng chọn ca khác"
         ));
 
         assertThatThrownBy(() -> bookingService.book(patient.getUser().getId(), request))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("Bác sĩ đã nghỉ");
+                .hasMessageContaining("Ca khám vừa được người khác đặt");
 
         verify(appointmentRepository, never()).saveAndFlush(any(Appointment.class));
         verify(appointmentHistoryRepository, never()).saveAndFlush(any(AppointmentHistory.class));
@@ -257,7 +312,9 @@ class AppointmentBookingServiceTest {
         BookAppointmentRequest request = new BookAppointmentRequest(
                 mapping.getDoctor().getId(),
                 mapping.getService().getId(),
-                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1,
                 previous.getId()
         );
         when(patientRepository.findByUserId(patient.getUser().getId()))
@@ -272,8 +329,9 @@ class AppointmentBookingServiceTest {
         )).thenReturn(false);
         when(doctorRepository.findForUpdateById(request.doctorId()))
                 .thenReturn(Optional.of(mapping.getDoctor()));
-        when(slotService.requireAvailableSlot(
-                request.doctorId(), request.serviceId(), request.scheduledStartAt().toInstant()
+        when(slotService.requireAvailableCase(
+                request.doctorId(), request.serviceId(),
+                LocalDate.of(2026, 10, 12), ScheduleSession.AFTERNOON, 1
         )).thenReturn(mapping);
         when(appointmentRepository.saveAndFlush(any(Appointment.class))).thenAnswer(invocation -> {
             Appointment saved = invocation.getArgument(0);
@@ -311,7 +369,9 @@ class AppointmentBookingServiceTest {
         BookAppointmentRequest request = new BookAppointmentRequest(
                 mapping.getDoctor().getId(),
                 mapping.getService().getId(),
-                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1,
                 previousAppointmentId
         );
         when(patientRepository.findByUserId(patient.getUser().getId()))
@@ -324,7 +384,9 @@ class AppointmentBookingServiceTest {
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("Không tìm thấy lịch khám trước");
 
-        verify(slotService, never()).requireAvailableSlot(any(), any(), any());
+        verify(slotService, never()).requireAvailableCase(
+                any(), any(), any(), any(), anyInt()
+        );
     }
 
     @Test
@@ -338,7 +400,9 @@ class AppointmentBookingServiceTest {
         BookAppointmentRequest request = new BookAppointmentRequest(
                 mapping.getDoctor().getId(),
                 mapping.getService().getId(),
-                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1,
                 previous.getId()
         );
         when(patientRepository.findByUserId(patient.getUser().getId()))
@@ -366,7 +430,10 @@ class AppointmentBookingServiceTest {
         return new BookAppointmentRequest(
                 mapping.getDoctor().getId(),
                 mapping.getService().getId(),
-                OffsetDateTime.parse("2026-10-12T13:00:00+07:00")
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.AFTERNOON,
+                1,
+                null
         );
     }
 

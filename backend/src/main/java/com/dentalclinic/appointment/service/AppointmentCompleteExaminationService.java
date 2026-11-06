@@ -99,6 +99,11 @@ public class AppointmentCompleteExaminationService {
         return new CompleteExaminationResponse(
                 appointment.getId(),
                 appointment.getStatus(),
+                appointment.getAppointmentDate(),
+                appointment.getSession(),
+                appointment.getQueueNumber() == null
+                        ? null
+                        : appointment.getQueueNumber().intValue(),
                 toClinicOffset(appointment.getScheduledStartAt()),
                 toClinicOffsetOrNull(appointment.getCheckedInAt()),
                 toClinicOffset(appointment.getActualStartAt()),
@@ -131,7 +136,12 @@ public class AppointmentCompleteExaminationService {
         ObjectNode details = JsonNodeFactory.instance.objectNode();
         details.put("old_status", AppointmentStatus.IN_PROGRESS.name());
         details.put("new_status", AppointmentStatus.COMPLETED.name());
-        details.put("scheduled_start_at", toClinicOffset(appointment.getScheduledStartAt()).toString());
+        if (appointment.getAppointmentDate() != null) {
+            details.put("appointment_date", appointment.getAppointmentDate().toString());
+            details.put("session", appointment.getSession().name());
+            details.put("queue_number", appointment.getQueueNumber());
+        }
+        details.put("estimated_start_at", toClinicOffset(appointment.getScheduledStartAt()).toString());
         putNullableTime(details, "checked_in_at", appointment.getCheckedInAt());
         details.put("actual_start_at", toClinicOffset(appointment.getActualStartAt()).toString());
         details.put("actual_end_at", toClinicOffset(actualEndAt).toString());

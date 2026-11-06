@@ -156,6 +156,7 @@ class KnowledgeVersionActivationPostgreSqlIntegrationTest {
                 .put("recordId", recordId)
                 .put("contentHash", contentHash)
                 .put("syncId", syncId.toString())
+                .put("embeddingModel", "gemini-embedding-2")
                 .put("embeddingDimension", KnowledgeEmbeddingConstants.VECTOR_DIMENSION));
         float[] embedding = new float[KnowledgeEmbeddingConstants.VECTOR_DIMENSION];
         embedding[0] = 1.0f;

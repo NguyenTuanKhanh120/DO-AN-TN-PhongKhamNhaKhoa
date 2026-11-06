@@ -19,6 +19,8 @@ import com.dentalclinic.doctor.entity.DoctorServiceId;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.schedule.entity.ScheduleSession;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.Role;
@@ -82,7 +84,7 @@ class AppointmentQueryServiceTest {
                 patientRepository,
                 doctorRepository,
                 timeProvider,
-                60
+                new SchedulingPolicy(timeProvider)
         );
     }
 
@@ -118,10 +120,14 @@ class AppointmentQueryServiceTest {
         AppointmentResponse response = result.content().getFirst();
         assertThat(response.id()).isEqualTo(appointment.getId());
         assertThat(response.patientId()).isEqualTo(patient.getId());
-        assertThat(response.scheduledStartAt().toString())
-                .isEqualTo("2026-10-12T10:00+07:00");
-        assertThat(response.scheduledEndAt().toString())
-                .isEqualTo("2026-10-12T11:00+07:00");
+        assertThat(response.appointmentDate()).isEqualTo(LocalDate.of(2026, 10, 12));
+        assertThat(response.session()).isEqualTo(ScheduleSession.MORNING);
+        assertThat(response.queueNumber()).isEqualTo(2);
+        assertThat(response.sessionStartTime()).isEqualTo(java.time.LocalTime.of(8, 0));
+        assertThat(response.sessionEndTime()).isEqualTo(java.time.LocalTime.of(11, 0));
+        assertThat(response.estimatedStartTime()).isEqualTo(java.time.LocalTime.of(9, 30));
+        assertThat(response.estimatedStartAt().toString())
+                .isEqualTo("2026-10-12T09:30+07:00");
     }
 
     @Test
@@ -189,7 +195,7 @@ class AppointmentQueryServiceTest {
                 pageableCaptor.capture()
         );
         Sort.Order timeOrder = pageableCaptor.getValue().getSort()
-                .getOrderFor("scheduledStartAt");
+                .getOrderFor("appointmentDate");
         assertThat(timeOrder).isNotNull();
         assertThat(timeOrder.getDirection()).isEqualTo(Sort.Direction.ASC);
     }
@@ -281,7 +287,10 @@ class AppointmentQueryServiceTest {
         appointment.setId(UUID.randomUUID());
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
-        appointment.setScheduledStartAt(Instant.parse("2026-10-12T03:00:00Z"));
+        appointment.setScheduledStartAt(Instant.parse("2026-10-12T02:30:00Z"));
+        appointment.setAppointmentDate(LocalDate.of(2026, 10, 12));
+        appointment.setSession(ScheduleSession.MORNING);
+        appointment.setQueueNumber((short) 2);
         appointment.setStatus(AppointmentStatus.BOOKED);
         appointment.setCreatedAt(Instant.parse("2026-10-10T03:00:00Z"));
         appointment.setUpdatedAt(Instant.parse("2026-10-10T03:00:00Z"));

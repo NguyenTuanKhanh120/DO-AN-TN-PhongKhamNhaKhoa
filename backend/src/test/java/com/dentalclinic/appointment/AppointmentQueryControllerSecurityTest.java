@@ -21,6 +21,7 @@ import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.exception.GlobalExceptionHandler;
 import com.dentalclinic.common.response.PageResponse;
 import com.dentalclinic.config.SecurityConfig;
+import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
@@ -38,6 +39,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import javax.crypto.SecretKey;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -155,8 +157,8 @@ class AppointmentQueryControllerSecurityTest {
         mockMvc.perform(get("/api/doctor/appointments/today")
                         .with(user(principal)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.content[0].scheduledStartAt")
-                        .value("2026-10-12T09:00:00+07:00"));
+                .andExpect(jsonPath("$.data.content[0].estimatedStartAt")
+                        .value("2026-10-12T09:30:00+07:00"));
 
         verify(appointmentQueryService).getDoctorTodayAppointments(
                 principal.getId(),
@@ -227,7 +229,10 @@ class AppointmentQueryControllerSecurityTest {
         StartExaminationResponse response = new StartExaminationResponse(
                 appointmentId,
                 AppointmentStatus.IN_PROGRESS,
-                OffsetDateTime.parse("2026-10-12T09:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.MORNING,
+                2,
+                OffsetDateTime.parse("2026-10-12T09:30:00+07:00"),
                 null,
                 OffsetDateTime.parse("2026-10-12T09:15:00+07:00")
         );
@@ -242,8 +247,11 @@ class AppointmentQueryControllerSecurityTest {
                 .andExpect(jsonPath("$.message").value("Bắt đầu khám thành công"))
                 .andExpect(jsonPath("$.data.id").value(appointmentId.toString()))
                 .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
-                .andExpect(jsonPath("$.data.scheduledStartAt")
-                        .value("2026-10-12T09:00:00+07:00"))
+                .andExpect(jsonPath("$.data.appointmentDate").value("2026-10-12"))
+                .andExpect(jsonPath("$.data.session").value("MORNING"))
+                .andExpect(jsonPath("$.data.queueNumber").value(2))
+                .andExpect(jsonPath("$.data.estimatedStartAt")
+                        .value("2026-10-12T09:30:00+07:00"))
                 .andExpect(jsonPath("$.data.checkedInAt").isEmpty())
                 .andExpect(jsonPath("$.data.actualStartAt")
                         .value("2026-10-12T09:15:00+07:00"));
@@ -268,7 +276,10 @@ class AppointmentQueryControllerSecurityTest {
         NoShowAppointmentResponse response = new NoShowAppointmentResponse(
                 appointmentId,
                 AppointmentStatus.NO_SHOW,
-                OffsetDateTime.parse("2026-10-12T09:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.MORNING,
+                2,
+                OffsetDateTime.parse("2026-10-12T09:30:00+07:00"),
                 OffsetDateTime.parse("2026-10-12T09:15:00+07:00")
         );
         when(appointmentNoShowService.markNoShow(principal.getId(), appointmentId))
@@ -283,8 +294,8 @@ class AppointmentQueryControllerSecurityTest {
                         .value("Đánh dấu bệnh nhân không đến khám thành công"))
                 .andExpect(jsonPath("$.data.id").value(appointmentId.toString()))
                 .andExpect(jsonPath("$.data.status").value("NO_SHOW"))
-                .andExpect(jsonPath("$.data.scheduledStartAt")
-                        .value("2026-10-12T09:00:00+07:00"))
+                .andExpect(jsonPath("$.data.estimatedStartAt")
+                        .value("2026-10-12T09:30:00+07:00"))
                 .andExpect(jsonPath("$.data.noShowAt")
                         .value("2026-10-12T09:15:00+07:00"));
 
@@ -308,7 +319,10 @@ class AppointmentQueryControllerSecurityTest {
         CompleteExaminationResponse response = new CompleteExaminationResponse(
                 appointmentId,
                 AppointmentStatus.COMPLETED,
-                OffsetDateTime.parse("2026-10-12T09:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.MORNING,
+                2,
+                OffsetDateTime.parse("2026-10-12T09:30:00+07:00"),
                 OffsetDateTime.parse("2026-10-12T08:55:00+07:00"),
                 OffsetDateTime.parse("2026-10-12T09:15:00+07:00"),
                 OffsetDateTime.parse("2026-10-12T09:45:00+07:00")
@@ -393,8 +407,13 @@ class AppointmentQueryControllerSecurityTest {
                 UUID.randomUUID(),
                 "Trám răng",
                 null,
-                OffsetDateTime.parse("2026-10-12T09:00:00+07:00"),
-                OffsetDateTime.parse("2026-10-12T10:00:00+07:00"),
+                LocalDate.of(2026, 10, 12),
+                ScheduleSession.MORNING,
+                2,
+                LocalTime.of(8, 0),
+                LocalTime.of(11, 0),
+                LocalTime.of(9, 30),
+                OffsetDateTime.parse("2026-10-12T09:30:00+07:00"),
                 AppointmentStatus.BOOKED,
                 null,
                 null,

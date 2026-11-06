@@ -80,7 +80,7 @@ class AppointmentNoShowServiceTest {
         assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.NO_SHOW);
         assertThat(response.id()).isEqualTo(appointment.getId());
         assertThat(response.status()).isEqualTo(AppointmentStatus.NO_SHOW);
-        assertThat(response.scheduledStartAt().toString())
+        assertThat(response.estimatedStartAt().toString())
                 .isEqualTo("2026-10-12T09:00+07:00");
         assertThat(response.noShowAt().toString())
                 .isEqualTo("2026-10-12T09:15+07:00");
@@ -97,7 +97,7 @@ class AppointmentNoShowServiceTest {
         assertThat(history.getReason()).isNull();
         assertThat(history.getDetails().path("old_status").asText()).isEqualTo("BOOKED");
         assertThat(history.getDetails().path("new_status").asText()).isEqualTo("NO_SHOW");
-        assertThat(history.getDetails().path("scheduled_start_at").asText())
+        assertThat(history.getDetails().path("estimated_start_at").asText())
                 .isEqualTo("2026-10-12T09:00+07:00");
         assertThat(history.getDetails().path("no_show_at").asText())
                 .isEqualTo("2026-10-12T09:15+07:00");

@@ -44,8 +44,11 @@ describe("ChatMessage", () => {
           serviceId: "service-1",
           date: "2026-11-02",
           session: "MORNING",
-          startAt: "2026-11-02T08:00:00+07:00",
-          endAt: "2026-11-02T09:00:00+07:00",
+          queueNumber: 1,
+          sessionStartTime: "08:00:00",
+          sessionEndTime: "11:00:00",
+          estimatedStartTime: "08:00:00",
+          estimatedStartAt: "2026-11-02T08:00:00+07:00",
         }],
       },
     };
@@ -54,14 +57,15 @@ describe("ChatMessage", () => {
 
     expect(screen.getByText("Khám răng tổng quát")).toBeInTheDocument();
     expect(screen.getByText("Bác sĩ An")).toBeInTheDocument();
-    expect(screen.getAllByText("08:00")).toHaveLength(2);
+    expect(screen.getByText(/Buổi sáng 08:00–11:00/)).toBeInTheDocument();
+    expect(screen.getByText(/Dự kiến 08:00/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Sâu răng/ })).toHaveAttribute(
       "href",
       "https://www.nidcr.nih.gov/health-info/tooth-decay",
     );
-    expect(screen.getByRole("link", { name: /08:00/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Dự kiến 08:00/ })).toHaveAttribute(
       "href",
-      expect.stringContaining("scheduledStartAt="),
+      expect.stringContaining("session=MORNING&queueNumber=1"),
     );
   });
 

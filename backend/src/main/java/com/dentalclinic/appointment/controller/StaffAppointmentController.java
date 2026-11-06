@@ -53,7 +53,7 @@ public class StaffAppointmentController {
             @Min(value = 1, message = "Size phải lớn hơn hoặc bằng 1")
             @Max(value = 100, message = "Size không được vượt quá 100")
             int size,
-            @RequestParam(defaultValue = "scheduledStartAt") String sortBy,
+            @RequestParam(defaultValue = "appointmentDate") String sortBy,
             @RequestParam(defaultValue = "ASC") Sort.Direction direction
     ) {
         return ApiResponse.success(appointmentQueryService.getStaffAppointments(

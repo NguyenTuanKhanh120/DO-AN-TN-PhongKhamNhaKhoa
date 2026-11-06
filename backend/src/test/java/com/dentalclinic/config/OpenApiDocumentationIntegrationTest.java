@@ -303,6 +303,20 @@ class OpenApiDocumentationIntegrationTest {
                 .has("suggestedDoctors")).isTrue();
         assertThat(schemas.path("SendChatMessageResponse").path("properties")
                 .has("suggestedSlots")).isTrue();
+        assertThat(schemas.path("ChatSlotSuggestion").path("properties").has("queueNumber"))
+                .isTrue();
+        assertThat(schemas.path("ChatSlotSuggestion").path("properties")
+                .has("sessionStartTime")).isTrue();
+        assertThat(schemas.path("ChatSlotSuggestion").path("properties")
+                .has("sessionEndTime")).isTrue();
+        assertThat(schemas.path("ChatSlotSuggestion").path("properties")
+                .has("estimatedStartTime")).isTrue();
+        assertThat(schemas.path("ChatSlotSuggestion").path("properties")
+                .has("estimatedStartAt")).isTrue();
+        assertThat(schemas.path("ChatSlotSuggestion").path("properties").has("startAt"))
+                .isFalse();
+        assertThat(schemas.path("ChatSlotSuggestion").path("properties").has("endAt"))
+                .isFalse();
         assertThat(schemas.path("SendChatMessageResponse").path("properties")
                 .has("needsClarification")).isTrue();
         assertThat(schemas.has("ErrorResponse")).isTrue();

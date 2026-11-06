@@ -84,8 +84,12 @@ class AvailableSlotControllerSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].date").value("2026-10-12"))
                 .andExpect(jsonPath("$.data[0].session").value("AFTERNOON"))
-                .andExpect(jsonPath("$.data[0].startTime").value("13:00:00"))
-                .andExpect(jsonPath("$.data[0].startAt").value("2026-10-12T13:00:00+07:00"));
+                .andExpect(jsonPath("$.data[0].queueNumber").value(1))
+                .andExpect(jsonPath("$.data[0].sessionStartTime").value("14:00:00"))
+                .andExpect(jsonPath("$.data[0].sessionEndTime").value("17:00:00"))
+                .andExpect(jsonPath("$.data[0].estimatedStartTime").value("14:00:00"))
+                .andExpect(jsonPath("$.data[0].estimatedStartAt")
+                        .value("2026-10-12T14:00:00+07:00"));
 
         verify(slotService).getAvailableSlots(doctorId, serviceId, date);
     }
@@ -147,9 +151,10 @@ class AvailableSlotControllerSecurityTest {
         return new AvailableSlotResponse(
                 date,
                 ScheduleSession.AFTERNOON,
-                LocalTime.of(13, 0),
+                1,
                 LocalTime.of(14, 0),
-                OffsetDateTime.parse("2026-10-12T13:00:00+07:00"),
+                LocalTime.of(17, 0),
+                LocalTime.of(14, 0),
                 OffsetDateTime.parse("2026-10-12T14:00:00+07:00")
         );
     }

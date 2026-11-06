@@ -113,16 +113,16 @@ class DoctorScheduleAppointmentConflictPostgreSqlIntegrationTest {
         appointment.setStatus(AppointmentStatus.BOOKED);
         appointmentRepository.saveAndFlush(appointment);
 
-        DoctorScheduleRequest shortened = new DoctorScheduleRequest(
-                1,
+        DoctorScheduleRequest movedToTuesday = new DoctorScheduleRequest(
+                2,
                 ScheduleSession.MORNING,
-                LocalTime.of(9, 0),
+                LocalTime.of(8, 0),
                 LocalTime.of(11, 0)
         );
         assertThatThrownBy(() -> doctorScheduleService.updateSchedule(
                 doctor.getId(),
                 schedule.getId(),
-                shortened
+                movedToTuesday
         )).isInstanceOf(ConflictException.class)
                 .hasMessageContaining("1 lịch hẹn tương lai");
 

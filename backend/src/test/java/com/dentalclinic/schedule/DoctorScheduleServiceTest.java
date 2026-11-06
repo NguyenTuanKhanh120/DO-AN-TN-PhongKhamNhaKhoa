@@ -14,6 +14,7 @@ import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
 import com.dentalclinic.schedule.service.DoctorScheduleService;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
@@ -65,7 +66,7 @@ class DoctorScheduleServiceTest {
                 doctorScheduleRepository,
                 appointmentQueryService,
                 clinicTimeProvider,
-                60
+                new SchedulingPolicy(clinicTimeProvider)
         );
     }
 
@@ -256,7 +257,7 @@ class DoctorScheduleServiceTest {
                 "07:00",
                 "12:00"
         );
-        DoctorScheduleRequest request = request(1, ScheduleSession.AFTERNOON, "13:00", "17:00");
+        DoctorScheduleRequest request = request(1, ScheduleSession.AFTERNOON, "14:00", "17:00");
         when(doctorRepository.findForUpdateById(doctor.getId())).thenReturn(Optional.of(doctor));
         when(doctorScheduleRepository.findByIdAndDoctor_Id(
                 schedule.getId(),
@@ -370,7 +371,7 @@ class DoctorScheduleServiceTest {
                             ),
                             org.assertj.core.groups.Tuple.tuple(
                                     ScheduleSession.AFTERNOON,
-                                    LocalTime.of(13, 0),
+                                    LocalTime.of(14, 0),
                                     LocalTime.of(17, 0)
                             )
                     );
@@ -379,7 +380,7 @@ class DoctorScheduleServiceTest {
     }
 
     @Test
-    void shouldRejectSundayAndNonHourlyScheduleBoundaries() {
+    void shouldRejectSundayAndNonStandardSessionWindow() {
         assertThatThrownBy(() -> service.createSchedule(
                 UUID.randomUUID(),
                 request(7, ScheduleSession.MORNING, "08:00", "11:00")
@@ -390,7 +391,7 @@ class DoctorScheduleServiceTest {
                 UUID.randomUUID(),
                 request(1, ScheduleSession.AFTERNOON, "13:30", "16:30")
         )).isInstanceOf(BusinessException.class)
-                .hasMessage("Giờ làm việc phải khớp ranh giới slot 60 phút");
+                .hasMessage("Ca AFTERNOON phải đúng khung 14:00–17:00");
 
         verify(doctorRepository, never()).findForUpdateById(any());
     }
@@ -419,7 +420,7 @@ class DoctorScheduleServiceTest {
         assertThatThrownBy(() -> service.updateSchedule(
                 doctor.getId(),
                 schedule.getId(),
-                request(1, ScheduleSession.MORNING, "09:00", "11:00")
+                request(2, ScheduleSession.MORNING, "08:00", "11:00")
         )).isInstanceOf(com.dentalclinic.common.exception.ConflictException.class)
                 .hasMessage("Không thể thay đổi lịch tuần vì có 1 lịch hẹn tương lai đang bị ảnh hưởng");
 

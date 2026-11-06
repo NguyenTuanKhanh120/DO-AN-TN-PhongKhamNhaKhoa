@@ -3,6 +3,7 @@ package com.dentalclinic.ai.embedding;
 import com.dentalclinic.ai.config.AiProperties;
 import com.dentalclinic.ai.knowledge.exception.KnowledgeBaseException;
 import com.google.genai.Models;
+import com.google.genai.errors.ClientException;
 import com.google.genai.types.ContentEmbedding;
 import com.google.genai.types.EmbedContentConfig;
 import com.google.genai.types.EmbedContentResponse;
@@ -20,6 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,9 +30,13 @@ class GoogleGenAiEmbeddingGatewayTest {
     private static final int DIMENSION = 768;
 
     private final Models models = mock(Models.class);
+    private final java.util.function.LongConsumer sleepRecorder = mock(
+            java.util.function.LongConsumer.class
+    );
     private final GoogleGenAiEmbeddingGateway gateway = new GoogleGenAiEmbeddingGateway(
             models,
-            properties()
+            properties(),
+            sleepRecorder::accept
     );
 
     @Test
@@ -85,11 +91,62 @@ class GoogleGenAiEmbeddingGatewayTest {
                 .withMessage("Embedding input at index 0 must not be blank");
     }
 
+    @Test
+    void shouldReportDailyQuotaWithoutExposingProviderDetails() {
+        when(models.embedContent(eq("gemini-embedding-2"), anyList(), any(EmbedContentConfig.class)))
+                .thenThrow(new ClientException(
+                        429,
+                        "RESOURCE_EXHAUSTED",
+                        "Embed content requests per day limit exceeded; secret-provider-detail"
+                ));
+
+        assertThatThrownBy(() -> gateway.embedAll(List.of("Nội dung")))
+                .isInstanceOf(KnowledgeBaseException.class)
+                .hasMessage("Gemini embedding đã hết hạn mức theo ngày")
+                .hasMessageNotContaining("secret-provider-detail");
+    }
+
+    @Test
+    void shouldSplitLargeDatasetIntoBoundedRequestsAndPreserveOrder() {
+        when(models.embedContent(eq("gemini-embedding-2"), anyList(), any(EmbedContentConfig.class)))
+                .thenAnswer(invocation -> responseForCount(
+                        invocation.<List<String>>getArgument(1).size()
+                ));
+        List<String> texts = java.util.stream.IntStream.range(0, 65)
+                .mapToObj(index -> "Nội dung " + index)
+                .toList();
+
+        List<float[]> embeddings = gateway.embedAll(texts);
+
+        assertThat(embeddings).hasSize(65);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> textsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(models, times(3)).embedContent(
+                eq("gemini-embedding-2"),
+                textsCaptor.capture(),
+                any(EmbedContentConfig.class)
+        );
+        assertThat(textsCaptor.getAllValues()).extracting(List::size)
+                .containsExactly(30, 30, 5);
+        assertThat(textsCaptor.getAllValues().stream().flatMap(List::stream).toList())
+                .containsExactlyElementsOf(texts);
+        verify(sleepRecorder, times(2)).accept(21_000L);
+    }
+
     private EmbedContentResponse response(List<Float>... vectors) {
         List<ContentEmbedding> embeddings = new ArrayList<>(vectors.length);
         for (List<Float> vector : vectors) {
             embeddings.add(ContentEmbedding.builder().values(vector).build());
         }
+        return EmbedContentResponse.builder().embeddings(embeddings).build();
+    }
+
+    private EmbedContentResponse responseForCount(int count) {
+        List<ContentEmbedding> embeddings = java.util.stream.IntStream.range(0, count)
+                .mapToObj(index -> ContentEmbedding.builder()
+                        .values(vector(DIMENSION, index + 1.0f))
+                        .build())
+                .toList();
         return EmbedContentResponse.builder().embeddings(embeddings).build();
     }
 

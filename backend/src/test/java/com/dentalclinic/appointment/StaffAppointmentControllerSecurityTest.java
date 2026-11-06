@@ -94,7 +94,7 @@ class StaffAppointmentControllerSecurityTest {
                 date,
                 0,
                 20,
-                "scheduledStartAt",
+                "appointmentDate",
                 Sort.Direction.ASC
         )).thenReturn(response);
 
@@ -117,7 +117,7 @@ class StaffAppointmentControllerSecurityTest {
                 date,
                 0,
                 20,
-                "scheduledStartAt",
+                "appointmentDate",
                 Sort.Direction.ASC
         );
     }

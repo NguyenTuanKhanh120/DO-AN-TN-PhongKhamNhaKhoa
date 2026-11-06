@@ -63,6 +63,41 @@ class NidcrDentalKnowledgeJsonParserTest {
     }
 
     @Test
+    void shouldValidateVietnameseDentalQaDatasetUsedByTheProject() {
+        Path knowledgeBaseDirectory = locateProjectKnowledgeBase();
+
+        DentalKnowledgeDataset dataset = parser(knowledgeBaseDirectory, DEFAULT_MAX_FILE_SIZE_BYTES)
+                .parse(knowledgeBaseDirectory.resolve(
+                        NidcrDentalKnowledgeJsonParser.VIETNAMESE_DENTAL_QA_FILE_NAME
+                ));
+
+        assertThat(dataset.datasetId()).isEqualTo("vietnamese-dental-qa-rag");
+        assertThat(dataset.sourceLanguage()).isEqualTo("vi");
+        assertThat(dataset.recordCount()).isEqualTo(639);
+        assertThat(dataset.records()).hasSize(639);
+        assertThat(dataset.records()).extracting(record -> record.id()).doesNotHaveDuplicates();
+        assertThat(dataset.records()).allSatisfy(record -> {
+            assertThat(record.id()).matches("VN-DENTAL-QA-[0-9]{6}");
+            assertThat(record.content()).isNotBlank();
+            assertThat(record.source().url()).hasScheme("https");
+        });
+    }
+
+    @Test
+    void shouldRejectUnknownDatasetProfile() throws Exception {
+        String unsupportedDataset = validDataset(
+                validRecord("NIDCR-VI-001", "tooth-decay"),
+                1
+        ).replace("nidcr-dental-knowledge-vi", "unsupported-dataset");
+        Path datasetFile = writeDataset(unsupportedDataset);
+
+        assertThatThrownBy(() -> parser(tempDirectory, DEFAULT_MAX_FILE_SIZE_BYTES).parse(datasetFile))
+                .isInstanceOf(KnowledgeDatasetValidationException.class)
+                .hasMessageContaining("$.datasetId")
+                .hasMessageContaining("không thuộc danh sách dataset được hỗ trợ");
+    }
+
+    @Test
     void shouldReportExactRecordPathWhenRequiredFieldIsMissing() throws Exception {
         String invalidRecord = validRecord("NIDCR-VI-001", "tooth-decay")
                 .replace("\"content\": \" Nội dung hợp lệ \",\n", "");

@@ -12,7 +12,7 @@ export const patientKeys = {
 };
 
 export const usePatientProfile = () => useQuery({ queryKey: patientKeys.profile, queryFn: service.getProfile });
-export const usePatientAppointments = (params: service.AppointmentListParams = {}) => useQuery({ queryKey: patientKeys.appointments(params), queryFn: () => service.getAppointments(params) });
+export const usePatientAppointments = (params: service.AppointmentListParams = {}, enabled = true) => useQuery({ queryKey: patientKeys.appointments(params), queryFn: () => service.getAppointments(params), enabled });
 export const usePatientAppointment = (id?: string) => useQuery({ queryKey: patientKeys.appointment(id ?? ""), queryFn: () => service.getAppointment(id ?? ""), enabled: Boolean(id) });
 export const usePatientMedicalRecords = (page: number) => useQuery({ queryKey: patientKeys.medicalRecords(page), queryFn: () => service.getMedicalRecords(page) });
 export const usePatientMedicalRecord = (id?: string) => useQuery({ queryKey: patientKeys.medicalRecord(id ?? ""), queryFn: () => service.getMedicalRecord(id ?? ""), enabled: Boolean(id) });
@@ -43,7 +43,7 @@ export function useCancelAppointment() {
 
 export function useRescheduleAppointment() {
   const client = useQueryClient();
-  return useMutation({ mutationFn: ({ id, scheduledStartAt, reason }: { id: string; scheduledStartAt: string; reason: string }) => service.rescheduleAppointment(id, scheduledStartAt, reason), onSuccess: async (_, variables) => {
+  return useMutation({ mutationFn: ({ id, ...payload }: { id: string } & service.RescheduleAppointmentPayload) => service.rescheduleAppointment(id, payload), onSuccess: async (_, variables) => {
     await Promise.all([client.invalidateQueries({ queryKey: ["patient", "appointments"] }), client.invalidateQueries({ queryKey: patientKeys.appointment(variables.id) }), client.invalidateQueries({ queryKey: ["public", "doctor"] })]);
   } });
 }

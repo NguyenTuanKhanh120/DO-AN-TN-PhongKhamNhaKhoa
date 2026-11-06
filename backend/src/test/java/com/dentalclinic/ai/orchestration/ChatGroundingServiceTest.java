@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -92,7 +93,10 @@ class ChatGroundingServiceTest {
                 dentalService.id(),
                 TOMORROW,
                 ChatSessionPreference.AFTERNOON,
-                OffsetDateTime.parse("2026-10-30T13:00:00+07:00"),
+                1,
+                LocalTime.of(14, 0),
+                LocalTime.of(17, 0),
+                LocalTime.of(14, 0),
                 OffsetDateTime.parse("2026-10-30T14:00:00+07:00")
         );
 

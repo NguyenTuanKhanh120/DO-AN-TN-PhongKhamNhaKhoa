@@ -26,10 +26,16 @@ public class KnowledgeEmbeddingService {
     }
 
     public List<EmbeddedKnowledgeChunk> embed(DentalKnowledgeDataset dataset) {
-        EmbeddingGateway gateway = embeddingGateway.orElseThrow(() -> new KnowledgeBaseException(
-                "Embedding chưa được bật trên hệ thống"
-        ));
         List<KnowledgeChunk> chunks = chunker.chunk(dataset);
+        return embedChunks(chunks);
+    }
+
+    public List<KnowledgeChunk> chunk(DentalKnowledgeDataset dataset) {
+        return chunker.chunk(dataset);
+    }
+
+    public List<EmbeddedKnowledgeChunk> embedChunks(List<KnowledgeChunk> chunks) {
+        EmbeddingGateway gateway = requireGateway();
         if (chunks.isEmpty()) {
             return List.of();
         }
@@ -56,6 +62,20 @@ public class KnowledgeEmbeddingService {
             ));
         }
         return List.copyOf(result);
+    }
+
+    public String embeddingModel() {
+        return requireGateway().modelName();
+    }
+
+    public int embeddingDimension() {
+        return requireGateway().dimension();
+    }
+
+    private EmbeddingGateway requireGateway() {
+        return embeddingGateway.orElseThrow(() -> new KnowledgeBaseException(
+                "Embedding chưa được bật trên hệ thống"
+        ));
     }
 
     private float[] requireValidEmbedding(float[] embedding, int index, int expectedDimension) {

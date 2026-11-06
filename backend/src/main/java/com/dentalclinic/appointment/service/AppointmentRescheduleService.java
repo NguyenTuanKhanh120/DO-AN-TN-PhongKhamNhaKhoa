@@ -18,36 +18,42 @@ import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.schedule.entity.ScheduleSession;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.dentalclinic.schedule.service.SlotService;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 public class AppointmentRescheduleService {
 
-    private static final String CUTOFF_MESSAGE = "Không thể đổi lịch vì lịch hẹn còn dưới "
-            + "1 giờ 30 phút. Vui lòng giữ lịch hiện tại hoặc liên hệ phòng khám.";
+    private static final String CUTOFF_MESSAGE = "Không thể tự đổi lịch từ 05:00 ngày khám. "
+            + "Vui lòng giữ lịch hiện tại hoặc liên hệ phòng khám.";
     private static final String SLOT_CONFLICT_MESSAGE = "Khung giờ mới vừa được người khác đặt. "
             + "Lịch hiện tại của bạn vẫn được giữ nguyên. Vui lòng chọn khung giờ khác.";
+    private static final List<AppointmentStatus> ACTIVE_APPOINTMENT_STATUSES = List.of(
+            AppointmentStatus.BOOKED,
+            AppointmentStatus.CHECKED_IN,
+            AppointmentStatus.IN_PROGRESS
+    );
 
     private final PatientRepository patientRepository;
     private final DoctorRepository doctorRepository;
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final SlotService slotService;
+    private final SchedulingPolicy schedulingPolicy;
     private final ClinicTimeProvider clinicTimeProvider;
-    private final Duration rescheduleCutoff;
-    private final Duration slotDuration;
 
     public AppointmentRescheduleService(
             PatientRepository patientRepository,
@@ -55,23 +61,16 @@ public class AppointmentRescheduleService {
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
             SlotService slotService,
-            ClinicTimeProvider clinicTimeProvider,
-            @Value("${clinic.appointment.reschedule-cutoff-minutes:90}")
-            long rescheduleCutoffMinutes,
-            @Value("${clinic.appointment.slot-duration-minutes:60}")
-            long slotDurationMinutes
+            SchedulingPolicy schedulingPolicy,
+            ClinicTimeProvider clinicTimeProvider
     ) {
-        if (rescheduleCutoffMinutes < 0 || slotDurationMinutes <= 0) {
-            throw new IllegalArgumentException("Cấu hình đổi lịch hoặc thời lượng slot không hợp lệ");
-        }
         this.patientRepository = patientRepository;
         this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.slotService = slotService;
+        this.schedulingPolicy = schedulingPolicy;
         this.clinicTimeProvider = clinicTimeProvider;
-        this.rescheduleCutoff = Duration.ofMinutes(rescheduleCutoffMinutes);
-        this.slotDuration = Duration.ofMinutes(slotDurationMinutes);
     }
 
     @Transactional
@@ -94,10 +93,18 @@ public class AppointmentRescheduleService {
 
         requireBooked(appointment);
         Instant changedAt = clinicTimeProvider.now();
-        requireBeforeCutoff(appointment, changedAt);
+        requireBeforeCutoff(appointment);
 
         Instant oldScheduledStartAt = appointment.getScheduledStartAt();
-        Instant newScheduledStartAt = request.scheduledStartAt().toInstant();
+        LocalDate oldAppointmentDate = resolveAppointmentDate(appointment);
+        ScheduleSession oldSession = appointment.getSession();
+        Short oldQueueNumber = appointment.getQueueNumber();
+        SchedulingPolicy.ScheduledCase newCase = schedulingPolicy.resolveCase(
+                request.appointmentDate(),
+                request.session(),
+                request.queueNumber()
+        );
+        Instant newScheduledStartAt = newCase.estimatedStartAt();
         if (newScheduledStartAt.equals(oldScheduledStartAt)) {
             throw new BusinessException(
                     ErrorCode.INVALID_REQUEST,
@@ -107,13 +114,40 @@ public class AppointmentRescheduleService {
 
         DoctorService doctorService = appointment.getDoctorService();
         UUID serviceId = doctorService.getService().getId();
-        slotService.requireAvailableRescheduleSlot(
+        Instant targetSessionStart = clinicTimeProvider.toInstant(
+                newCase.appointmentDate(),
+                schedulingPolicy.sessionStart(newCase.session())
+        );
+        Instant targetSessionEnd = clinicTimeProvider.toInstant(
+                newCase.appointmentDate(),
+                schedulingPolicy.sessionEnd(newCase.session())
+        );
+        if (appointmentRepository.existsOtherActivePatientSession(
+                appointment.getId(),
+                patient.getId(),
+                newCase.appointmentDate(),
+                newCase.session(),
+                targetSessionStart,
+                targetSessionEnd,
+                ACTIVE_APPOINTMENT_STATUSES
+        )) {
+            throw new ConflictException(
+                    "Bạn đã có một lịch khám đang hoạt động trong buổi muốn đổi tới"
+            );
+        }
+        slotService.requireAvailableRescheduleCase(
                 doctorId,
                 serviceId,
-                newScheduledStartAt
+                newCase.appointmentDate(),
+                newCase.session(),
+                newCase.queueNumber(),
+                appointment.getId()
         );
 
         appointment.setScheduledStartAt(newScheduledStartAt);
+        appointment.setAppointmentDate(newCase.appointmentDate());
+        appointment.setSession(newCase.session());
+        appointment.setQueueNumber((short) newCase.queueNumber());
         try {
             appointmentRepository.saveAndFlush(appointment);
         } catch (DataIntegrityViolationException exception) {
@@ -131,19 +165,31 @@ public class AppointmentRescheduleService {
         history.setReason(reason);
         history.setDetails(rescheduleDetails(
                 oldScheduledStartAt,
-                newScheduledStartAt,
+                oldAppointmentDate,
+                oldSession,
+                oldQueueNumber,
+                newCase,
                 changedAt
         ));
         appointmentHistoryRepository.saveAndFlush(history);
 
-        OffsetDateTime oldStart = toClinicOffset(oldScheduledStartAt);
-        OffsetDateTime newStart = toClinicOffset(newScheduledStartAt);
         return new RescheduleAppointmentResponse(
                 appointment.getId(),
                 appointment.getStatus(),
-                oldStart,
-                newStart,
-                newStart.plus(slotDuration),
+                oldAppointmentDate,
+                oldSession,
+                oldQueueNumber == null ? null : oldQueueNumber.intValue(),
+                toClinicOffset(oldScheduledStartAt),
+                newCase.appointmentDate(),
+                newCase.session(),
+                newCase.queueNumber(),
+                schedulingPolicy.sessionStart(newCase.session()),
+                schedulingPolicy.sessionEnd(newCase.session()),
+                schedulingPolicy.estimatedStartTime(
+                        newCase.session(),
+                        newCase.queueNumber()
+                ),
+                toClinicOffset(newScheduledStartAt),
                 reason,
                 toClinicOffset(changedAt)
         );
@@ -155,28 +201,41 @@ public class AppointmentRescheduleService {
         }
     }
 
-    private void requireBeforeCutoff(Appointment appointment, Instant now) {
-        if (appointment.getScheduledStartAt().isBefore(now.plus(rescheduleCutoff))) {
+    private void requireBeforeCutoff(Appointment appointment) {
+        if (!schedulingPolicy.isBeforePatientDailyCutoff(resolveAppointmentDate(appointment))) {
             throw new ConflictException(CUTOFF_MESSAGE);
         }
     }
 
     private ObjectNode rescheduleDetails(
             Instant oldScheduledStartAt,
-            Instant newScheduledStartAt,
+            LocalDate oldAppointmentDate,
+            ScheduleSession oldSession,
+            Short oldQueueNumber,
+            SchedulingPolicy.ScheduledCase newCase,
             Instant changedAt
     ) {
         ZonedDateTime oldClinicTime = clinicTimeProvider.toClinicTime(oldScheduledStartAt);
-        ZonedDateTime newClinicTime = clinicTimeProvider.toClinicTime(newScheduledStartAt);
+        ZonedDateTime newClinicTime = clinicTimeProvider.toClinicTime(newCase.estimatedStartAt());
         ObjectNode details = JsonNodeFactory.instance.objectNode();
-        details.put("old_date", oldClinicTime.toLocalDate().toString());
-        details.put("old_start_time", oldClinicTime.toLocalTime().toString());
-        details.put("new_date", newClinicTime.toLocalDate().toString());
-        details.put("new_start_time", newClinicTime.toLocalTime().toString());
-        details.put("old_scheduled_start_at", oldClinicTime.toOffsetDateTime().toString());
-        details.put("new_scheduled_start_at", newClinicTime.toOffsetDateTime().toString());
+        details.put("old_appointment_date", oldAppointmentDate.toString());
+        if (oldSession != null && oldQueueNumber != null) {
+            details.put("old_session", oldSession.name());
+            details.put("old_queue_number", oldQueueNumber);
+        }
+        details.put("new_appointment_date", newCase.appointmentDate().toString());
+        details.put("new_session", newCase.session().name());
+        details.put("new_queue_number", newCase.queueNumber());
+        details.put("old_estimated_start_at", oldClinicTime.toOffsetDateTime().toString());
+        details.put("new_estimated_start_at", newClinicTime.toOffsetDateTime().toString());
         details.put("changed_at", toClinicOffset(changedAt).toString());
         return details;
+    }
+
+    private LocalDate resolveAppointmentDate(Appointment appointment) {
+        return appointment.getAppointmentDate() == null
+                ? clinicTimeProvider.toClinicTime(appointment.getScheduledStartAt()).toLocalDate()
+                : appointment.getAppointmentDate();
     }
 
     private OffsetDateTime toClinicOffset(Instant instant) {

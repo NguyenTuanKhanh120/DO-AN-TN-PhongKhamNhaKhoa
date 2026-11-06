@@ -13,45 +13,41 @@ import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Service
 public class AppointmentCancellationService {
 
-    private static final String CUTOFF_MESSAGE = "Không thể hủy lịch vì lịch hẹn còn dưới "
-            + "1 giờ 30 phút. Vui lòng liên hệ phòng khám nếu có trường hợp đặc biệt.";
+    private static final String CUTOFF_MESSAGE = "Không thể tự hủy lịch từ 05:00 ngày khám. "
+            + "Vui lòng liên hệ phòng khám nếu có trường hợp đặc biệt.";
 
     private final PatientRepository patientRepository;
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final ClinicTimeProvider clinicTimeProvider;
-    private final Duration cancellationCutoff;
+    private final SchedulingPolicy schedulingPolicy;
 
     public AppointmentCancellationService(
             PatientRepository patientRepository,
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
             ClinicTimeProvider clinicTimeProvider,
-            @Value("${clinic.appointment.cancellation-cutoff-minutes:90}")
-            long cancellationCutoffMinutes
+            SchedulingPolicy schedulingPolicy
     ) {
-        if (cancellationCutoffMinutes < 0) {
-            throw new IllegalArgumentException("Cấu hình thời hạn hủy lịch không hợp lệ");
-        }
         this.patientRepository = patientRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.clinicTimeProvider = clinicTimeProvider;
-        this.cancellationCutoff = Duration.ofMinutes(cancellationCutoffMinutes);
+        this.schedulingPolicy = schedulingPolicy;
     }
 
     @Transactional
@@ -68,7 +64,7 @@ public class AppointmentCancellationService {
 
         requireBooked(appointment);
         Instant cancelledAt = clinicTimeProvider.now();
-        requireBeforeCutoff(appointment, cancelledAt);
+        requireBeforeCutoff(appointment);
         String reason = normalizeReason(request.reason());
 
         appointment.setStatus(AppointmentStatus.CANCELLED);
@@ -85,6 +81,11 @@ public class AppointmentCancellationService {
         return new CancelAppointmentResponse(
                 appointment.getId(),
                 appointment.getStatus(),
+                resolveAppointmentDate(appointment),
+                appointment.getSession(),
+                appointment.getQueueNumber() == null
+                        ? null
+                        : appointment.getQueueNumber().intValue(),
                 toClinicOffset(appointment.getScheduledStartAt()),
                 reason,
                 toClinicOffset(cancelledAt)
@@ -97,9 +98,9 @@ public class AppointmentCancellationService {
         }
     }
 
-    private void requireBeforeCutoff(Appointment appointment, Instant now) {
-        Instant cancellationDeadline = now.plus(cancellationCutoff);
-        if (appointment.getScheduledStartAt().isBefore(cancellationDeadline)) {
+    private void requireBeforeCutoff(Appointment appointment) {
+        LocalDate appointmentDate = resolveAppointmentDate(appointment);
+        if (!schedulingPolicy.isBeforePatientDailyCutoff(appointmentDate)) {
             throw new ConflictException(CUTOFF_MESSAGE);
         }
     }
@@ -109,8 +110,13 @@ public class AppointmentCancellationService {
         details.put("old_status", AppointmentStatus.BOOKED.name());
         details.put("new_status", AppointmentStatus.CANCELLED.name());
         details.put("source", "PATIENT_REQUEST");
+        if (appointment.getAppointmentDate() != null) {
+            details.put("appointment_date", appointment.getAppointmentDate().toString());
+            details.put("session", appointment.getSession().name());
+            details.put("queue_number", appointment.getQueueNumber());
+        }
         details.put(
-                "scheduled_start_at",
+                "estimated_start_at",
                 toClinicOffset(appointment.getScheduledStartAt()).toString()
         );
         details.put("cancelled_at", toClinicOffset(cancelledAt).toString());
@@ -119,6 +125,12 @@ public class AppointmentCancellationService {
 
     private OffsetDateTime toClinicOffset(Instant instant) {
         return clinicTimeProvider.toClinicTime(instant).toOffsetDateTime();
+    }
+
+    private LocalDate resolveAppointmentDate(Appointment appointment) {
+        return appointment.getAppointmentDate() == null
+                ? clinicTimeProvider.toClinicTime(appointment.getScheduledStartAt()).toLocalDate()
+                : appointment.getAppointmentDate();
     }
 
     private String normalizeReason(String reason) {

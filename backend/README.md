@@ -120,6 +120,8 @@ Copy the names from `.env.example` into the terminal or the deployment environme
 | `GEMINI_RETRY_MAX_ATTEMPTS` | No | Total Gemini attempts, defaults to `2` (one initial request and at most one retry) |
 | `KNOWLEDGE_BASE_DIRECTORY` | No | Directory containing the curated primary JSON dataset; defaults to `../knowledge-base` |
 | `AI_RAG_SYNC_CRON` | No | Dataset change-check schedule, defaults to every 15 minutes |
+| `AI_RAG_SYNC_BATCH_SIZE` | No | Number of chunks committed per embedding batch, defaults to `30` and must not exceed `30` |
+| `AI_RAG_SYNC_BATCH_DELAY` | No | Delay between embedding batches, defaults to `21s` |
 | `AI_RAG_DEFAULT_TOP_K` | No | Default retrieval result limit, defaults to `3` |
 | `AI_RAG_SIMILARITY_THRESHOLD` | No | Minimum cosine similarity, defaults to `0.55` |
 
@@ -354,18 +356,22 @@ $env:AI_ENABLED = 'true'
 mvn spring-boot:run
 ```
 
-The primary RAG dataset is `knowledge-base/nidcr_dental_knowledge_vi.json`. It currently contains 16 curated Vietnamese dental records with source URLs and `PENDING_CLINICAL_REVIEW` metadata. The accompanying filtered CSV is a research/reference dataset and is not promoted automatically into the active RAG version. Synchronization:
+The managed RAG datasets are `knowledge-base/nidcr_dental_knowledge_vi.json` and `knowledge-base/vietnamese_dental_qa_rag.json`. The first contains 16 curated Vietnamese dental records with NIDCR source URLs and `PENDING_CLINICAL_REVIEW` metadata. The second contains 639 deduplicated Vietnamese dental Q&A records filtered from public medical QA datasets and is marked `AUTOMATED_FILTERED_DEMO_NOT_CLINICALLY_REVIEWED`; it is suitable for the graduation-project demo, not as clinically reviewed guidance. The accompanying CSV, raw Parquet files and processing report are research/reference artifacts and are not promoted automatically. Synchronization:
 
-1. discovers the configured primary JSON file directly under `KNOWLEDGE_BASE_DIRECTORY`;
-2. validates UTF-8, size, duplicate JSON keys, dataset schema and required source metadata;
+1. discovers only the configured, supported JSON dataset file names directly under `KNOWLEDGE_BASE_DIRECTORY`;
+2. validates UTF-8, size, duplicate JSON keys, the profile-specific dataset/record identity, schema and required source metadata;
 3. skips unchanged content using SHA-256;
-4. chunks and embeds into 768 dimensions;
-5. writes a staging vector version, then atomically activates it only after the whole run succeeds;
-6. preserves the previous active version when parsing, embedding or persistence fails.
+4. chunks each source deterministically and embeds at most 30 missing records per provider request;
+5. commits every completed batch independently and records resumable progress without exposing an incomplete source to retrieval;
+6. resumes from stored record IDs on the next scheduled or manual sync after quota/rate-limit failure;
+7. atomically activates the new source version only after every expected chunk exists, then removes older vector versions;
+8. preserves the previous active version when parsing, embedding or persistence fails.
+
+The Free Tier counts each embedded text against both per-minute and per-day quotas, even when several texts share one HTTP request. Synchronization therefore commits at most 30 texts every 21 seconds. If the daily quota ends partway through the 639-record dataset, completed batches remain staged and the next run continues with only the missing records. Staged chunks are not searchable until all 639 records are present and the source version is activated.
 
 Use the ADMIN status and search-test APIs to verify active source/version, similarity score and provenance before enabling the feature for patients. There is intentionally no file upload endpoint: curated source files are deployed and reviewed through the repository/deployment process. Do not treat `PENDING_CLINICAL_REVIEW` content as a substitute for professional diagnosis.
 
-Successful SSE event order is `started` → one or more `token` → `metadata` → `completed`. `metadata` carries source links and only backend-verified service, doctor and slot cards. An `error` event terminates a failed or timed-out stream. The chatbot never creates an Appointment; selection and final confirmation remain in the existing patient booking flow.
+Successful SSE event order is `started` → one or more `token` → `metadata` → `completed`. `metadata` carries source links and only backend-verified service, doctor and appointment-case cards. Each available case contains `session`, `queueNumber`, the session window and `estimatedStartTime`/`estimatedStartAt`; it does not expose a fixed slot end time. The estimated time is not guaranteed because the actual examination can start earlier or later depending on the preceding case. An `error` event terminates a failed or timed-out stream. The chatbot never creates an Appointment; selection and final confirmation remain in the existing patient booking flow.
 
 ## React integration notes
 

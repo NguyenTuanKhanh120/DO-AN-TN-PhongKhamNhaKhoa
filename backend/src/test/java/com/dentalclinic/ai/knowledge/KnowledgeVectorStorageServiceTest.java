@@ -8,6 +8,7 @@ import com.dentalclinic.ai.knowledge.service.KnowledgeVectorStorageService;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,13 +58,21 @@ class KnowledgeVectorStorageServiceTest {
     }
 
     @Test
-    void shouldDeleteOnlyDocumentsOwnedByFailedSync() {
-        UUID syncId = UUID.randomUUID();
-        when(repository.deleteStagingDocuments("source-key", syncId.toString())).thenReturn(3);
+    void shouldFindAlreadyStoredRecordsForResumableVersion() {
+        when(repository.findStoredRecordIds(
+                "source-key",
+                "a".repeat(64),
+                "gemini-embedding-2",
+                "768"
+        )).thenReturn(List.of("record-1", "record-2"));
 
-        int deleted = service.deleteStaging("source-key", syncId);
+        Set<String> recordIds = service.findStoredRecordIds(
+                "source-key",
+                "a".repeat(64),
+                "gemini-embedding-2",
+                768
+        );
 
-        assertThat(deleted).isEqualTo(3);
-        verify(repository).deleteStagingDocuments("source-key", syncId.toString());
+        assertThat(recordIds).containsExactlyInAnyOrder("record-1", "record-2");
     }
 }

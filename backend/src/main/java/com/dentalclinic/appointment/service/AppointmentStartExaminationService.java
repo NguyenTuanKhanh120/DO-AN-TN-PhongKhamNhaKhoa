@@ -12,6 +12,7 @@ import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.repository.DoctorRepository;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
@@ -19,25 +20,35 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 public class AppointmentStartExaminationService {
 
+    private static final List<AppointmentStatus> ACTIVE_QUEUE_STATUSES = List.of(
+            AppointmentStatus.BOOKED,
+            AppointmentStatus.CHECKED_IN,
+            AppointmentStatus.IN_PROGRESS
+    );
+
     private final DoctorRepository doctorRepository;
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
+    private final SchedulingPolicy schedulingPolicy;
     private final ClinicTimeProvider clinicTimeProvider;
 
     public AppointmentStartExaminationService(
             DoctorRepository doctorRepository,
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
+            SchedulingPolicy schedulingPolicy,
             ClinicTimeProvider clinicTimeProvider
     ) {
         this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
+        this.schedulingPolicy = schedulingPolicy;
         this.clinicTimeProvider = clinicTimeProvider;
     }
 
@@ -59,6 +70,8 @@ public class AppointmentStartExaminationService {
                     "Chỉ có thể bắt đầu khám cho lịch hẹn đang ở trạng thái BOOKED"
             );
         }
+        Instant actualStartAt = clinicTimeProvider.now();
+        requireQueueReady(doctor, appointment, actualStartAt);
         if (appointmentRepository.existsOtherByDoctorIdAndStatus(
                 doctor.getId(),
                 AppointmentStatus.IN_PROGRESS,
@@ -69,7 +82,6 @@ public class AppointmentStartExaminationService {
             );
         }
 
-        Instant actualStartAt = clinicTimeProvider.now();
         appointment.setStatus(AppointmentStatus.IN_PROGRESS);
         appointment.setActualStartAt(actualStartAt);
         appointmentRepository.saveAndFlush(appointment);
@@ -84,10 +96,52 @@ public class AppointmentStartExaminationService {
         return new StartExaminationResponse(
                 appointment.getId(),
                 appointment.getStatus(),
+                appointment.getAppointmentDate(),
+                appointment.getSession(),
+                appointment.getQueueNumber() == null
+                        ? null
+                        : appointment.getQueueNumber().intValue(),
                 toClinicOffset(appointment.getScheduledStartAt()),
                 toClinicOffsetOrNull(appointment.getCheckedInAt()),
                 toClinicOffset(actualStartAt)
         );
+    }
+
+    private void requireQueueReady(
+            Doctor doctor,
+            Appointment appointment,
+            Instant actualStartAt
+    ) {
+        if (appointment.getAppointmentDate() == null
+                || appointment.getSession() == null
+                || appointment.getQueueNumber() == null) {
+            return;
+        }
+
+        Instant sessionStartAt = clinicTimeProvider.toInstant(
+                appointment.getAppointmentDate(),
+                schedulingPolicy.sessionStart(appointment.getSession())
+        );
+        if (actualStartAt.isBefore(sessionStartAt)) {
+            throw new ConflictException(
+                    "Chỉ có thể bắt đầu khám sau khi buổi khám bắt đầu lúc "
+                            + schedulingPolicy.sessionStart(appointment.getSession())
+            );
+        }
+
+        if (appointment.getQueueNumber() == SchedulingPolicy.MAX_QUEUE_NUMBER
+                && appointmentRepository.existsActiveDoctorQueue(
+                doctor.getId(),
+                appointment.getAppointmentDate(),
+                appointment.getSession(),
+                (short) SchedulingPolicy.MIN_QUEUE_NUMBER,
+                ACTIVE_QUEUE_STATUSES
+        )) {
+            throw new ConflictException(
+                    "Ca 2 chỉ có thể bắt đầu khi Ca 1 đã hoàn thành, bị hủy, "
+                            + "không đến hoặc không tồn tại"
+            );
+        }
     }
 
     private ObjectNode startDetails(
@@ -99,9 +153,14 @@ public class AppointmentStartExaminationService {
         details.put("old_status", oldStatus.name());
         details.put("new_status", AppointmentStatus.IN_PROGRESS.name());
         details.put(
-                "scheduled_start_at",
+                "estimated_start_at",
                 toClinicOffset(appointment.getScheduledStartAt()).toString()
         );
+        if (appointment.getAppointmentDate() != null) {
+            details.put("appointment_date", appointment.getAppointmentDate().toString());
+            details.put("session", appointment.getSession().name());
+            details.put("queue_number", appointment.getQueueNumber());
+        }
         OffsetDateTime checkedInAt = toClinicOffsetOrNull(appointment.getCheckedInAt());
         if (checkedInAt == null) {
             details.putNull("checked_in_at");

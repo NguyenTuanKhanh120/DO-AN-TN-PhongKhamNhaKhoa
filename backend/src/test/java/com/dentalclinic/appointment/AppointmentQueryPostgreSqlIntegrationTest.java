@@ -12,6 +12,7 @@ import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
 import com.dentalclinic.user.entity.Role;
@@ -132,10 +133,12 @@ class AppointmentQueryPostgreSqlIntegrationTest {
                         .value(fixture.firstAppointmentId().toString()))
                 .andExpect(jsonPath("$.data.content[0].patientId")
                         .value(fixture.firstPatientId().toString()))
-                .andExpect(jsonPath("$.data.content[0].scheduledStartAt")
-                        .value("2026-10-12T09:00:00+07:00"))
-                .andExpect(jsonPath("$.data.content[0].scheduledEndAt")
-                        .value("2026-10-12T10:00:00+07:00"));
+                .andExpect(jsonPath("$.data.content[0].appointmentDate")
+                        .value("2026-10-12"))
+                .andExpect(jsonPath("$.data.content[0].session").value("MORNING"))
+                .andExpect(jsonPath("$.data.content[0].queueNumber").value(1))
+                .andExpect(jsonPath("$.data.content[0].estimatedStartAt")
+                        .value("2026-10-12T08:00:00+07:00"));
 
         mockMvc.perform(get(
                         "/api/patient/appointments/{id}",
@@ -180,10 +183,10 @@ class AppointmentQueryPostgreSqlIntegrationTest {
                         .value(fixture.firstAppointmentId().toString()))
                 .andExpect(jsonPath("$.data.content[1].id")
                         .value(fixture.otherPatientAppointmentId().toString()))
-                .andExpect(jsonPath("$.data.content[0].scheduledStartAt")
-                        .value("2026-10-12T09:00:00+07:00"))
-                .andExpect(jsonPath("$.data.content[1].scheduledStartAt")
-                        .value("2026-10-12T11:00:00+07:00"));
+                .andExpect(jsonPath("$.data.content[0].estimatedStartAt")
+                        .value("2026-10-12T08:00:00+07:00"))
+                .andExpect(jsonPath("$.data.content[1].estimatedStartAt")
+                        .value("2026-10-12T09:30:00+07:00"));
     }
 
     @Test
@@ -231,7 +234,7 @@ class AppointmentQueryPostgreSqlIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(token))
                         .param("fromDate", TODAY.toString())
                         .param("toDate", TODAY.toString())
-                        .param("sortBy", "scheduledStartAt")
+                        .param("sortBy", "appointmentDate")
                         .param("direction", "ASC"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalElements").value(3))
@@ -304,25 +307,25 @@ class AppointmentQueryPostgreSqlIntegrationTest {
         Appointment firstAppointment = saveAppointment(
                 firstPatient,
                 firstMapping,
-                toInstant(TODAY, LocalTime.of(9, 0)),
+                toInstant(TODAY, LocalTime.of(8, 0)),
                 AppointmentStatus.BOOKED
         );
         Appointment secondAppointment = saveAppointment(
                 firstPatient,
                 secondMapping,
-                toInstant(TODAY.plusDays(1), LocalTime.of(10, 0)),
+                toInstant(TODAY.plusDays(1), LocalTime.of(9, 30)),
                 AppointmentStatus.COMPLETED
         );
         Appointment otherPatientAppointment = saveAppointment(
                 secondPatient,
                 firstMapping,
-                toInstant(TODAY, LocalTime.of(11, 0)),
+                toInstant(TODAY, LocalTime.of(9, 30)),
                 AppointmentStatus.CHECKED_IN
         );
         saveAppointment(
                 secondPatient,
                 otherDoctorMapping,
-                toInstant(TODAY, LocalTime.of(12, 0)),
+                toInstant(TODAY, LocalTime.of(14, 0)),
                 AppointmentStatus.BOOKED
         );
 
@@ -399,6 +402,18 @@ class AppointmentQueryPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setScheduledStartAt(scheduledStartAt);
+        java.time.ZonedDateTime clinicStart = scheduledStartAt.atZone(CLINIC_ZONE);
+        ScheduleSession session = clinicStart.toLocalTime().isBefore(LocalTime.NOON)
+                ? ScheduleSession.MORNING
+                : ScheduleSession.AFTERNOON;
+        LocalTime firstCaseTime = session == ScheduleSession.MORNING
+                ? LocalTime.of(8, 0)
+                : LocalTime.of(14, 0);
+        appointment.setAppointmentDate(clinicStart.toLocalDate());
+        appointment.setSession(session);
+        appointment.setQueueNumber((short) (
+                clinicStart.toLocalTime().equals(firstCaseTime) ? 1 : 2
+        ));
         appointment.setStatus(status);
         return appointmentRepository.saveAndFlush(appointment);
     }

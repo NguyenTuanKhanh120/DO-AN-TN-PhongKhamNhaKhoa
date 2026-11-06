@@ -9,6 +9,11 @@ describe("doctor schedule validation", () => {
   it("từ chối Chủ Nhật và giờ ngoài khung", () => {
     expect(scheduleSchema.safeParse({ dayOfWeek: 7, session: "AFTERNOON", startTime: "12:00", endTime: "18:00" }).success).toBe(false);
   });
+
+  it("chỉ chấp nhận buổi chiều 14:00–17:00", () => {
+    expect(scheduleSchema.safeParse({ dayOfWeek: 2, session: "AFTERNOON", startTime: "14:00", endTime: "17:00" }).success).toBe(true);
+    expect(scheduleSchema.safeParse({ dayOfWeek: 2, session: "AFTERNOON", startTime: "13:00", endTime: "17:00" }).success).toBe(false);
+  });
 });
 
 describe("dental service validation", () => {

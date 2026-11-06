@@ -15,11 +15,9 @@ import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
 import com.dentalclinic.user.entity.UserStatus;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
@@ -34,23 +32,20 @@ public class DoctorScheduleService {
     private final DoctorScheduleRepository doctorScheduleRepository;
     private final AppointmentQueryService appointmentQueryService;
     private final ClinicTimeProvider clinicTimeProvider;
-    private final Duration slotDuration;
+    private final SchedulingPolicy schedulingPolicy;
 
     public DoctorScheduleService(
             DoctorRepository doctorRepository,
             DoctorScheduleRepository doctorScheduleRepository,
             AppointmentQueryService appointmentQueryService,
             ClinicTimeProvider clinicTimeProvider,
-            @Value("${clinic.appointment.slot-duration-minutes:60}") long slotDurationMinutes
+            SchedulingPolicy schedulingPolicy
     ) {
-        if (slotDurationMinutes <= 0) {
-            throw new IllegalArgumentException("Cấu hình thời lượng slot không hợp lệ");
-        }
         this.doctorRepository = doctorRepository;
         this.doctorScheduleRepository = doctorScheduleRepository;
         this.appointmentQueryService = appointmentQueryService;
         this.clinicTimeProvider = clinicTimeProvider;
-        this.slotDuration = Duration.ofMinutes(slotDurationMinutes);
+        this.schedulingPolicy = schedulingPolicy;
     }
 
     @Transactional(readOnly = true)
@@ -138,8 +133,8 @@ public class DoctorScheduleService {
         }
 
         List<DoctorSchedule> schedules = new ArrayList<>(12);
-        for (short dayOfWeek = DoctorScheduleRules.MONDAY;
-                dayOfWeek <= DoctorScheduleRules.SATURDAY;
+        for (short dayOfWeek = SchedulingPolicy.MONDAY;
+                dayOfWeek <= SchedulingPolicy.SATURDAY;
                 dayOfWeek++) {
             schedules.add(defaultSchedule(doctor, dayOfWeek, ScheduleSession.MORNING));
             schedules.add(defaultSchedule(doctor, dayOfWeek, ScheduleSession.AFTERNOON));
@@ -184,7 +179,8 @@ public class DoctorScheduleService {
                 request.dayOfWeek(),
                 request.session(),
                 request.startTime(),
-                request.endTime()
+                request.endTime(),
+                schedulingPolicy
         );
     }
 
@@ -212,8 +208,8 @@ public class DoctorScheduleService {
         schedule.setDoctor(doctor);
         schedule.setDayOfWeek(dayOfWeek);
         schedule.setSession(session);
-        schedule.setStartTime(DoctorScheduleRules.defaultStart(session));
-        schedule.setEndTime(DoctorScheduleRules.defaultEnd(session));
+        schedule.setStartTime(schedulingPolicy.sessionStart(session));
+        schedule.setEndTime(schedulingPolicy.sessionEnd(session));
         return schedule;
     }
 
@@ -277,7 +273,7 @@ public class DoctorScheduleService {
         LocalTime appointmentStart = clinicStart.toLocalTime();
         return clinicStart.getDayOfWeek().getValue() == dayOfWeek
                 && !appointmentStart.isBefore(startTime)
-                && !appointmentStart.plus(slotDuration).isAfter(endTime);
+                && appointmentStart.isBefore(endTime);
     }
 
     private void rejectAffectedAppointments(long affectedCount) {

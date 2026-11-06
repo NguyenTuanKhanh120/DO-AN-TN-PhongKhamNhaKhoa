@@ -21,9 +21,9 @@ public class KnowledgeBaseSyncScheduler {
             cron = "${app.ai.knowledge-base.sync-cron:0 */15 * * * *}",
             zone = "${clinic.timezone:Asia/Ho_Chi_Minh}"
     )
-    public void checkPrimaryDataset() {
+    public void checkDatasets() {
         try {
-            KnowledgeSyncOutcome outcome = syncService.synchronizePrimaryDataset();
+            KnowledgeSyncOutcome outcome = syncService.synchronizeAllDatasets();
             log.info("Knowledge base sync check completed: outcome={}", outcome);
         } catch (RuntimeException exception) {
             log.error(

@@ -1,10 +1,12 @@
 package com.dentalclinic.ai.knowledge;
 
 import com.dentalclinic.ai.knowledge.config.KnowledgeBaseConfiguration;
+import com.dentalclinic.ai.knowledge.config.KnowledgeBasePathConverter;
 import com.dentalclinic.ai.knowledge.config.KnowledgeBaseProperties;
 import com.dentalclinic.ai.knowledge.config.KnowledgeRetrievalProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 
 import java.nio.file.Path;
 
@@ -13,8 +15,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 class KnowledgeBaseConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withUserConfiguration(KnowledgeBaseConfiguration.class)
+            .withUserConfiguration(
+                    KnowledgeBaseConfiguration.class,
+                    KnowledgeBasePathConverter.class
+            )
             .withPropertyValues(
+                    "app.ai.retrieval.default-top-k=3",
+                    "app.ai.retrieval.max-top-k=20",
+                    "app.ai.retrieval.similarity-threshold=0.55"
+            );
+
+    private final WebApplicationContextRunner webContextRunner = new WebApplicationContextRunner()
+            .withUserConfiguration(
+                    KnowledgeBaseConfiguration.class,
+                    KnowledgeBasePathConverter.class
+            )
+            .withPropertyValues(
+                    "app.ai.knowledge-base.directory=../knowledge-base",
+                    "app.ai.knowledge-base.max-file-size-bytes=5242880",
                     "app.ai.retrieval.default-top-k=3",
                     "app.ai.retrieval.max-top-k=20",
                     "app.ai.retrieval.similarity-threshold=0.55"
@@ -36,6 +54,15 @@ class KnowledgeBaseConfigurationTest {
                     assertThat(context.getBean(KnowledgeBaseProperties.class).maxFileSizeBytes())
                             .isEqualTo(5_242_880L);
                 });
+    }
+
+    @Test
+    void shouldBindRelativeDirectoryInWebApplicationContext() {
+        webContextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(KnowledgeBaseProperties.class).directory())
+                    .isEqualTo(Path.of("../knowledge-base"));
+        });
     }
 
     @Test

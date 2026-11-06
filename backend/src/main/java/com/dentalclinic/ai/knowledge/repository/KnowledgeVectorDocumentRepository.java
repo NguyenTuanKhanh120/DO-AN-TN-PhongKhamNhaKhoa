@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.UUID;
+import java.util.List;
 
 public interface KnowledgeVectorDocumentRepository
         extends JpaRepository<KnowledgeVectorDocument, UUID> {
@@ -16,36 +17,47 @@ public interface KnowledgeVectorDocumentRepository
             from vector_store
             where metadata ->> 'sourceKey' = :sourceKey
               and metadata ->> 'contentHash' = :contentHash
-              and metadata ->> 'syncId' = :syncId
+              and metadata ->> 'embeddingModel' = :embeddingModel
               and cast(metadata ->> 'embeddingDimension' as integer) = :embeddingDimension
               and vector_dims(embedding) = :embeddingDimension
             """, nativeQuery = true)
     long countValidStagingDocuments(
             @Param("sourceKey") String sourceKey,
             @Param("contentHash") String contentHash,
-            @Param("syncId") String syncId,
+            @Param("embeddingModel") String embeddingModel,
             @Param("embeddingDimension") int embeddingDimension
     );
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
-            delete from vector_store
+            select metadata ->> 'recordId'
+            from vector_store
             where metadata ->> 'sourceKey' = :sourceKey
-              and (metadata ->> 'syncId') is distinct from :activeSyncId
+              and metadata ->> 'contentHash' = :contentHash
+              and metadata ->> 'embeddingModel' = :embeddingModel
+              and metadata ->> 'embeddingDimension' = :embeddingDimension
+            order by metadata ->> 'recordId'
             """, nativeQuery = true)
-    int deleteOtherVersions(
+    List<String> findStoredRecordIds(
             @Param("sourceKey") String sourceKey,
-            @Param("activeSyncId") String activeSyncId
+            @Param("contentHash") String contentHash,
+            @Param("embeddingModel") String embeddingModel,
+            @Param("embeddingDimension") String embeddingDimension
     );
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
             delete from vector_store
             where metadata ->> 'sourceKey' = :sourceKey
-              and metadata ->> 'syncId' = :syncId
+              and (
+                  (metadata ->> 'contentHash') is distinct from :activeContentHash
+                  or (metadata ->> 'embeddingModel') is distinct from :embeddingModel
+                  or (metadata ->> 'embeddingDimension') is distinct from :embeddingDimension
+              )
             """, nativeQuery = true)
-    int deleteStagingDocuments(
+    int deleteOtherVersions(
             @Param("sourceKey") String sourceKey,
-            @Param("syncId") String syncId
+            @Param("activeContentHash") String activeContentHash,
+            @Param("embeddingModel") String embeddingModel,
+            @Param("embeddingDimension") String embeddingDimension
     );
 }

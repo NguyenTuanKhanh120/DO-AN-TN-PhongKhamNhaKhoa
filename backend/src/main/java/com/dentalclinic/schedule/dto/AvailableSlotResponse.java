@@ -9,9 +9,10 @@ import java.time.OffsetDateTime;
 public record AvailableSlotResponse(
         LocalDate date,
         ScheduleSession session,
-        LocalTime startTime,
-        LocalTime endTime,
-        OffsetDateTime startAt,
-        OffsetDateTime endAt
+        int queueNumber,
+        LocalTime sessionStartTime,
+        LocalTime sessionEndTime,
+        LocalTime estimatedStartTime,
+        OffsetDateTime estimatedStartAt
 ) {
 }

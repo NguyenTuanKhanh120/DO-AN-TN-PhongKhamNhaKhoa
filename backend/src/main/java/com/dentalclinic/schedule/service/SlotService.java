@@ -1,6 +1,7 @@
 package com.dentalclinic.schedule.service;
 
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.repository.AppointmentQueueOccupancy;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.common.constant.ErrorCode;
 import com.dentalclinic.common.exception.BusinessException;
@@ -33,10 +34,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.DayOfWeek;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -50,6 +53,11 @@ import java.util.UUID;
 public class SlotService {
 
     private static final int MAX_CALENDAR_DAYS = 30;
+    private static final List<AppointmentStatus> ACTIVE_APPOINTMENT_STATUSES = List.of(
+            AppointmentStatus.BOOKED,
+            AppointmentStatus.CHECKED_IN,
+            AppointmentStatus.IN_PROGRESS
+    );
     private static final List<ScheduleSession> CALENDAR_SESSIONS = List.of(
             ScheduleSession.MORNING,
             ScheduleSession.AFTERNOON
@@ -61,6 +69,7 @@ public class SlotService {
     private final DoctorScheduleRepository doctorScheduleRepository;
     private final AppointmentRepository appointmentRepository;
     private final ClinicTimeProvider clinicTimeProvider;
+    private final SchedulingPolicy schedulingPolicy;
     private final Duration slotDuration;
     private final Duration bookingMinAdvance;
 
@@ -71,6 +80,7 @@ public class SlotService {
             DoctorScheduleRepository doctorScheduleRepository,
             AppointmentRepository appointmentRepository,
             ClinicTimeProvider clinicTimeProvider,
+            SchedulingPolicy schedulingPolicy,
             @Value("${clinic.appointment.slot-duration-minutes:60}") long slotDurationMinutes,
             @Value("${clinic.appointment.booking-min-advance-minutes:120}") long bookingMinAdvanceMinutes
     ) {
@@ -83,6 +93,7 @@ public class SlotService {
         this.doctorScheduleRepository = doctorScheduleRepository;
         this.appointmentRepository = appointmentRepository;
         this.clinicTimeProvider = clinicTimeProvider;
+        this.schedulingPolicy = schedulingPolicy;
         this.slotDuration = Duration.ofMinutes(slotDurationMinutes);
         this.bookingMinAdvance = Duration.ofMinutes(bookingMinAdvanceMinutes);
     }
@@ -97,22 +108,20 @@ public class SlotService {
         if (context.schedules().isEmpty()) {
             return List.of();
         }
+        if (!schedulingPolicy.isBeforePatientDailyCutoff(date)) {
+            return List.of();
+        }
 
         ZoneId clinicZone = clinicTimeProvider.zoneId();
-        Instant dayStart = date.atStartOfDay(clinicZone).toInstant();
-        Instant nextDayStart = date.plusDays(1).atStartOfDay(clinicZone).toInstant();
-        Set<Instant> occupiedStarts = new HashSet<>(appointmentRepository.findOccupiedStartTimes(
+        Map<QueueKey, Set<Integer>> occupiedQueues = loadOccupiedQueues(
                 doctorId,
-                dayStart,
-                nextDayStart,
-                AppointmentStatus.CANCELLED
-        ));
-        Instant earliestBookableStart = clinicTimeProvider.now().plus(bookingMinAdvance);
-
-        return generateSlotCandidates(context.schedules(), date, clinicZone).entrySet().stream()
-                .filter(entry -> !entry.getKey().isBefore(earliestBookableStart))
-                .filter(entry -> !occupiedStarts.contains(entry.getKey()))
-                .map(entry -> toResponse(date, entry.getValue()))
+                date,
+                date,
+                clinicZone
+        );
+        return generateCaseCandidates(context.schedules(), date, clinicZone).stream()
+                .filter(candidate -> !isOccupied(candidate, date, occupiedQueues))
+                .map(candidate -> toResponse(date, candidate))
                 .toList();
     }
 
@@ -149,18 +158,15 @@ public class SlotService {
         List<DoctorSchedule> schedules = doctorScheduleRepository
                 .findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(doctorId)
                 .stream()
-                .filter(DoctorScheduleRules::isSupported)
+                .filter(schedule -> DoctorScheduleRules.isSupported(schedule, schedulingPolicy))
                 .toList();
         ZoneId clinicZone = clinicTimeProvider.zoneId();
-        Instant rangeStart = range.fromDate().atStartOfDay(clinicZone).toInstant();
-        Instant rangeEnd = range.toDate().plusDays(1).atStartOfDay(clinicZone).toInstant();
-        Set<Instant> occupiedStarts = new HashSet<>(appointmentRepository.findOccupiedStartTimes(
+        Map<QueueKey, Set<Integer>> occupiedQueues = loadOccupiedQueues(
                 doctorId,
-                rangeStart,
-                rangeEnd,
-                AppointmentStatus.CANCELLED
-        ));
-        Instant earliestBookableStart = clinicTimeProvider.now().plus(bookingMinAdvance);
+                range.fromDate(),
+                range.toDate(),
+                clinicZone
+        );
 
         Map<Integer, Map<ScheduleSession, DoctorSchedule>> schedulesByDay = groupSchedules(schedules);
         List<DoctorCalendarDayResponse> days = range.fromDate().datesUntil(
@@ -169,8 +175,7 @@ public class SlotService {
                 .map(date -> calendarDay(
                         date,
                         schedulesByDay,
-                        occupiedStarts,
-                        earliestBookableStart,
+                        occupiedQueues,
                         clinicZone
                 ))
                 .toList();
@@ -207,6 +212,89 @@ public class SlotService {
     }
 
     @Transactional(readOnly = true)
+    public DoctorService requireAvailableCase(
+            UUID doctorId,
+            UUID serviceId,
+            LocalDate appointmentDate,
+            ScheduleSession session,
+            int queueNumber
+    ) {
+        return requireAvailableCase(
+                doctorId,
+                serviceId,
+                appointmentDate,
+                session,
+                queueNumber,
+                null,
+                "Lịch khám trong ngày phải được đặt trước 05:00",
+                slotConflict()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public DoctorService requireAvailableRescheduleCase(
+            UUID doctorId,
+            UUID serviceId,
+            LocalDate appointmentDate,
+            ScheduleSession session,
+            int queueNumber,
+            UUID excludedAppointmentId
+    ) {
+        return requireAvailableCase(
+                doctorId,
+                serviceId,
+                appointmentDate,
+                session,
+                queueNumber,
+                excludedAppointmentId,
+                "Không thể đổi sang ngày đã qua thời hạn 05:00",
+                rescheduleSlotConflict()
+        );
+    }
+
+    private DoctorService requireAvailableCase(
+            UUID doctorId,
+            UUID serviceId,
+            LocalDate appointmentDate,
+            ScheduleSession session,
+            int queueNumber,
+            UUID excludedAppointmentId,
+            String cutoffMessage,
+            ConflictException occupiedConflict
+    ) {
+        SlotContext context = loadSlotContext(doctorId, serviceId, appointmentDate);
+        schedulingPolicy.estimatedStartAt(appointmentDate, session, queueNumber);
+        boolean scheduled = context.schedules().stream()
+                .anyMatch(schedule -> schedule.getSession() == session);
+        if (!scheduled) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Ca khám không thuộc lịch làm việc của bác sĩ"
+            );
+        }
+        if (!schedulingPolicy.isBeforePatientDailyCutoff(appointmentDate)) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    cutoffMessage
+            );
+        }
+
+        Map<QueueKey, Set<Integer>> occupiedQueues = loadOccupiedQueues(
+                doctorId,
+                appointmentDate,
+                appointmentDate,
+                clinicTimeProvider.zoneId(),
+                excludedAppointmentId
+        );
+        if (occupiedQueues
+                .getOrDefault(new QueueKey(appointmentDate, session), Set.of())
+                .contains(queueNumber)) {
+            throw occupiedConflict;
+        }
+        return context.doctorService();
+    }
+
+    @Transactional(readOnly = true)
     public DoctorService requireAvailableRescheduleSlot(
             UUID doctorId,
             UUID serviceId,
@@ -237,7 +325,7 @@ public class SlotService {
         ZoneId clinicZone = clinicTimeProvider.zoneId();
         LocalDate appointmentDate = scheduledStartAt.atZone(clinicZone).toLocalDate();
         SlotContext context = loadSlotContext(doctorId, serviceId, appointmentDate);
-        boolean scheduled = generateSlotCandidates(
+        boolean scheduled = generateLegacySlotCandidates(
                 context.schedules(),
                 appointmentDate,
                 clinicZone
@@ -258,7 +346,7 @@ public class SlotService {
         List<DoctorSchedule> schedules = doctorScheduleRepository
                 .findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(doctorId, dayOfWeek)
                 .stream()
-                .filter(DoctorScheduleRules::isSupported)
+                .filter(schedule -> DoctorScheduleRules.isSupported(schedule, schedulingPolicy))
                 .toList();
         return new SlotContext(doctorService, schedules);
     }
@@ -332,8 +420,7 @@ public class SlotService {
     private DoctorCalendarDayResponse calendarDay(
             LocalDate date,
             Map<Integer, Map<ScheduleSession, DoctorSchedule>> schedulesByDay,
-            Set<Instant> occupiedStarts,
-            Instant earliestBookableStart,
+            Map<QueueKey, Set<Integer>> occupiedQueues,
             ZoneId clinicZone
     ) {
         int dayOfWeek = date.getDayOfWeek().getValue();
@@ -345,8 +432,7 @@ public class SlotService {
                         date,
                         session,
                         schedules.get(session),
-                        occupiedStarts,
-                        earliestBookableStart,
+                        occupiedQueues,
                         clinicZone
                 ))
                 .toList();
@@ -363,31 +449,34 @@ public class SlotService {
             LocalDate date,
             ScheduleSession session,
             DoctorSchedule schedule,
-            Set<Instant> occupiedStarts,
-            Instant earliestBookableStart,
+            Map<QueueKey, Set<Integer>> occupiedQueues,
             ZoneId clinicZone
     ) {
         if (schedule == null) {
             return emptyCalendarSession(session, CalendarAvailabilityStatus.NOT_WORKING);
         }
-        TreeMap<Instant, SlotCandidate> candidates = generateSlotCandidates(
+        List<CaseCandidate> candidates = generateCaseCandidates(
                 List.of(schedule),
                 date,
                 clinicZone
         );
-        List<CalendarSlotResponse> availableSlots = candidates.entrySet().stream()
-                .filter(entry -> !entry.getKey().isBefore(earliestBookableStart))
-                .filter(entry -> !occupiedStarts.contains(entry.getKey()))
-                .map(entry -> new CalendarSlotResponse(
-                        entry.getValue().startAt().toOffsetDateTime(),
-                        entry.getValue().endAt().toOffsetDateTime()
+        boolean beforeCutoff = schedulingPolicy.isBeforePatientDailyCutoff(date);
+        List<CalendarSlotResponse> availableSlots = beforeCutoff
+                ? candidates.stream()
+                .filter(candidate -> !isOccupied(candidate, date, occupiedQueues))
+                .map(candidate -> new CalendarSlotResponse(
+                        candidate.queueNumber(),
+                        candidate.estimatedStartAt().toLocalTime(),
+                        candidate.estimatedStartAt().toOffsetDateTime(),
+                        date.atTime(schedule.getEndTime()).atZone(clinicZone).toOffsetDateTime()
                 ))
-                .toList();
+                .toList()
+                : List.of();
 
         CalendarAvailabilityStatus status;
         if (!availableSlots.isEmpty()) {
             status = CalendarAvailabilityStatus.AVAILABLE;
-        } else if (candidates.keySet().stream().allMatch(start -> start.isBefore(earliestBookableStart))) {
+        } else if (!beforeCutoff) {
             status = CalendarAvailabilityStatus.UNAVAILABLE;
         } else {
             status = CalendarAvailabilityStatus.FULL;
@@ -435,7 +524,34 @@ public class SlotService {
         return sessions.stream().anyMatch(session -> session.status() == status);
     }
 
-    private TreeMap<Instant, SlotCandidate> generateSlotCandidates(
+    private List<CaseCandidate> generateCaseCandidates(
+            List<DoctorSchedule> schedules,
+            LocalDate date,
+            ZoneId clinicZone
+    ) {
+        List<CaseCandidate> candidates = new ArrayList<>();
+        for (DoctorSchedule schedule : schedules) {
+            for (int queueNumber = SchedulingPolicy.MIN_QUEUE_NUMBER;
+                 queueNumber <= SchedulingPolicy.MAX_QUEUE_NUMBER;
+                 queueNumber++) {
+                candidates.add(new CaseCandidate(
+                        schedule,
+                        queueNumber,
+                        schedulingPolicy.estimatedStartAt(
+                                date,
+                                schedule.getSession(),
+                                queueNumber
+                        ).atZone(clinicZone)
+                ));
+            }
+        }
+        return candidates.stream()
+                .sorted((left, right) -> left.estimatedStartAt()
+                        .compareTo(right.estimatedStartAt()))
+                .toList();
+    }
+
+    private TreeMap<Instant, SlotCandidate> generateLegacySlotCandidates(
             List<DoctorSchedule> schedules,
             LocalDate date,
             ZoneId clinicZone
@@ -457,15 +573,129 @@ public class SlotService {
         return candidates;
     }
 
-    private AvailableSlotResponse toResponse(LocalDate date, SlotCandidate candidate) {
+    private AvailableSlotResponse toResponse(LocalDate date, CaseCandidate candidate) {
         return new AvailableSlotResponse(
                 date,
                 candidate.schedule().getSession(),
-                candidate.startAt().toLocalTime(),
-                candidate.endAt().toLocalTime(),
-                candidate.startAt().toOffsetDateTime(),
-                candidate.endAt().toOffsetDateTime()
+                candidate.queueNumber(),
+                candidate.schedule().getStartTime(),
+                candidate.schedule().getEndTime(),
+                candidate.estimatedStartAt().toLocalTime(),
+                candidate.estimatedStartAt().toOffsetDateTime()
         );
+    }
+
+    private Map<QueueKey, Set<Integer>> loadOccupiedQueues(
+            UUID doctorId,
+            LocalDate fromDate,
+            LocalDate toDate,
+            ZoneId clinicZone
+    ) {
+        return loadOccupiedQueues(doctorId, fromDate, toDate, clinicZone, null);
+    }
+
+    private Map<QueueKey, Set<Integer>> loadOccupiedQueues(
+            UUID doctorId,
+            LocalDate fromDate,
+            LocalDate toDate,
+            ZoneId clinicZone,
+            UUID excludedAppointmentId
+    ) {
+        Instant rangeStart = fromDate.atStartOfDay(clinicZone).toInstant();
+        Instant rangeEnd = toDate.plusDays(1).atStartOfDay(clinicZone).toInstant();
+        List<AppointmentQueueOccupancy> occupancies = appointmentRepository
+                .findActiveQueueOccupancies(
+                        doctorId,
+                        fromDate,
+                        toDate,
+                        rangeStart,
+                        rangeEnd,
+                        ACTIVE_APPOINTMENT_STATUSES
+                );
+        Map<QueueKey, List<ResolvedOccupancy>> grouped = new HashMap<>();
+        for (AppointmentQueueOccupancy occupancy : occupancies) {
+            if (excludedAppointmentId != null
+                    && excludedAppointmentId.equals(occupancy.getAppointmentId())) {
+                continue;
+            }
+            ResolvedOccupancy resolved = resolveOccupancy(occupancy, clinicZone);
+            if (resolved != null && !resolved.date().isBefore(fromDate)
+                    && !resolved.date().isAfter(toDate)) {
+                grouped.computeIfAbsent(
+                        new QueueKey(resolved.date(), resolved.session()),
+                        ignored -> new ArrayList<>()
+                ).add(resolved);
+            }
+        }
+
+        Map<QueueKey, Set<Integer>> result = new HashMap<>();
+        grouped.forEach((key, rows) -> {
+            Set<Integer> queues = new HashSet<>();
+            if (rows.size() >= SchedulingPolicy.MAX_QUEUE_NUMBER) {
+                queues.add(SchedulingPolicy.MIN_QUEUE_NUMBER);
+                queues.add(SchedulingPolicy.MAX_QUEUE_NUMBER);
+            } else {
+                rows.stream()
+                        .map(ResolvedOccupancy::queueNumber)
+                        .forEach(queues::add);
+            }
+            result.put(key, Set.copyOf(queues));
+        });
+        return result;
+    }
+
+    private ResolvedOccupancy resolveOccupancy(
+            AppointmentQueueOccupancy occupancy,
+            ZoneId clinicZone
+    ) {
+        ZonedDateTime legacyStart = occupancy.getScheduledStartAt().atZone(clinicZone);
+        LocalDate date = occupancy.getAppointmentDate() == null
+                ? legacyStart.toLocalDate()
+                : occupancy.getAppointmentDate();
+        ScheduleSession session = occupancy.getSession() == null
+                ? legacySession(legacyStart.toLocalTime())
+                : occupancy.getSession();
+        if (session == null) {
+            return null;
+        }
+        int queueNumber = occupancy.getQueueNumber() == null
+                ? legacyQueueNumber(session, legacyStart.toLocalTime())
+                : occupancy.getQueueNumber();
+        if (queueNumber < SchedulingPolicy.MIN_QUEUE_NUMBER
+                || queueNumber > SchedulingPolicy.MAX_QUEUE_NUMBER) {
+            return null;
+        }
+        return new ResolvedOccupancy(date, session, queueNumber);
+    }
+
+    private ScheduleSession legacySession(LocalTime startTime) {
+        if (startTime.isBefore(LocalTime.NOON)) {
+            return ScheduleSession.MORNING;
+        }
+        return ScheduleSession.AFTERNOON;
+    }
+
+    private int legacyQueueNumber(ScheduleSession session, LocalTime startTime) {
+        LocalTime secondCaseStart = schedulingPolicy.estimatedStartTime(
+                session,
+                SchedulingPolicy.MAX_QUEUE_NUMBER
+        );
+        return startTime.isBefore(secondCaseStart)
+                ? SchedulingPolicy.MIN_QUEUE_NUMBER
+                : SchedulingPolicy.MAX_QUEUE_NUMBER;
+    }
+
+    private boolean isOccupied(
+            CaseCandidate candidate,
+            LocalDate date,
+            Map<QueueKey, Set<Integer>> occupiedQueues
+    ) {
+        return occupiedQueues
+                .getOrDefault(
+                        new QueueKey(date, candidate.schedule().getSession()),
+                        Set.of()
+                )
+                .contains(candidate.queueNumber());
     }
 
     private void validateDoctorAvailability(Doctor doctor) {
@@ -498,6 +728,23 @@ public class SlotService {
             DoctorSchedule schedule,
             ZonedDateTime startAt,
             ZonedDateTime endAt
+    ) {
+    }
+
+    private record CaseCandidate(
+            DoctorSchedule schedule,
+            int queueNumber,
+            ZonedDateTime estimatedStartAt
+    ) {
+    }
+
+    private record QueueKey(LocalDate date, ScheduleSession session) {
+    }
+
+    private record ResolvedOccupancy(
+            LocalDate date,
+            ScheduleSession session,
+            int queueNumber
     ) {
     }
 

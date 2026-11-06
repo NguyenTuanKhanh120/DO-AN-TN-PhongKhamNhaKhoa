@@ -23,12 +23,9 @@ import java.util.regex.Pattern;
 @Component
 public class NidcrDentalKnowledgeDatasetValidator {
 
-    public static final String EXPECTED_DATASET_ID = "nidcr-dental-knowledge-vi";
-    private static final String EXPECTED_LANGUAGE = "vi";
-    private static final String EXPECTED_SOURCE_LANGUAGE = "en";
+    public static final String EXPECTED_DATASET_ID = DentalKnowledgeDatasetProfile.NIDCR.datasetId();
     private static final String EXPECTED_EMBEDDING_TEXT_FIELD = "content";
     private static final Pattern SEMANTIC_VERSION = Pattern.compile("^[0-9]+\\.[0-9]+\\.[0-9]+$");
-    private static final Pattern RECORD_ID = Pattern.compile("^NIDCR-VI-[0-9]{3}$");
     private static final Pattern SLUG = Pattern.compile("^[a-z0-9]+(?:-[a-z0-9]+)*$");
     private static final Set<String> ROOT_FIELDS = Set.of(
             "datasetId",
@@ -76,7 +73,12 @@ public class NidcrDentalKnowledgeDatasetValidator {
         rejectUnknownFields(root, ROOT_FIELDS, "$");
 
         String datasetId = requiredText(root, "datasetId", "$");
-        requireValue(datasetId, EXPECTED_DATASET_ID, "$.datasetId");
+        DentalKnowledgeDatasetProfile profile = DentalKnowledgeDatasetProfile
+                .fromDatasetId(datasetId)
+                .orElseThrow(() -> invalid(
+                        "$.datasetId",
+                        "không thuộc danh sách dataset được hỗ trợ"
+                ));
 
         String version = requiredText(root, "version", "$");
         if (!SEMANTIC_VERSION.matcher(version).matches()) {
@@ -84,14 +86,14 @@ public class NidcrDentalKnowledgeDatasetValidator {
         }
 
         String language = requiredText(root, "language", "$");
-        requireValue(language, EXPECTED_LANGUAGE, "$.language");
+        requireValue(language, profile.language(), "$.language");
         String sourceLanguage = requiredText(root, "sourceLanguage", "$");
-        requireValue(sourceLanguage, EXPECTED_SOURCE_LANGUAGE, "$.sourceLanguage");
+        requireValue(sourceLanguage, profile.sourceLanguage(), "$.sourceLanguage");
         String embeddingTextField = requiredText(root, "embeddingTextField", "$");
         requireValue(embeddingTextField, EXPECTED_EMBEDDING_TEXT_FIELD, "$.embeddingTextField");
 
         int declaredRecordCount = requiredNonNegativeInteger(root, "recordCount", "$");
-        List<DentalKnowledgeRecord> records = records(root.get("records"));
+        List<DentalKnowledgeRecord> records = records(root.get("records"), profile);
         if (declaredRecordCount != records.size()) {
             throw invalid(
                     "$.recordCount",
@@ -122,7 +124,10 @@ public class NidcrDentalKnowledgeDatasetValidator {
         );
     }
 
-    private List<DentalKnowledgeRecord> records(JsonNode recordsNode) {
+    private List<DentalKnowledgeRecord> records(
+            JsonNode recordsNode,
+            DentalKnowledgeDatasetProfile profile
+    ) {
         if (recordsNode == null || !recordsNode.isArray()) {
             throw invalid("$.records", "phải là array");
         }
@@ -140,8 +145,8 @@ public class NidcrDentalKnowledgeDatasetValidator {
             rejectUnknownFields(recordNode, RECORD_FIELDS, path);
 
             String id = requiredText(recordNode, "id", path);
-            if (!RECORD_ID.matcher(id).matches()) {
-                throw invalid(path + ".id", "phải có định dạng NIDCR-VI-NNN");
+            if (!profile.matchesRecordId(id)) {
+                throw invalid(path + ".id", "phải có định dạng " + profile.recordIdFormat());
             }
             if (!recordIds.add(id)) {
                 throw invalid(path + ".id", "bị trùng trong dataset: " + id);

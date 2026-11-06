@@ -1,8 +1,10 @@
 package com.dentalclinic.ai.knowledge.parser;
 
 import com.dentalclinic.ai.knowledge.config.KnowledgeBaseProperties;
+import com.dentalclinic.ai.knowledge.entity.KnowledgeFileType;
 import com.dentalclinic.ai.knowledge.exception.KnowledgeDatasetValidationException;
 import com.dentalclinic.ai.knowledge.model.DentalKnowledgeDataset;
+import com.dentalclinic.ai.knowledge.model.KnowledgeSourceFile;
 import com.fasterxml.jackson.core.JsonLocation;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -20,11 +22,14 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.Optional;
 
 @Component
 public class NidcrDentalKnowledgeJsonParser {
 
-    public static final String PRIMARY_DATASET_FILE_NAME = "nidcr_dental_knowledge_vi.json";
+    public static final String PRIMARY_DATASET_FILE_NAME = DentalKnowledgeDatasetProfile.NIDCR.fileName();
+    public static final String VIETNAMESE_DENTAL_QA_FILE_NAME =
+            DentalKnowledgeDatasetProfile.VIETNAMESE_DENTAL_QA.fileName();
 
     private final ObjectMapper objectMapper;
     private final NidcrDentalKnowledgeDatasetValidator validator;
@@ -58,6 +63,14 @@ public class NidcrDentalKnowledgeJsonParser {
         } catch (JsonProcessingException exception) {
             throw malformedJson(exception);
         }
+    }
+
+    public Optional<String> managedSourceKey(KnowledgeSourceFile sourceFile) {
+        if (sourceFile == null || sourceFile.fileType() != KnowledgeFileType.JSON) {
+            return Optional.empty();
+        }
+        return DentalKnowledgeDatasetProfile.fromFileName(sourceFile.fileName())
+                .map(DentalKnowledgeDatasetProfile::datasetId);
     }
 
     private Path validateDatasetFile(Path datasetFile) {

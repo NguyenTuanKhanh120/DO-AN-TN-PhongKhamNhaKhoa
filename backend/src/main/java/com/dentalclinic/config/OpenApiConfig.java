@@ -90,7 +90,7 @@ public class OpenApiConfig {
                         new Tag().name("Doctor Schedules").description(
                                 "Admin quản lý lịch làm việc tuần; bác sĩ chỉ xem lịch của mình"
                         ),
-                        new Tag().name("Available Slots").description("Khung giờ khám còn trống"),
+                        new Tag().name("Available Slots").description("Ca khám còn trống theo ngày và buổi"),
                         new Tag().name("Doctor Calendar").description(
                                 "Lịch khả dụng theo thời gian thực trong cửa sổ 30 ngày"
                         ),
@@ -103,7 +103,7 @@ public class OpenApiConfig {
                         new Tag().name("Admin Payments").description("Admin tra cứu và xác nhận thanh toán dự phòng"),
                         new Tag().name("Patient Medical History").description("Lịch sử bệnh án của bệnh nhân"),
                         new Tag().name("Patient Chatbot").description(
-                                "Chatbot RAG dành riêng cho bệnh nhân, trả gợi ý dịch vụ, bác sĩ và slot đã xác minh"
+                                "Chatbot RAG dành riêng cho bệnh nhân, trả gợi ý dịch vụ, bác sĩ và ca khám đã xác minh"
                         ),
                         new Tag().name("Admin AI Knowledge").description(
                                 "Theo dõi, đồng bộ thủ công và kiểm thử truy xuất kho tri thức RAG"
@@ -272,6 +272,12 @@ public class OpenApiConfig {
                 Access Token có hiệu lực 15 phút. Refresh Token không xuất hiện trong JSON mà được gửi bằng
                 cookie HttpOnly; các API dùng cookie yêu cầu header `X-XSRF-TOKEN`.
                 Thời gian nghiệp vụ sử dụng múi giờ `Asia/Ho_Chi_Minh`; timestamp trao đổi theo ISO-8601.
+
+                ### Scheduling contract
+
+                API đặt và đổi lịch nhận `appointmentDate`, `session` (`MORNING` hoặc `AFTERNOON`)
+                và `queueNumber` (`1` hoặc `2`). `estimatedStartAt` chỉ là giờ bắt đầu dự kiến để
+                bệnh nhân sắp xếp thời gian có mặt; giờ khám thực tế được ghi bằng `actualStartAt`.
 
                 ### Error codes
 

@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -50,10 +51,21 @@ public class KnowledgeVectorStorageService {
                 .toList();
     }
 
-    @Transactional
-    public int deleteStaging(String sourceKey, UUID syncId) {
+    @Transactional(readOnly = true)
+    public Set<String> findStoredRecordIds(
+            String sourceKey,
+            String contentHash,
+            String embeddingModel,
+            int embeddingDimension
+    ) {
         Objects.requireNonNull(sourceKey, "sourceKey must not be null");
-        Objects.requireNonNull(syncId, "syncId must not be null");
-        return repository.deleteStagingDocuments(sourceKey, syncId.toString());
+        Objects.requireNonNull(contentHash, "contentHash must not be null");
+        Objects.requireNonNull(embeddingModel, "embeddingModel must not be null");
+        return Set.copyOf(repository.findStoredRecordIds(
+                sourceKey,
+                contentHash,
+                embeddingModel,
+                Integer.toString(embeddingDimension)
+        ));
     }
 }

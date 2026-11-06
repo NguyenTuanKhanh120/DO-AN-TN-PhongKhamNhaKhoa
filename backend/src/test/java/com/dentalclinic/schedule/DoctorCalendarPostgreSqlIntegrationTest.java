@@ -62,7 +62,7 @@ class DoctorCalendarPostgreSqlIntegrationTest {
     private static final String TEST_JWT_SECRET = generateSecret();
     private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final LocalDate MONDAY = LocalDate.of(2026, 10, 19);
-    private static final Instant FIXED_NOW = Instant.parse("2026-10-19T00:00:00Z");
+    private static final Instant FIXED_NOW = Instant.parse("2026-10-18T21:00:00Z");
 
     @Autowired
     private MockMvc mockMvc;
@@ -122,7 +122,10 @@ class DoctorCalendarPostgreSqlIntegrationTest {
         Appointment appointment = new Appointment();
         appointment.setPatient(patient);
         appointment.setDoctorService(mapping);
-        appointment.setScheduledStartAt(toInstant(MONDAY, LocalTime.of(13, 0)));
+        appointment.setScheduledStartAt(toInstant(MONDAY, LocalTime.of(14, 0)));
+        appointment.setAppointmentDate(MONDAY);
+        appointment.setSession(ScheduleSession.AFTERNOON);
+        appointment.setQueueNumber((short) 1);
         appointment.setStatus(AppointmentStatus.BOOKED);
         appointmentRepository.saveAndFlush(appointment);
 
@@ -133,10 +136,14 @@ class DoctorCalendarPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.toDate").value(MONDAY.plusDays(29).toString()))
                 .andExpect(jsonPath("$.data.days.length()").value(30))
                 .andExpect(jsonPath("$.data.days[0].sessions[0].availableSlotCount").value(2))
-                .andExpect(jsonPath("$.data.days[0].sessions[1].availableSlotCount").value(3))
+                .andExpect(jsonPath("$.data.days[0].sessions[1].availableSlotCount").value(1))
+                .andExpect(jsonPath("$.data.days[0].sessions[1].availableSlots[0].queueNumber")
+                        .value(2))
+                .andExpect(jsonPath("$.data.days[0].sessions[1].availableSlots[0].estimatedStartTime")
+                        .value("15:30:00"))
                 .andExpect(jsonPath("$.data.days[1].status").value("AVAILABLE"))
-                .andExpect(jsonPath("$.data.days[1].sessions[0].availableSlotCount").value(3))
-                .andExpect(jsonPath("$.data.days[1].sessions[1].availableSlotCount").value(4))
+                .andExpect(jsonPath("$.data.days[1].sessions[0].availableSlotCount").value(2))
+                .andExpect(jsonPath("$.data.days[1].sessions[1].availableSlotCount").value(2))
                 .andExpect(jsonPath("$.data.days[6].status").value("NOT_WORKING"))
                 .andReturn();
 
@@ -189,7 +196,7 @@ class DoctorCalendarPostgreSqlIntegrationTest {
     private void saveDefaultSchedules(Doctor doctor) {
         for (short day = 1; day <= 6; day++) {
             saveSchedule(doctor, day, ScheduleSession.MORNING, "08:00", "11:00");
-            saveSchedule(doctor, day, ScheduleSession.AFTERNOON, "13:00", "17:00");
+            saveSchedule(doctor, day, ScheduleSession.AFTERNOON, "14:00", "17:00");
         }
     }
 
