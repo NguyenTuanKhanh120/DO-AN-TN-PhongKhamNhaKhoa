@@ -20,6 +20,7 @@ import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.schedule.service.SlotService;
 import com.dentalclinic.schedule.service.SchedulingPolicy;
+import com.dentalclinic.user.entity.User;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -76,6 +77,7 @@ public class AppointmentBookingService {
     ) {
         Patient patient = patientRepository.findByUserId(authenticatedUserId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
+        User patientUser = requireLinkedUser(patient);
         Appointment previousAppointment = requireEligiblePreviousAppointment(
                 patient,
                 request.previousAppointmentId()
@@ -129,7 +131,7 @@ public class AppointmentBookingService {
         AppointmentHistory history = new AppointmentHistory();
         history.setAppointment(appointment);
         history.setAction(AppointmentAction.BOOK);
-        history.setChangedBy(patient.getUser());
+        history.setChangedBy(patientUser);
         history.setDetails(bookDetails(appointment));
         appointmentHistoryRepository.saveAndFlush(history);
 
@@ -234,5 +236,12 @@ public class AppointmentBookingService {
         return new ConflictException(
                 "Bạn đã có một lịch khám đang hoạt động trong buổi này"
         );
+    }
+
+    private User requireLinkedUser(Patient patient) {
+        if (patient.getUser() == null) {
+            throw new NotFoundException("Không tìm thấy tài khoản liên kết của bệnh nhân");
+        }
+        return patient.getUser();
     }
 }

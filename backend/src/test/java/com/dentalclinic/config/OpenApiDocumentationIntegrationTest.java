@@ -186,6 +186,36 @@ class OpenApiDocumentationIntegrationTest {
         assertThat(staffAppointments.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
                 .isTrue();
 
+        JsonNode walkInAvailability = operation(
+                document,
+                "/api/staff/appointments/walk-in/availability",
+                "get"
+        );
+        assertThat(walkInAvailability.path("tags").get(0).asText())
+                .isEqualTo("Staff Appointments");
+        assertThat(walkInAvailability.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
+                .isTrue();
+
+        JsonNode createWalkIn = operation(
+                document,
+                "/api/staff/appointments/walk-in",
+                "post"
+        );
+        assertThat(createWalkIn.path("tags").get(0).asText())
+                .isEqualTo("Staff Appointments");
+        assertThat(createWalkIn.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
+                .isTrue();
+        assertOnlyResponses(createWalkIn, "201");
+
+        JsonNode staffPatients = operation(document, "/api/staff/patients", "get");
+        assertThat(staffPatients.path("tags").get(0).asText()).isEqualTo("Staff Patients");
+        assertThat(staffPatients.path("security").get(0).has(OpenApiConfig.BEARER_AUTH))
+                .isTrue();
+        JsonNode createStaffPatient = operation(document, "/api/staff/patients", "post");
+        assertThat(createStaffPatient.path("tags").get(0).asText())
+                .isEqualTo("Staff Patients");
+        assertOnlyResponses(createStaffPatient, "201");
+
         JsonNode staffPayment = operation(document, "/api/staff/payments/{id}/confirm", "patch");
         assertThat(staffPayment.path("tags").get(0).asText()).isEqualTo("Staff Payments");
         assertThat(staffPayment.path("security").get(0).has(OpenApiConfig.BEARER_AUTH)).isTrue();
@@ -252,6 +282,8 @@ class OpenApiDocumentationIntegrationTest {
         JsonNode schemas = document.path("components").path("schemas");
         assertThat(schemas.has("RegisterRequest")).isTrue();
         assertThat(schemas.has("CreateStaffRequest")).isTrue();
+        assertThat(schemas.has("CreateStaffPatientRequest")).isTrue();
+        assertThat(schemas.has("StaffPatientResponse")).isTrue();
         assertThat(schemas.has("BookAppointmentRequest")).isTrue();
         assertThat(schemas.has("DashboardSummaryResponse")).isTrue();
         assertThat(schemas.path("DashboardSummaryResponse").path("properties").has("patientsVisitedToday"))

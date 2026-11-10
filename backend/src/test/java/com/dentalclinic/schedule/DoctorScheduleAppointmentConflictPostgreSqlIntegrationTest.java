@@ -104,6 +104,7 @@ class DoctorScheduleAppointmentConflictPostgreSqlIntegrationTest {
         User patientUser = saveUser("schedule-patient-" + marker + "@example.com", Role.PATIENT);
         Patient patient = new Patient();
         patient.setUser(patientUser);
+        patient.setFullName(patientUser.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         patient = patientRepository.saveAndFlush(patient);
         Appointment appointment = new Appointment();

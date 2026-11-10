@@ -221,6 +221,7 @@ class SlotEnginePostgreSqlIntegrationTest {
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }

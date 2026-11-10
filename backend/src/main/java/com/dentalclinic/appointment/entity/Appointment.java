@@ -70,6 +70,11 @@ public class Appointment {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "booking_source", nullable = false, columnDefinition = "booking_source_enum")
+    private BookingSource bookingSource = BookingSource.ONLINE;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "status", nullable = false, columnDefinition = "appointment_status_enum")
     private AppointmentStatus status = AppointmentStatus.BOOKED;
 

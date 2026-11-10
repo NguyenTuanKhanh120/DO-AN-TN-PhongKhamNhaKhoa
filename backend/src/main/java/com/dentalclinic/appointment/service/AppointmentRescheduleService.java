@@ -21,6 +21,7 @@ import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.dentalclinic.schedule.service.SlotService;
+import com.dentalclinic.user.entity.User;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -81,6 +82,7 @@ public class AppointmentRescheduleService {
     ) {
         Patient patient = patientRepository.findByUserId(authenticatedUserId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
+        User patientUser = requireLinkedUser(patient);
         Appointment snapshot = appointmentRepository
                 .findDetailedByIdAndPatientId(appointmentId, patient.getId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch hẹn"));
@@ -151,7 +153,7 @@ public class AppointmentRescheduleService {
         AppointmentHistory history = new AppointmentHistory();
         history.setAppointment(appointment);
         history.setAction(AppointmentAction.RESCHEDULE);
-        history.setChangedBy(patient.getUser());
+        history.setChangedBy(patientUser);
         history.setReason(reason);
         history.setDetails(rescheduleDetails(
                 oldScheduledStartAt,
@@ -230,5 +232,12 @@ public class AppointmentRescheduleService {
 
     private ConflictException slotConflict() {
         return new ConflictException(SLOT_CONFLICT_MESSAGE);
+    }
+
+    private User requireLinkedUser(Patient patient) {
+        if (patient.getUser() == null) {
+            throw new NotFoundException("Không tìm thấy tài khoản liên kết của bệnh nhân");
+        }
+        return patient.getUser();
     }
 }

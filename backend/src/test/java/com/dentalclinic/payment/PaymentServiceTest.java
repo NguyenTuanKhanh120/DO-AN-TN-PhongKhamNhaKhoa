@@ -546,6 +546,18 @@ class PaymentServiceTest {
         assertThat(response.content().getFirst().id()).isEqualTo(payment.getId());
     }
 
+    @Test
+    void shouldMapPaymentForPatientWithoutUserAccount() {
+        Fixture fixture = fixture();
+        fixture.patient().setUser(null);
+        Payment payment = draftPayment(fixture.appointment(), List.of());
+        when(paymentRepository.findDetailedById(payment.getId())).thenReturn(Optional.of(payment));
+
+        PaymentResponse response = paymentService.getAdminPayment(payment.getId());
+
+        assertThat(response.patientName()).isEqualTo("Bệnh nhân kiểm thử");
+    }
+
     private void stubDoctorUpdate(Fixture fixture, Optional<Payment> payment) {
         when(doctorRepository.findByUserId(fixture.doctorUser().getId()))
                 .thenReturn(Optional.of(fixture.doctor()));
@@ -597,6 +609,7 @@ class PaymentServiceTest {
         Patient patient = new Patient();
         patient.setId(UUID.randomUUID());
         patient.setUser(patientUser);
+        patient.setFullName(patientUser.getFullName());
         patient.setPhone("0901000001");
 
         User doctorUser = user(Role.DOCTOR, "Bác sĩ kiểm thử");

@@ -491,6 +491,174 @@ class PostgreSql18SchemaContractIntegrationTest {
     }
 
     @Test
+    void shouldExposeWalkInPersistenceContractWithoutLosingExistingData() {
+        Boolean migrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '19'",
+                Boolean.class
+        );
+        Boolean patientNameContractSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '20'",
+                Boolean.class
+        );
+        Map<String, Object> patientUserColumn = jdbcTemplate.queryForMap(
+                """
+                        select is_nullable
+                        from information_schema.columns
+                        where table_schema = 'public'
+                          and table_name = 'patients'
+                          and column_name = 'user_id'
+                        """
+        );
+        Map<String, Object> patientNameColumn = jdbcTemplate.queryForMap(
+                """
+                        select data_type, character_maximum_length, is_nullable
+                        from information_schema.columns
+                        where table_schema = 'public'
+                          and table_name = 'patients'
+                          and column_name = 'full_name'
+                        """
+        );
+        String patientUserForeignKey = jdbcTemplate.queryForObject(
+                """
+                        select pg_get_constraintdef(oid)
+                        from pg_constraint
+                        where conrelid = 'patients'::regclass
+                          and conname = 'fk_patients_user'
+                        """,
+                String.class
+        );
+        Integer patientPhoneIndexCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_indexes
+                        where schemaname = 'public'
+                          and tablename = 'patients'
+                          and indexname = 'ix_patients_phone'
+                        """,
+                Integer.class
+        );
+        List<String> bookingSources = jdbcTemplate.queryForList(
+                "select unnest(enum_range(null::booking_source_enum))::text",
+                String.class
+        );
+        Map<String, Object> bookingSourceColumn = jdbcTemplate.queryForMap(
+                """
+                        select udt_name, is_nullable, column_default
+                        from information_schema.columns
+                        where table_schema = 'public'
+                          and table_name = 'appointments'
+                          and column_name = 'booking_source'
+                        """
+        );
+        Integer patientsWithMissingBackfilledName = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from patients patient
+                        join users clinic_user on clinic_user.id = patient.user_id
+                        where patient.full_name is distinct from clinic_user.full_name
+                        """,
+                Integer.class
+        );
+        Integer appointmentsWithoutOnlineSource = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from appointments
+                        where booking_source <> 'ONLINE'
+                        """,
+                Integer.class
+        );
+
+        assertThat(migrationSucceeded).isTrue();
+        assertThat(patientNameContractSucceeded).isTrue();
+        assertThat(patientUserColumn.get("is_nullable")).isEqualTo("YES");
+        assertThat(patientNameColumn.get("data_type")).isEqualTo("character varying");
+        assertThat(patientNameColumn.get("character_maximum_length")).isEqualTo(150);
+        assertThat(patientNameColumn.get("is_nullable")).isEqualTo("NO");
+        assertThat(patientUserForeignKey).contains("ON DELETE SET NULL");
+        assertThat(patientPhoneIndexCount).isEqualTo(1);
+        assertThat(bookingSources).containsExactly("ONLINE", "WALK_IN");
+        assertThat(bookingSourceColumn.get("udt_name")).isEqualTo("booking_source_enum");
+        assertThat(bookingSourceColumn.get("is_nullable")).isEqualTo("NO");
+        assertThat(bookingSourceColumn.get("column_default").toString()).contains("ONLINE");
+        assertThat(patientsWithMissingBackfilledName).isZero();
+        assertThat(appointmentsWithoutOnlineSource).isZero();
+    }
+
+    @Test
+    void shouldPersistPatientWithoutUserAndPreservePatientWhenLinkedUserIsDeleted() {
+        String marker = UUID.randomUUID().toString();
+        UUID walkInPatientId = UUID.randomUUID();
+        UUID linkedUserId = UUID.randomUUID();
+        UUID linkedPatientId = UUID.randomUUID();
+
+        jdbcTemplate.update(
+                """
+                        insert into patients (id, user_id, full_name, phone)
+                        values (?, null, ?, ?)
+                        """,
+                walkInPatientId,
+                "Bệnh nhân trực tiếp " + marker,
+                "090" + marker.substring(0, 7)
+        );
+        jdbcTemplate.update(
+                """
+                        insert into users (id, email, password_hash, full_name, role)
+                        values (?, ?, ?, ?, 'PATIENT')
+                        """,
+                linkedUserId,
+                "walk-in-fk-" + marker + "@example.com",
+                "not-a-real-password-hash",
+                "Bệnh nhân liên kết " + marker
+        );
+        jdbcTemplate.update(
+                """
+                        insert into patients (id, user_id, full_name)
+                        values (?, ?, ?)
+                        """,
+                linkedPatientId,
+                linkedUserId,
+                "Bệnh nhân liên kết " + marker
+        );
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select user_id from patients where id = ?",
+                UUID.class,
+                walkInPatientId
+        )).isNull();
+
+        jdbcTemplate.update("delete from users where id = ?", linkedUserId);
+
+        Integer preservedPatientCount = jdbcTemplate.queryForObject(
+                "select count(*) from patients where id = ? and user_id is null",
+                Integer.class,
+                linkedPatientId
+        );
+        assertThat(preservedPatientCount).isEqualTo(1);
+    }
+
+    @Test
+    void shouldRefusePatientNameContractWhenARecordHasNoValidName() throws Exception {
+        jdbcTemplate.execute("""
+                create temporary table patients (
+                    full_name varchar(150)
+                ) on commit drop
+                """);
+        jdbcTemplate.update("insert into patients (full_name) values (null)");
+        String migrationSql = new ClassPathResource(
+                "db/migration/V20__require_patient_full_name.sql"
+        ).getContentAsString(StandardCharsets.UTF_8);
+
+        Throwable failure = catchThrowable(() -> jdbcTemplate.execute(migrationSql));
+
+        assertThat(failure).isInstanceOf(DataAccessException.class);
+        SQLException sqlException = findSqlException(failure);
+        assertThat(sqlException.getSQLState()).isEqualTo("P0001");
+        assertThat(sqlException.getMessage()).contains(
+                "Refusing to require patients.full_name"
+        );
+    }
+
+    @Test
     void shouldRefuseDraftRemovalWhenTableContainsUnfinalizedData() throws Exception {
         jdbcTemplate.execute("""
                 create temporary table medical_record_drafts (
@@ -1147,9 +1315,10 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "PATIENT"
         );
         UUID patientId = jdbcTemplate.queryForObject(
-                "insert into patients (user_id) values (?) returning id",
+                "insert into patients (user_id, full_name) values (?, ?) returning id",
                 UUID.class,
-                patientUserId
+                patientUserId,
+                "Bệnh nhân Phase 25"
         );
         UUID doctorUserId = insertUser(
                 "phase25-doctor-" + marker + "@example.com",
@@ -1217,9 +1386,10 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "PATIENT"
         );
         return jdbcTemplate.queryForObject(
-                "insert into patients (user_id) values (?) returning id",
+                "insert into patients (user_id, full_name) values (?, ?) returning id",
                 UUID.class,
-                userId
+                userId,
+                "Bệnh nhân Slot 01"
         );
     }
 

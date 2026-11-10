@@ -54,6 +54,8 @@ public class OpenApiConfig {
             "POST /api/admin/services",
             "POST /api/admin/services/images",
             "POST /api/admin/doctors/{doctorId}/schedules",
+            "POST /api/staff/patients",
+            "POST /api/staff/appointments/walk-in",
             "POST /api/patient/appointments",
             "POST /api/doctor/appointments/{id}/medical-record",
             "POST /api/chat/messages"
@@ -98,7 +100,12 @@ public class OpenApiConfig {
                         new Tag().name("Doctor Appointments").description("Quy trình khám của bác sĩ"),
                         new Tag().name("Doctor Payments").description("Bác sĩ ghi nhận dịch vụ thực tế"),
                         new Tag().name("Patient Payments").description("Bệnh nhân xem phiếu thanh toán"),
-                        new Tag().name("Staff Appointments").description("Nhân viên tra cứu lịch khám toàn phòng khám"),
+                        new Tag().name("Staff Appointments").description(
+                                "Nhân viên tra cứu lịch khám và ca WALK_IN còn trống trong ngày"
+                        ),
+                        new Tag().name("Staff Patients").description(
+                                "Nhân viên tìm kiếm và tiếp nhận hồ sơ bệnh nhân tại quầy"
+                        ),
                         new Tag().name("Staff Payments").description("Nhân viên thu tiền trực tiếp tại quầy"),
                         new Tag().name("Admin Payments").description("Admin tra cứu và xác nhận thanh toán dự phòng"),
                         new Tag().name("Patient Medical History").description("Lịch sử bệnh án của bệnh nhân"),
@@ -349,6 +356,9 @@ public class OpenApiConfig {
         }
         if (path.startsWith("/api/staff/appointments")) {
             return "Staff Appointments";
+        }
+        if (path.startsWith("/api/staff/patients")) {
+            return "Staff Patients";
         }
         if (path.startsWith("/api/staff/payments")) {
             return "Staff Payments";

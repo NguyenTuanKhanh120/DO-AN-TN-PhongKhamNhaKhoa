@@ -14,6 +14,8 @@ import com.dentalclinic.doctor.entity.DoctorStatus;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.schedule.dto.AvailableSlotResponse;
+import com.dentalclinic.schedule.dto.CalendarAvailabilityStatus;
+import com.dentalclinic.schedule.dto.WalkInAvailabilityResponse;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
@@ -215,6 +217,184 @@ class SlotServiceTest {
                 MONDAY
         )).isEmpty();
 
+        verify(appointmentRepository, never()).findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                activeStatuses()
+        );
+    }
+
+    @Test
+    void shouldExposeWalkInCasesAfterOnlineCutoffAndMarkFullSession() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        SlotService walkInService = slotServiceAt(Instant.parse("2026-10-12T02:00:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(
+                schedule(doctor, ScheduleSession.MORNING, "08:00", "11:00"),
+                schedule(doctor, ScheduleSession.AFTERNOON, "14:00", "17:00")
+        ));
+        when(appointmentRepository.findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                activeStatuses()
+        )).thenReturn(List.of(
+                occupancy(MONDAY, ScheduleSession.MORNING, (short) 1),
+                occupancy(MONDAY, ScheduleSession.AFTERNOON, (short) 1),
+                occupancy(MONDAY, ScheduleSession.AFTERNOON, (short) 2)
+        ));
+
+        WalkInAvailabilityResponse response = walkInService.getWalkInAvailability(
+                doctor.getId(),
+                dentalService.getId()
+        );
+
+        assertThat(response.date()).isEqualTo(MONDAY);
+        assertThat(response.sessions()).satisfiesExactly(
+                morning -> {
+                    assertThat(morning.session()).isEqualTo(ScheduleSession.MORNING);
+                    assertThat(morning.status()).isEqualTo(CalendarAvailabilityStatus.AVAILABLE);
+                    assertThat(morning.availableCaseCount()).isEqualTo(1);
+                    assertThat(morning.cases()).extracting(caseAvailability ->
+                                    caseAvailability.available())
+                            .containsExactly(false, true);
+                    assertThat(morning.cases()).extracting(caseAvailability ->
+                                    caseAvailability.estimatedStartTime())
+                            .containsExactly(LocalTime.of(8, 0), LocalTime.of(9, 30));
+                },
+                afternoon -> {
+                    assertThat(afternoon.session()).isEqualTo(ScheduleSession.AFTERNOON);
+                    assertThat(afternoon.status()).isEqualTo(CalendarAvailabilityStatus.FULL);
+                    assertThat(afternoon.availableCaseCount()).isZero();
+                    assertThat(afternoon.cases()).allMatch(caseAvailability ->
+                            !caseAvailability.available());
+                }
+        );
+    }
+
+    @Test
+    void shouldMakeFinishedSessionUnavailableForWalkIn() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        SlotService walkInService = slotServiceAt(Instant.parse("2026-10-12T05:00:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of(
+                schedule(doctor, ScheduleSession.MORNING, "08:00", "11:00"),
+                schedule(doctor, ScheduleSession.AFTERNOON, "14:00", "17:00")
+        ));
+        when(appointmentRepository.findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                activeStatuses()
+        )).thenReturn(List.of());
+
+        WalkInAvailabilityResponse response = walkInService.getWalkInAvailability(
+                doctor.getId(),
+                dentalService.getId()
+        );
+
+        assertThat(response.sessions()).satisfiesExactly(
+                morning -> {
+                    assertThat(morning.status()).isEqualTo(CalendarAvailabilityStatus.UNAVAILABLE);
+                    assertThat(morning.cases()).allMatch(caseAvailability ->
+                            !caseAvailability.available());
+                },
+                afternoon -> {
+                    assertThat(afternoon.status()).isEqualTo(CalendarAvailabilityStatus.AVAILABLE);
+                    assertThat(afternoon.cases()).allMatch(caseAvailability ->
+                            caseAvailability.available());
+                }
+        );
+    }
+
+    @Test
+    void shouldAllowWalkInCreationAfterOnlineCutoffWhileSessionIsOpen() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        DoctorService mapping = stubValidDoctorAndService(doctor, dentalService);
+        SlotService walkInService = slotServiceAt(Instant.parse("2026-10-12T02:00:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(),
+                (short) 1
+        )).thenReturn(List.of(
+                schedule(doctor, ScheduleSession.MORNING, "08:00", "11:00")
+        ));
+        when(appointmentRepository.findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                activeStatuses()
+        )).thenReturn(List.of());
+
+        DoctorService result = walkInService.requireAvailableWalkInCase(
+                doctor.getId(),
+                dentalService.getId(),
+                MONDAY,
+                ScheduleSession.MORNING,
+                2
+        );
+
+        assertThat(result).isSameAs(mapping);
+    }
+
+    @Test
+    void shouldRejectWalkInCreationForFinishedSession() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        SlotService walkInService = slotServiceAt(Instant.parse("2026-10-12T05:00:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(),
+                (short) 1
+        )).thenReturn(List.of(
+                schedule(doctor, ScheduleSession.MORNING, "08:00", "11:00")
+        ));
+
+        assertThatThrownBy(() -> walkInService.requireAvailableWalkInCase(
+                doctor.getId(),
+                dentalService.getId(),
+                MONDAY,
+                ScheduleSession.MORNING,
+                2
+        ))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Buổi khám đã kết thúc, không thể tạo lịch WALK_IN");
+
+        verify(appointmentRepository, never()).findActiveQueueOccupancies(
+                doctor.getId(),
+                MONDAY,
+                MONDAY,
+                activeStatuses()
+        );
+    }
+
+    @Test
+    void shouldReportNotWorkingWalkInSessionsWithoutLoadingAppointments() {
+        Doctor doctor = doctor();
+        DentalService dentalService = dentalService(true);
+        stubValidDoctorAndService(doctor, dentalService);
+        SlotService walkInService = slotServiceAt(Instant.parse("2026-10-12T02:00:00Z"));
+        when(doctorScheduleRepository.findAllByDoctor_IdAndDayOfWeekOrderByStartTimeAsc(
+                doctor.getId(), (short) 1
+        )).thenReturn(List.of());
+
+        WalkInAvailabilityResponse response = walkInService.getWalkInAvailability(
+                doctor.getId(),
+                dentalService.getId()
+        );
+
+        assertThat(response.sessions()).hasSize(2).allSatisfy(session -> {
+            assertThat(session.status()).isEqualTo(CalendarAvailabilityStatus.NOT_WORKING);
+            assertThat(session.cases()).allMatch(caseAvailability ->
+                    !caseAvailability.available());
+        });
         verify(appointmentRepository, never()).findActiveQueueOccupancies(
                 doctor.getId(),
                 MONDAY,

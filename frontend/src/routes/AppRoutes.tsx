@@ -24,6 +24,7 @@ const DoctorAppointmentsPage = lazy(() => import("@/features/doctor/components/D
 const DoctorAppointmentDetailPage = lazy(() => import("@/features/doctor/components/DoctorAppointmentDetailPage"));
 const DoctorSchedulesPage = lazy(() => import("@/features/doctor/components/DoctorSchedulesPage"));
 const StaffDashboardPage = lazy(() => import("@/features/staff/components/StaffDashboardPage"));
+const StaffWalkInPage = lazy(() => import("@/features/staff/components/StaffWalkInPage"));
 const StaffAppointmentsPage = lazy(() => import("@/features/staff/components/StaffAppointmentsPage"));
 const StaffPaymentsPage = lazy(() => import("@/features/staff/components/StaffPaymentsPage"));
 const StaffPaymentDetailPage = lazy(() => import("@/features/staff/components/StaffPaymentDetailPage"));
@@ -72,6 +73,7 @@ export function AppRoutes() {
     </Route>
     <Route element={<ProtectedRoute roles={["STAFF"]}><DashboardLayout /></ProtectedRoute>}>
       <Route path="/staff/dashboard" element={<StaffDashboardPage />} />
+      <Route path="/staff/walk-in" element={<StaffWalkInPage />} />
       <Route path="/staff/appointments" element={<StaffAppointmentsPage />} />
       <Route path="/staff/payments" element={<StaffPaymentsPage />} />
       <Route path="/staff/payments/:id" element={<StaffPaymentDetailPage />} />

@@ -100,6 +100,7 @@ class AuthServiceTest {
         ArgumentCaptor<Patient> patientCaptor = ArgumentCaptor.forClass(Patient.class);
         verify(patientRepository).save(patientCaptor.capture());
         assertThat(patientCaptor.getValue().getUser()).isSameAs(savedUser);
+        assertThat(patientCaptor.getValue().getFullName()).isEqualTo("Nguyễn Văn An");
         assertThat(patientCaptor.getValue().getGender()).isEqualTo(Gender.UNSPECIFIED);
 
         assertThat(response.accessToken()).isEqualTo("access-token");

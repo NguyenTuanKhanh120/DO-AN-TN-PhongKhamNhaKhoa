@@ -34,7 +34,7 @@ public class PaymentMapper {
                 appointment.getStatus(),
                 toClinicOffset(appointment.getScheduledStartAt()),
                 patient.getId(),
-                patient.getUser().getFullName(),
+                patient.getFullName(),
                 patient.getPhone(),
                 doctor.getId(),
                 doctor.getUser().getFullName(),

@@ -115,6 +115,7 @@ class DoctorCalendarPostgreSqlIntegrationTest {
         );
         Patient patient = new Patient();
         patient.setUser(patientUser);
+        patient.setFullName(patientUser.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         patient = patientRepository.saveAndFlush(patient);
         Appointment appointment = new Appointment();

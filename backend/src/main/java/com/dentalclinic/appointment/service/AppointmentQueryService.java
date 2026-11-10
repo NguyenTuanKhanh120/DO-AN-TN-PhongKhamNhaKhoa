@@ -291,7 +291,7 @@ public class AppointmentQueryService {
             String pattern = "%" + escapeLikePattern(normalizedSearch) + "%";
             specification = specification.and((root, query, criteriaBuilder) -> {
                 Expression<String> patientName = criteriaBuilder.lower(
-                        root.get("patient").get("user").get("fullName")
+                        root.get("patient").get("fullName")
                 );
                 Expression<String> patientPhone = criteriaBuilder.lower(
                         root.get("patient").get("phone")
@@ -382,7 +382,7 @@ public class AppointmentQueryService {
         return new AppointmentResponse(
                 appointment.getId(),
                 patient.getId(),
-                patient.getUser().getFullName(),
+                patient.getFullName(),
                 patient.getPhone(),
                 doctor.getId(),
                 doctor.getUser().getFullName(),

@@ -131,6 +131,24 @@ class AppointmentQueryServiceTest {
     }
 
     @Test
+    void shouldMapAppointmentForPatientWithoutUserAccount() {
+        Appointment appointment = appointment();
+        appointment.getPatient().setUser(null);
+        when(appointmentRepository.findAll(
+                org.mockito.ArgumentMatchers.<Specification<Appointment>>any(),
+                any(Pageable.class)
+        )).thenReturn(new PageImpl<>(List.of(appointment)));
+
+        PageResponse<AppointmentResponse> result = appointmentQueryService.getAdminAppointments(
+                null, null, null, null, null, null, null, 0, 20
+        );
+
+        assertThat(result.content()).singleElement()
+                .extracting(AppointmentResponse::patientFullName)
+                .isEqualTo("Bệnh nhân Nguyễn Văn Bình");
+    }
+
+    @Test
     void shouldNotRevealAnotherPatientsAppointment() {
         UUID userId = UUID.randomUUID();
         UUID appointmentId = UUID.randomUUID();
@@ -263,6 +281,7 @@ class AppointmentQueryServiceTest {
         Patient patient = new Patient();
         patient.setId(UUID.randomUUID());
         patient.setUser(patientUser);
+        patient.setFullName(patientUser.getFullName());
         patient.setPhone("0901000001");
 
         User doctorUser = new User();

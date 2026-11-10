@@ -20,6 +20,9 @@ import com.dentalclinic.schedule.dto.CalendarSlotResponse;
 import com.dentalclinic.schedule.dto.DoctorCalendarDayResponse;
 import com.dentalclinic.schedule.dto.DoctorCalendarResponse;
 import com.dentalclinic.schedule.dto.DoctorCalendarSessionResponse;
+import com.dentalclinic.schedule.dto.WalkInAvailabilityResponse;
+import com.dentalclinic.schedule.dto.WalkInCaseAvailabilityResponse;
+import com.dentalclinic.schedule.dto.WalkInSessionAvailabilityResponse;
 import com.dentalclinic.schedule.entity.DoctorSchedule;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.repository.DoctorScheduleRepository;
@@ -44,6 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 @Service
 public class SlotService {
@@ -109,6 +113,41 @@ public class SlotService {
                 .filter(candidate -> !isOccupied(candidate, date, occupiedQueues))
                 .map(candidate -> toResponse(date, candidate))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public WalkInAvailabilityResponse getWalkInAvailability(
+            UUID doctorId,
+            UUID serviceId
+    ) {
+        LocalDate today = clinicTimeProvider.today();
+        SlotContext context = loadSlotContext(doctorId, serviceId, today);
+        Map<ScheduleSession, DoctorSchedule> schedulesBySession = new EnumMap<>(
+                ScheduleSession.class
+        );
+        context.schedules().forEach(schedule ->
+                schedulesBySession.put(schedule.getSession(), schedule)
+        );
+        Map<QueueKey, Set<Integer>> occupiedQueues = context.schedules().isEmpty()
+                ? Map.of()
+                : loadOccupiedQueues(doctorId, today, today);
+        Instant now = clinicTimeProvider.now();
+
+        List<WalkInSessionAvailabilityResponse> sessions = CALENDAR_SESSIONS.stream()
+                .map(session -> walkInSession(
+                        today,
+                        session,
+                        schedulesBySession.get(session),
+                        occupiedQueues,
+                        now
+                ))
+                .toList();
+        return new WalkInAvailabilityResponse(
+                doctorId,
+                serviceId,
+                today,
+                sessions
+        );
     }
 
     @Transactional(readOnly = true)
@@ -212,6 +251,57 @@ public class SlotService {
                 "Không thể đổi sang ngày đã qua thời hạn 05:00",
                 rescheduleSlotConflict()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public DoctorService requireAvailableWalkInCase(
+            UUID doctorId,
+            UUID serviceId,
+            LocalDate appointmentDate,
+            ScheduleSession session,
+            int queueNumber
+    ) {
+        if (!clinicTimeProvider.today().equals(appointmentDate)) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Lịch WALK_IN chỉ được tạo cho ngày hiện tại. "
+                            + "Đối với lịch tương lai, bệnh nhân vui lòng đặt lịch online."
+            );
+        }
+
+        SlotContext context = loadSlotContext(doctorId, serviceId, appointmentDate);
+        schedulingPolicy.estimatedStartAt(appointmentDate, session, queueNumber);
+        boolean scheduled = context.schedules().stream()
+                .anyMatch(schedule -> schedule.getSession() == session);
+        if (!scheduled) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Ca khám không thuộc lịch làm việc của bác sĩ"
+            );
+        }
+
+        Instant sessionEnd = clinicTimeProvider.toInstant(
+                appointmentDate,
+                schedulingPolicy.sessionEnd(session)
+        );
+        if (!clinicTimeProvider.now().isBefore(sessionEnd)) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Buổi khám đã kết thúc, không thể tạo lịch WALK_IN"
+            );
+        }
+
+        Map<QueueKey, Set<Integer>> occupiedQueues = loadOccupiedQueues(
+                doctorId,
+                appointmentDate,
+                appointmentDate
+        );
+        if (occupiedQueues
+                .getOrDefault(new QueueKey(appointmentDate, session), Set.of())
+                .contains(queueNumber)) {
+            throw walkInSlotConflict();
+        }
+        return context.doctorService();
     }
 
     private DoctorService requireAvailableCase(
@@ -405,6 +495,76 @@ public class SlotService {
         );
     }
 
+    private WalkInSessionAvailabilityResponse walkInSession(
+            LocalDate date,
+            ScheduleSession session,
+            DoctorSchedule schedule,
+            Map<QueueKey, Set<Integer>> occupiedQueues,
+            Instant now
+    ) {
+        boolean working = schedule != null;
+        boolean ended = !now.isBefore(clinicTimeProvider.toInstant(
+                date,
+                schedulingPolicy.sessionEnd(session)
+        ));
+        Set<Integer> occupied = occupiedQueues.getOrDefault(
+                new QueueKey(date, session),
+                Set.of()
+        );
+        List<WalkInCaseAvailabilityResponse> cases = IntStream.rangeClosed(
+                        SchedulingPolicy.MIN_QUEUE_NUMBER,
+                        SchedulingPolicy.MAX_QUEUE_NUMBER
+                )
+                .mapToObj(queueNumber -> walkInCase(
+                        date,
+                        session,
+                        queueNumber,
+                        working && !ended && !occupied.contains(queueNumber)
+                ))
+                .toList();
+        int availableCaseCount = (int) cases.stream()
+                .filter(WalkInCaseAvailabilityResponse::available)
+                .count();
+
+        CalendarAvailabilityStatus status;
+        if (!working) {
+            status = CalendarAvailabilityStatus.NOT_WORKING;
+        } else if (ended) {
+            status = CalendarAvailabilityStatus.UNAVAILABLE;
+        } else if (availableCaseCount > 0) {
+            status = CalendarAvailabilityStatus.AVAILABLE;
+        } else {
+            status = CalendarAvailabilityStatus.FULL;
+        }
+        return new WalkInSessionAvailabilityResponse(
+                session,
+                status,
+                schedulingPolicy.sessionStart(session),
+                schedulingPolicy.sessionEnd(session),
+                availableCaseCount,
+                cases
+        );
+    }
+
+    private WalkInCaseAvailabilityResponse walkInCase(
+            LocalDate date,
+            ScheduleSession session,
+            int queueNumber,
+            boolean available
+    ) {
+        ZonedDateTime estimatedStartAt = schedulingPolicy.estimatedStartAt(
+                date,
+                session,
+                queueNumber
+        ).atZone(clinicTimeProvider.zoneId());
+        return new WalkInCaseAvailabilityResponse(
+                queueNumber,
+                estimatedStartAt.toLocalTime(),
+                estimatedStartAt.toOffsetDateTime(),
+                available
+        );
+    }
+
     private DoctorCalendarSessionResponse emptyCalendarSession(
             ScheduleSession session,
             CalendarAvailabilityStatus status
@@ -546,6 +706,10 @@ public class SlotService {
                 "Khung giờ mới vừa được người khác đặt. Lịch hiện tại của bạn vẫn được giữ nguyên. "
                         + "Vui lòng chọn khung giờ khác."
         );
+    }
+
+    private ConflictException walkInSlotConflict() {
+        return new ConflictException("Ca khám vừa được đặt. Vui lòng chọn ca khác.");
     }
 
     private record SlotContext(

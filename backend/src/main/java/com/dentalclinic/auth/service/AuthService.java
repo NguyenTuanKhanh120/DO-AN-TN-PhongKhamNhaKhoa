@@ -53,6 +53,7 @@ public class AuthService {
     public SessionAuthenticationResult registerPatient(RegisterRequest request) {
         BcryptPasswordValidator.validate(request.password());
         String normalizedEmail = normalizeEmail(request.email());
+        String normalizedFullName = normalizeFullName(request.fullName());
         if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
@@ -60,7 +61,7 @@ public class AuthService {
         User user = new User();
         user.setEmail(normalizedEmail);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setFullName(normalizeFullName(request.fullName()));
+        user.setFullName(normalizedFullName);
         user.setRole(Role.PATIENT);
         user.setStatus(UserStatus.ACTIVE);
 
@@ -72,6 +73,7 @@ public class AuthService {
 
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(normalizedFullName);
         patient.setGender(Gender.UNSPECIFIED);
         patientRepository.save(patient);
 

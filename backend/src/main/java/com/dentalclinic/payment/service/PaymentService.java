@@ -484,7 +484,7 @@ public class PaymentService {
             String pattern = "%" + escapeLikePattern(normalizedSearch) + "%";
             specification = specification.and((root, query, criteriaBuilder) -> {
                 Expression<String> patientName = criteriaBuilder.lower(
-                        root.get("appointment").get("patient").get("user").get("fullName")
+                        root.get("appointment").get("patient").get("fullName")
                 );
                 Expression<String> doctorName = criteriaBuilder.lower(
                         root.get("appointment").get("doctorService")

@@ -243,6 +243,7 @@ class AppointmentCancellationServiceTest {
         Patient patient = new Patient();
         patient.setId(UUID.randomUUID());
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         return patient;
     }
 

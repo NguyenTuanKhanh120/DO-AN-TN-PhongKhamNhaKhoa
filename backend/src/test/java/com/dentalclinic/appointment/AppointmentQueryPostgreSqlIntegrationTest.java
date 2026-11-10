@@ -369,6 +369,7 @@ class AppointmentQueryPostgreSqlIntegrationTest {
     private Patient savePatient(User user, String phone) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         patient.setPhone(phone);
         return patientRepository.saveAndFlush(patient);

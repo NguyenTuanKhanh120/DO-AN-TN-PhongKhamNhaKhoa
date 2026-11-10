@@ -27,7 +27,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
 
     @Override
     @EntityGraph(attributePaths = {
-            "patient.user",
+            "patient",
             "doctorService.doctor.user",
             "doctorService.service",
             "previousAppointment"
@@ -35,7 +35,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     Page<Appointment> findAll(Specification<Appointment> specification, Pageable pageable);
 
     @EntityGraph(attributePaths = {
-            "patient.user",
+            "patient",
             "doctorService.doctor.user",
             "doctorService.service",
             "previousAppointment"
@@ -52,7 +52,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     );
 
     @EntityGraph(attributePaths = {
-            "patient.user",
+            "patient",
             "doctorService.doctor.user",
             "doctorService.service",
             "previousAppointment"
@@ -93,7 +93,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
     );
 
     @EntityGraph(attributePaths = {
-            "patient.user",
+            "patient",
             "doctorService.doctor.user",
             "doctorService.service"
     })
@@ -113,7 +113,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {
-            "patient.user",
+            "patient",
             "doctorService.doctor.user",
             "doctorService.service"
     })

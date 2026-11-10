@@ -14,6 +14,7 @@ import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.schedule.service.SchedulingPolicy;
+import com.dentalclinic.user.entity.User;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
@@ -58,6 +59,7 @@ public class AppointmentCancellationService {
     ) {
         Patient patient = patientRepository.findByUserId(authenticatedUserId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
+        User patientUser = requireLinkedUser(patient);
         Appointment appointment = appointmentRepository
                 .findForUpdateByIdAndPatientId(appointmentId, patient.getId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy lịch hẹn"));
@@ -73,7 +75,7 @@ public class AppointmentCancellationService {
         AppointmentHistory history = new AppointmentHistory();
         history.setAppointment(appointment);
         history.setAction(AppointmentAction.CANCEL);
-        history.setChangedBy(patient.getUser());
+        history.setChangedBy(patientUser);
         history.setReason(reason);
         history.setDetails(cancellationDetails(appointment, cancelledAt));
         appointmentHistoryRepository.saveAndFlush(history);
@@ -124,5 +126,12 @@ public class AppointmentCancellationService {
 
     private String normalizeReason(String reason) {
         return reason.trim().replaceAll("\\s+", " ");
+    }
+
+    private User requireLinkedUser(Patient patient) {
+        if (patient.getUser() == null) {
+            throw new NotFoundException("Không tìm thấy tài khoản liên kết của bệnh nhân");
+        }
+        return patient.getUser();
     }
 }

@@ -238,6 +238,7 @@ class AiSlotLookupPostgreSqlIntegrationTest {
 
         Patient patient = new Patient();
         patient.setUser(savedUser);
+        patient.setFullName(savedUser.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
