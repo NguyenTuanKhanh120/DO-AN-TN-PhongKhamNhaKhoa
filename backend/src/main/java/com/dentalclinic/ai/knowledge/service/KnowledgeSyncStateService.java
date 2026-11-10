@@ -50,14 +50,19 @@ public class KnowledgeSyncStateService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<KnowledgeSyncClaim> tryBeginSync(
             String sourceKey,
-            KnowledgeSourceFile sourceFile
+            KnowledgeSourceFile sourceFile,
+            String contentHash
     ) {
+        if (contentHash == null || !SHA_256.matcher(contentHash).matches()) {
+            throw new IllegalArgumentException("contentHash must be a lowercase SHA-256 value");
+        }
         Instant attemptedAt = clock.instant();
         UUID syncToken = UUID.randomUUID();
         int claimed = sourceRepository.tryBeginSync(
                 sourceKey,
                 sourceFile.fileName(),
                 sourceFile.fileType().name(),
+                contentHash,
                 attemptedAt,
                 attemptedAt.minus(syncLockTimeout),
                 syncToken
@@ -84,6 +89,27 @@ public class KnowledgeSyncStateService {
         source.setStatus(KnowledgeSourceStatus.SUCCESS);
         source.setLastError(null);
         source.setSyncToken(null);
+        clearProgress(source);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordProgress(
+            KnowledgeSyncClaim claim,
+            String contentHash,
+            int processedChunkCount,
+            int totalChunkCount
+    ) {
+        if (contentHash == null
+                || !SHA_256.matcher(contentHash).matches()
+                || processedChunkCount < 0
+                || totalChunkCount <= 0
+                || processedChunkCount > totalChunkCount) {
+            throw new IllegalArgumentException("Knowledge sync progress is invalid");
+        }
+        KnowledgeSource source = requireOwnedSource(claim);
+        source.setPendingContentHash(contentHash);
+        source.setProcessedChunkCount(processedChunkCount);
+        source.setTotalChunkCount(totalChunkCount);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -104,7 +130,7 @@ public class KnowledgeSyncStateService {
         long validVectorCount = vectorRepository.countValidStagingDocuments(
                 claim.sourceKey(),
                 activation.contentHash(),
-                claim.syncToken().toString(),
+                activation.embeddingModel(),
                 activation.embeddingDimension()
         );
         if (validVectorCount != activation.chunkCount()) {
@@ -127,11 +153,14 @@ public class KnowledgeSyncStateService {
         source.setLastSuccessAt(activation.completedAt());
         source.setLastError(null);
         source.setSyncToken(null);
+        clearProgress(source);
         sourceRepository.save(source);
 
         vectorRepository.deleteOtherVersions(
                 claim.sourceKey(),
-                claim.syncToken().toString()
+                activation.contentHash(),
+                activation.embeddingModel(),
+                Integer.toString(activation.embeddingDimension())
         );
     }
 
@@ -170,6 +199,12 @@ public class KnowledgeSyncStateService {
         return normalized.length() <= MAX_ERROR_LENGTH
                 ? normalized
                 : normalized.substring(0, MAX_ERROR_LENGTH);
+    }
+
+    private void clearProgress(KnowledgeSource source) {
+        source.setPendingContentHash(null);
+        source.setProcessedChunkCount(0);
+        source.setTotalChunkCount(0);
     }
 
     private KnowledgeBaseException unavailable(String message) {

@@ -101,8 +101,6 @@ class PatientFollowUpBookingPostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "patient-follow-up-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
-        registry.add("clinic.appointment.booking-min-advance-minutes", () -> 120);
     }
 
     @BeforeEach
@@ -113,7 +111,7 @@ class PatientFollowUpBookingPostgreSqlIntegrationTest {
     @Test
     void shouldCreatePatientOwnedFollowUpAndPatientAudit() {
         OffsetDateTime scheduledStartAt = OffsetDateTime.parse(
-                "2026-10-20T09:00:00+07:00"
+                "2026-10-20T08:00:00+07:00"
         );
 
         BookAppointmentResponse response = bookingService.book(
@@ -161,12 +159,12 @@ class PatientFollowUpBookingPostgreSqlIntegrationTest {
     void shouldRejectASecondActiveFollowUpFromSameRecommendation() {
         bookingService.book(
                 fixture.patientUserId(),
-                request(OffsetDateTime.parse("2026-10-20T09:00:00+07:00"))
+                request(OffsetDateTime.parse("2026-10-20T08:00:00+07:00"))
         );
 
         assertThatThrownBy(() -> bookingService.book(
                 fixture.patientUserId(),
-                request(OffsetDateTime.parse("2026-10-20T11:00:00+07:00"))
+                request(OffsetDateTime.parse("2026-10-20T09:30:00+07:00"))
         )).isInstanceOf(ConflictException.class)
                 .hasMessage("Chỉ định tái khám đã có một lịch hẹn đang hoạt động");
 
@@ -177,7 +175,7 @@ class PatientFollowUpBookingPostgreSqlIntegrationTest {
     void shouldRejectAnotherPatientsPreviousAppointmentId() {
         assertThatThrownBy(() -> bookingService.book(
                 fixture.otherPatientUserId(),
-                request(OffsetDateTime.parse("2026-10-20T09:00:00+07:00"))
+                request(OffsetDateTime.parse("2026-10-20T08:00:00+07:00"))
         )).isInstanceOf(NotFoundException.class)
                 .hasMessage("Không tìm thấy lịch khám trước");
 
@@ -196,7 +194,7 @@ class PatientFollowUpBookingPostgreSqlIntegrationTest {
 
         assertThatThrownBy(() -> bookingService.book(
                 fixture.patientUserId(),
-                request(OffsetDateTime.parse("2026-10-20T09:00:00+07:00"))
+                request(OffsetDateTime.parse("2026-10-20T08:00:00+07:00"))
         )).isInstanceOf(ConflictException.class)
                 .hasMessage("Bệnh án không yêu cầu tái khám");
     }
@@ -252,10 +250,18 @@ class PatientFollowUpBookingPostgreSqlIntegrationTest {
     }
 
     private BookAppointmentRequest request(OffsetDateTime startAt) {
+        ScheduleSession session = startAt.toLocalTime().isBefore(LocalTime.NOON)
+                ? ScheduleSession.MORNING
+                : ScheduleSession.AFTERNOON;
+        LocalTime firstCaseTime = session == ScheduleSession.MORNING
+                ? LocalTime.of(8, 0)
+                : LocalTime.of(14, 0);
         return new BookAppointmentRequest(
                 fixture.doctorId(),
                 fixture.serviceId(),
-                startAt,
+                startAt.toLocalDate(),
+                session,
+                startAt.toLocalTime().equals(firstCaseTime) ? 1 : 2,
                 fixture.previousAppointmentId()
         );
     }
@@ -284,6 +290,7 @@ class PatientFollowUpBookingPostgreSqlIntegrationTest {
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
@@ -325,6 +332,7 @@ class PatientFollowUpBookingPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(mapping);
         appointment.setScheduledStartAt(scheduledStartAt);
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(appointment, scheduledStartAt);
         appointment.setStatus(status);
         return appointmentRepository.saveAndFlush(appointment);
     }

@@ -4,6 +4,8 @@ import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentAction;
 import com.dentalclinic.appointment.entity.AppointmentHistory;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.entity.BookingSource;
+import com.dentalclinic.appointment.AppointmentQueueFixtureSupport;
 import com.dentalclinic.appointment.repository.AppointmentHistoryRepository;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.auth.entity.AuthSession;
@@ -113,6 +115,7 @@ class PersistenceMappingIntegrationTest {
 
         Patient patient = new Patient();
         patient.setUser(patientUser);
+        patient.setFullName(patientUser.getFullName());
         patient.setDateOfBirth(LocalDate.of(1995, 6, 15));
         patient.setGender(Gender.FEMALE);
         patient.setPhone("0900000000");
@@ -154,6 +157,10 @@ class PersistenceMappingIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setScheduledStartAt(Instant.parse("2030-01-07T01:00:00Z"));
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(
+                appointment,
+                appointment.getScheduledStartAt()
+        );
         appointment.setStatus(AppointmentStatus.BOOKED);
         appointmentRepository.saveAndFlush(appointment);
 
@@ -236,6 +243,7 @@ class PersistenceMappingIntegrationTest {
                 .orElseThrow();
 
         assertThat(persistedAppointment.getStatus()).isEqualTo(AppointmentStatus.BOOKED);
+        assertThat(persistedAppointment.getBookingSource()).isEqualTo(BookingSource.ONLINE);
         assertThat(persistedAppointment.getScheduledStartAt()).isEqualTo(Instant.parse("2030-01-07T01:00:00Z"));
         assertThat(persistedAppointment.getDoctorService().getId()).isEqualTo(doctorServiceId);
         assertThat(persistedAppointment.getCreatedAt()).isNotNull();
@@ -274,6 +282,23 @@ class PersistenceMappingIntegrationTest {
         assertThat(persistedRefreshToken.getSession().getId()).isEqualTo(authSessionId);
         assertThat(persistedRefreshToken.getExpiresAt())
                 .isEqualTo(persistedSession.getAbsoluteExpiresAt());
+    }
+
+    @Test
+    void persistsPatientWithoutUserAccount() {
+        Patient patient = new Patient();
+        patient.setFullName("Bệnh nhân tại quầy");
+        patient.setGender(Gender.UNSPECIFIED);
+        patient.setPhone("0900000001");
+
+        Patient saved = patientRepository.saveAndFlush(patient);
+        UUID patientId = saved.getId();
+        entityManager.clear();
+
+        Patient persisted = patientRepository.findById(patientId).orElseThrow();
+        assertThat(persisted.getUser()).isNull();
+        assertThat(persisted.getFullName()).isEqualTo("Bệnh nhân tại quầy");
+        assertThat(persisted.getPhone()).isEqualTo("0900000001");
     }
 
     private User createUser(String email, String fullName, Role role) {

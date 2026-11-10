@@ -66,8 +66,7 @@ class DoctorServiceMappingServiceTest {
         service = new DoctorServiceMappingService(
                 doctorRepository,
                 dentalServiceRepository,
-                doctorServiceRepository,
-                60
+                doctorServiceRepository
         );
     }
 
@@ -108,7 +107,6 @@ class DoctorServiceMappingServiceTest {
             assertThat(item.name()).isEqualTo(dentalService.getName());
             assertThat(item.description()).isEqualTo(dentalService.getDescription());
             assertThat(item.price()).isEqualByComparingTo(dentalService.getPrice());
-            assertThat(item.durationMinutes()).isEqualTo(60);
             assertThat(item.imageUrl()).isEqualTo(dentalService.getImageUrl());
             assertThat(item.active()).isTrue();
         });

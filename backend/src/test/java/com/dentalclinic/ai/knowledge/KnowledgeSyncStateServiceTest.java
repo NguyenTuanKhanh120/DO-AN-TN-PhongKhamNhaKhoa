@@ -52,16 +52,21 @@ class KnowledgeSyncStateServiceTest {
                 eq(SOURCE_KEY),
                 eq("nidcr_dental_knowledge_vi.json"),
                 eq("JSON"),
+                eq("b".repeat(64)),
                 eq(NOW),
                 eq(NOW.minus(Duration.ofMinutes(30))),
                 any(UUID.class)
         )).thenAnswer(invocation -> {
-            source.setSyncToken(invocation.getArgument(5));
+            source.setSyncToken(invocation.getArgument(6));
             return 1;
         });
         when(sourceRepository.findBySourceKey(SOURCE_KEY)).thenReturn(Optional.of(source));
 
-        Optional<KnowledgeSyncClaim> claim = service.tryBeginSync(SOURCE_KEY, sourceFile());
+        Optional<KnowledgeSyncClaim> claim = service.tryBeginSync(
+                SOURCE_KEY,
+                sourceFile(),
+                "b".repeat(64)
+        );
 
         assertThat(claim).isPresent();
         assertThat(claim.orElseThrow().previousContentHash()).isEqualTo("a".repeat(64));
@@ -76,10 +81,15 @@ class KnowledgeSyncStateServiceTest {
                 any(),
                 any(),
                 any(),
+                any(),
                 any()
         )).thenReturn(0);
 
-        assertThat(service.tryBeginSync(SOURCE_KEY, sourceFile())).isEmpty();
+        assertThat(service.tryBeginSync(
+                SOURCE_KEY,
+                sourceFile(),
+                "b".repeat(64)
+        )).isEmpty();
 
         verify(sourceRepository, never()).findBySourceKey(any());
     }
@@ -87,11 +97,14 @@ class KnowledgeSyncStateServiceTest {
     @Test
     void shouldActivateOnlyAfterAllStagingVectorsPassValidation() {
         KnowledgeSource source = syncingSource();
+        source.setPendingContentHash("b".repeat(64));
+        source.setProcessedChunkCount(16);
+        source.setTotalChunkCount(16);
         KnowledgeSyncClaim claim = claim(source);
         when(vectorRepository.countValidStagingDocuments(
                 SOURCE_KEY,
                 "b".repeat(64),
-                claim.syncToken().toString(),
+                "gemini-embedding-2",
                 768
         )).thenReturn(16L);
         when(sourceRepository.findBySourceKeyForUpdate(SOURCE_KEY)).thenReturn(Optional.of(source));
@@ -106,9 +119,14 @@ class KnowledgeSyncStateServiceTest {
         assertThat(source.getStatus()).isEqualTo(KnowledgeSourceStatus.SUCCESS);
         assertThat(source.getLastSuccessAt()).isEqualTo(NOW);
         assertThat(source.getSyncToken()).isNull();
+        assertThat(source.getPendingContentHash()).isNull();
+        assertThat(source.getProcessedChunkCount()).isZero();
+        assertThat(source.getTotalChunkCount()).isZero();
         verify(vectorRepository).deleteOtherVersions(
                 SOURCE_KEY,
-                claim.syncToken().toString()
+                "b".repeat(64),
+                "gemini-embedding-2",
+                "768"
         );
     }
 
@@ -120,7 +138,7 @@ class KnowledgeSyncStateServiceTest {
         when(vectorRepository.countValidStagingDocuments(
                 SOURCE_KEY,
                 "b".repeat(64),
-                claim.syncToken().toString(),
+                "gemini-embedding-2",
                 768
         )).thenReturn(15L);
 
@@ -130,12 +148,15 @@ class KnowledgeSyncStateServiceTest {
 
         assertThat(source.getContentHash()).isEqualTo("a".repeat(64));
         verify(sourceRepository, never()).findBySourceKeyForUpdate(any());
-        verify(vectorRepository, never()).deleteOtherVersions(any(), any());
+        verify(vectorRepository, never()).deleteOtherVersions(any(), any(), any(), any());
     }
 
     @Test
     void shouldRecordSanitizedFailureOnlyForOwningSyncToken() {
         KnowledgeSource source = syncingSource();
+        source.setPendingContentHash("b".repeat(64));
+        source.setProcessedChunkCount(10);
+        source.setTotalChunkCount(16);
         KnowledgeSyncClaim claim = claim(source);
         when(sourceRepository.findBySourceKeyForUpdate(SOURCE_KEY)).thenReturn(Optional.of(source));
 
@@ -145,6 +166,22 @@ class KnowledgeSyncStateServiceTest {
         assertThat(source.getLastError())
                 .isEqualTo("Embedding failed without exposing a stack trace");
         assertThat(source.getSyncToken()).isNull();
+        assertThat(source.getPendingContentHash()).isEqualTo("b".repeat(64));
+        assertThat(source.getProcessedChunkCount()).isEqualTo(10);
+        assertThat(source.getTotalChunkCount()).isEqualTo(16);
+    }
+
+    @Test
+    void shouldPersistResumableProgressForOwnedSync() {
+        KnowledgeSource source = syncingSource();
+        KnowledgeSyncClaim claim = claim(source);
+        when(sourceRepository.findBySourceKeyForUpdate(SOURCE_KEY)).thenReturn(Optional.of(source));
+
+        service.recordProgress(claim, "b".repeat(64), 30, 639);
+
+        assertThat(source.getPendingContentHash()).isEqualTo("b".repeat(64));
+        assertThat(source.getProcessedChunkCount()).isEqualTo(30);
+        assertThat(source.getTotalChunkCount()).isEqualTo(639);
     }
 
     private KnowledgeSourceFile sourceFile() {

@@ -79,8 +79,9 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
     private static final String TEST_JWT_SECRET = generateSecret();
     private static final String PASSWORD = "StrongPassword123!";
     private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
-    private static final LocalDate MONDAY = LocalDate.of(2026, 10, 12);
-    private static final Instant FIXED_NOW = Instant.parse("2026-10-12T02:30:00Z");
+    private static final LocalDate CURRENT_MONDAY = LocalDate.of(2026, 10, 12);
+    private static final LocalDate FUTURE_MONDAY = LocalDate.of(2026, 10, 19);
+    private static final Instant FIXED_NOW = Instant.parse("2026-10-11T22:00:00Z");
     private static final String SLOT_CONFLICT_MESSAGE = "Khung giờ mới vừa được người khác đặt. "
             + "Lịch hiện tại của bạn vẫn được giữ nguyên. Vui lòng chọn khung giờ khác.";
 
@@ -127,9 +128,6 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "appointment-reschedule-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.reschedule-cutoff-minutes", () -> 90);
-        registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
-        registry.add("clinic.appointment.booking-min-advance-minutes", () -> 120);
     }
 
     @AfterEach
@@ -175,7 +173,7 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
     }
 
     @Test
-    void shouldRescheduleAtExactCutoffWriteAuditAndReleaseOldSlot() throws Exception {
+    void shouldRescheduleFutureAppointmentWriteAuditAndReleaseOldQueue() throws Exception {
         fixture = createFixture();
         String token = login(fixture.firstPatientEmail());
 
@@ -190,12 +188,13 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.id")
                         .value(fixture.firstAppointmentId().toString()))
                 .andExpect(jsonPath("$.data.status").value("BOOKED"))
-                .andExpect(jsonPath("$.data.oldScheduledStartAt")
-                        .value("2026-10-12T11:00:00+07:00"))
-                .andExpect(jsonPath("$.data.scheduledStartAt")
-                        .value("2026-10-12T10:00:00+07:00"))
-                .andExpect(jsonPath("$.data.scheduledEndAt")
-                        .value("2026-10-12T11:00:00+07:00"))
+                .andExpect(jsonPath("$.data.oldEstimatedStartAt")
+                        .value("2026-10-19T08:00:00+07:00"))
+                .andExpect(jsonPath("$.data.appointmentDate").value("2026-10-19"))
+                .andExpect(jsonPath("$.data.session").value("MORNING"))
+                .andExpect(jsonPath("$.data.queueNumber").value(2))
+                .andExpect(jsonPath("$.data.estimatedStartAt")
+                        .value("2026-10-19T09:30:00+07:00"))
                 .andExpect(jsonPath("$.data.reason").value("Bận việc gia đình"));
 
         Map<String, Object> appointmentRow = jdbcTemplate.queryForMap("""
@@ -211,10 +210,10 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
                 select action::text as action,
                        changed_by,
                        reason,
-                       details ->> 'old_date' as old_date,
-                       details ->> 'old_start_time' as old_start_time,
-                       details ->> 'new_date' as new_date,
-                       details ->> 'new_start_time' as new_start_time,
+                       details ->> 'old_appointment_date' as old_date,
+                       details ->> 'old_estimated_start_at' as old_estimated_start_at,
+                       details ->> 'new_appointment_date' as new_date,
+                       details ->> 'new_estimated_start_at' as new_estimated_start_at,
                        details ->> 'changed_at' as changed_at
                 from appointment_histories
                 where appointment_id = ? and action = 'RESCHEDULE'
@@ -222,11 +221,13 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
         assertThat(historyRow.get("action")).isEqualTo("RESCHEDULE");
         assertThat(historyRow.get("changed_by")).isEqualTo(fixture.firstPatientUserId());
         assertThat(historyRow.get("reason")).isEqualTo("Bận việc gia đình");
-        assertThat(historyRow.get("old_date")).isEqualTo("2026-10-12");
-        assertThat(historyRow.get("old_start_time")).isEqualTo("11:00");
-        assertThat(historyRow.get("new_date")).isEqualTo("2026-10-12");
-        assertThat(historyRow.get("new_start_time")).isEqualTo("10:00");
-        assertThat(historyRow.get("changed_at")).isEqualTo("2026-10-12T09:30+07:00");
+        assertThat(historyRow.get("old_date")).isEqualTo("2026-10-19");
+        assertThat(historyRow.get("old_estimated_start_at"))
+                .isEqualTo("2026-10-19T08:00+07:00");
+        assertThat(historyRow.get("new_date")).isEqualTo("2026-10-19");
+        assertThat(historyRow.get("new_estimated_start_at"))
+                .isEqualTo("2026-10-19T09:30+07:00");
+        assertThat(historyRow.get("changed_at")).isEqualTo("2026-10-12T05:00+07:00");
 
         transactionTemplate.executeWithoutResult(status -> saveAppointment(
                 patientRepository.findById(fixture.secondPatientId()).orElseThrow(),
@@ -235,13 +236,17 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
                         fixture.serviceId()
                 )).orElseThrow(),
                 fixture.firstOldStartAt(),
+                FUTURE_MONDAY,
+                ScheduleSession.MORNING,
+                (short) 1,
                 AppointmentStatus.BOOKED
         ));
         assertThat(countAppointmentsAt(fixture.firstOldStartAt())).isEqualTo(1);
     }
 
     @Test
-    void shouldRejectBelowCutoffWithoutChangingAppointmentOrAudit() throws Exception {
+    void shouldRejectCurrentDayRescheduleAtFiveOClockWithoutChangingAppointmentOrAudit()
+            throws Exception {
         fixture = createFixture();
         String token = login(fixture.firstPatientEmail());
 
@@ -254,7 +259,7 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("RESOURCE_CONFLICT"))
                 .andExpect(jsonPath("$.message").value(
-                        "Không thể đổi lịch vì lịch hẹn còn dưới 1 giờ 30 phút. "
+                        "Không thể tự đổi lịch từ 05:00 ngày khám. "
                                 + "Vui lòng giữ lịch hiện tại hoặc liên hệ phòng khám."
                 ));
 
@@ -404,31 +409,43 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
             );
             Patient secondPatient = savePatient(secondPatientUser);
 
-            Instant firstOldStart = toInstant(LocalTime.of(11, 0));
-            Instant secondOldStart = toInstant(LocalTime.of(13, 0));
-            Instant tooLateStart = FIXED_NOW.plusSeconds(90 * 60L - 1);
+            Instant firstOldStart = toInstant(FUTURE_MONDAY, LocalTime.of(8, 0));
+            Instant secondOldStart = toInstant(FUTURE_MONDAY, LocalTime.of(14, 0));
+            Instant tooLateStart = toInstant(CURRENT_MONDAY, LocalTime.of(14, 0));
             Appointment firstAppointment = saveAppointment(
                     firstPatient,
                     mapping,
                     firstOldStart,
+                    FUTURE_MONDAY,
+                    ScheduleSession.MORNING,
+                    (short) 1,
                     AppointmentStatus.BOOKED
             );
             Appointment secondAppointment = saveAppointment(
                     secondPatient,
                     mapping,
                     secondOldStart,
+                    FUTURE_MONDAY,
+                    ScheduleSession.AFTERNOON,
+                    (short) 1,
                     AppointmentStatus.BOOKED
             );
             Appointment tooLateAppointment = saveAppointment(
                     firstPatient,
                     mapping,
                     tooLateStart,
+                    CURRENT_MONDAY,
+                    ScheduleSession.AFTERNOON,
+                    (short) 1,
                     AppointmentStatus.BOOKED
             );
             Appointment completedAppointment = saveAppointment(
                     firstPatient,
                     mapping,
-                    toInstant(LocalTime.of(14, 0)),
+                    toInstant(FUTURE_MONDAY, LocalTime.of(15, 30)),
+                    FUTURE_MONDAY,
+                    ScheduleSession.AFTERNOON,
+                    (short) 2,
                     AppointmentStatus.COMPLETED
             );
 
@@ -449,7 +466,7 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
                     tooLateAppointment.getId(),
                     tooLateStart,
                     completedAppointment.getId(),
-                    toInstant(LocalTime.of(10, 0))
+                    toInstant(FUTURE_MONDAY, LocalTime.of(9, 30))
             );
         });
     }
@@ -478,6 +495,7 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
@@ -511,7 +529,7 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
         afternoon.setDoctor(doctor);
         afternoon.setDayOfWeek((short) 1);
         afternoon.setSession(ScheduleSession.AFTERNOON);
-        afternoon.setStartTime(LocalTime.of(13, 0));
+        afternoon.setStartTime(LocalTime.of(14, 0));
         afternoon.setEndTime(LocalTime.of(17, 0));
         doctorScheduleRepository.saveAllAndFlush(List.of(morning, afternoon));
     }
@@ -520,19 +538,34 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
             Patient patient,
             DoctorService doctorService,
             Instant startAt,
+            LocalDate appointmentDate,
+            ScheduleSession session,
+            short queueNumber,
             AppointmentStatus appointmentStatus
     ) {
         Appointment appointment = new Appointment();
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setScheduledStartAt(startAt);
+        appointment.setAppointmentDate(appointmentDate);
+        appointment.setSession(session);
+        appointment.setQueueNumber(queueNumber);
         appointment.setStatus(appointmentStatus);
         return appointmentRepository.saveAndFlush(appointment);
     }
 
     private byte[] rescheduleBody(Instant startAt, String reason) throws Exception {
+        java.time.ZonedDateTime clinicStart = startAt.atZone(CLINIC_ZONE);
+        ScheduleSession session = clinicStart.toLocalTime().isBefore(LocalTime.NOON)
+                ? ScheduleSession.MORNING
+                : ScheduleSession.AFTERNOON;
+        LocalTime firstCaseTime = session == ScheduleSession.MORNING
+                ? LocalTime.of(8, 0)
+                : LocalTime.of(14, 0);
         return objectMapper.writeValueAsBytes(Map.of(
-                "scheduledStartAt", startAt.atZone(CLINIC_ZONE).toOffsetDateTime(),
+                "appointmentDate", clinicStart.toLocalDate(),
+                "session", session,
+                "queueNumber", clinicStart.toLocalTime().equals(firstCaseTime) ? 1 : 2,
                 "reason", reason
         ));
     }
@@ -595,8 +628,8 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
         return count == null ? 0 : count;
     }
 
-    private Instant toInstant(LocalTime time) {
-        return MONDAY.atTime(time).atZone(CLINIC_ZONE).toInstant();
+    private Instant toInstant(LocalDate date, LocalTime time) {
+        return date.atTime(time).atZone(CLINIC_ZONE).toInstant();
     }
 
     private String bearer(String accessToken) {

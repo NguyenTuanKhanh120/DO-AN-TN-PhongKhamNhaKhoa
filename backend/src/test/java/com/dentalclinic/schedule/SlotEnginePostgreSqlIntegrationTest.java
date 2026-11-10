@@ -61,7 +61,7 @@ class SlotEnginePostgreSqlIntegrationTest {
     private static final String TEST_JWT_SECRET = generateSecret();
     private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final LocalDate MONDAY = LocalDate.of(2026, 10, 12);
-    private static final Instant FIXED_NOW = Instant.parse("2026-10-12T03:00:00Z");
+    private static final Instant FIXED_NOW = Instant.parse("2026-10-11T21:00:00Z");
 
     @Autowired
     private MockMvc mockMvc;
@@ -92,8 +92,6 @@ class SlotEnginePostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "slot-engine-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
-        registry.add("clinic.appointment.booking-min-advance-minutes", () -> 120);
     }
 
     @Test
@@ -108,7 +106,7 @@ class SlotEnginePostgreSqlIntegrationTest {
         DentalService dentalService = saveDentalService("Dịch vụ Phase 11 " + marker, true);
         DoctorService mapping = saveMapping(doctor, dentalService);
         saveSchedule(doctor, ScheduleSession.MORNING, "08:00", "11:00");
-        saveSchedule(doctor, ScheduleSession.AFTERNOON, "13:00", "17:00");
+        saveSchedule(doctor, ScheduleSession.AFTERNOON, "14:00", "17:00");
 
         User patientUser = saveUser(
                 "phase11-patient-" + marker + "@example.com",
@@ -124,17 +122,15 @@ class SlotEnginePostgreSqlIntegrationTest {
                         .param("date", MONDAY.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(3))
-                .andExpect(jsonPath("$.data[0].startTime").value("13:00:00"))
-                .andExpect(jsonPath("$.data[0].startAt").value("2026-10-12T13:00:00+07:00"))
-                .andExpect(jsonPath("$.data[1].startTime").value("15:00:00"))
-                .andExpect(jsonPath("$.data[2].startTime").value("16:00:00"));
-
-        assertThat(appointmentRepository.findOccupiedStartTimes(
-                doctor.getId(),
-                toInstant(MONDAY, LocalTime.MIN),
-                toInstant(MONDAY.plusDays(1), LocalTime.MIN),
-                AppointmentStatus.CANCELLED
-        )).containsExactly(toInstant(MONDAY, LocalTime.of(14, 0)));
+                .andExpect(jsonPath("$.data[0].session").value("MORNING"))
+                .andExpect(jsonPath("$.data[0].queueNumber").value(1))
+                .andExpect(jsonPath("$.data[0].estimatedStartTime").value("08:00:00"))
+                .andExpect(jsonPath("$.data[1].queueNumber").value(2))
+                .andExpect(jsonPath("$.data[1].estimatedStartTime").value("09:30:00"))
+                .andExpect(jsonPath("$.data[2].session").value("AFTERNOON"))
+                .andExpect(jsonPath("$.data[2].queueNumber").value(2))
+                .andExpect(jsonPath("$.data[2].estimatedStartAt")
+                        .value("2026-10-12T15:30:00+07:00"));
 
         mockMvc.perform(get("/api/doctors/{doctorId}/available-slots", doctor.getId())
                         .param("serviceId", dentalService.getId().toString())
@@ -225,6 +221,7 @@ class SlotEnginePostgreSqlIntegrationTest {
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
@@ -239,6 +236,15 @@ class SlotEnginePostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(mapping);
         appointment.setScheduledStartAt(toInstant(MONDAY, startTime));
+        appointment.setAppointmentDate(MONDAY);
+        ScheduleSession session = startTime.isBefore(LocalTime.NOON)
+                ? ScheduleSession.MORNING
+                : ScheduleSession.AFTERNOON;
+        LocalTime secondCaseStart = session == ScheduleSession.MORNING
+                ? LocalTime.of(9, 30)
+                : LocalTime.of(15, 30);
+        appointment.setSession(session);
+        appointment.setQueueNumber((short) (startTime.isBefore(secondCaseStart) ? 1 : 2));
         appointment.setStatus(status);
         appointmentRepository.saveAndFlush(appointment);
     }

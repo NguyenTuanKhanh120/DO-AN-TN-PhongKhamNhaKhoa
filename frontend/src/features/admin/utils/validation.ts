@@ -33,8 +33,8 @@ export const serviceSchema = z.object({
     .refine((file) => !file || serviceImageTypes.has(file.type), "Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP"),
 });
 export const scheduleSchema = z.object({ dayOfWeek: z.coerce.number().int().min(1).max(6), session: z.enum(["MORNING", "AFTERNOON"]), startTime: z.string().min(1), endTime: z.string().min(1) }).superRefine((value, context) => {
-  const limits = value.session === "MORNING" ? { start: "08:00", end: "11:00" } : { start: "13:00", end: "17:00" };
-  if (value.startTime < limits.start || value.endTime > limits.end || value.startTime >= value.endTime) context.addIssue({ code: z.ZodIssueCode.custom, path: ["endTime"], message: `Khung ${value.session === "MORNING" ? "sáng" : "chiều"} phải nằm trong ${limits.start}–${limits.end}` });
+  const required = value.session === "MORNING" ? { start: "08:00", end: "11:00" } : { start: "14:00", end: "17:00" };
+  if (value.startTime !== required.start || value.endTime !== required.end) context.addIssue({ code: z.ZodIssueCode.custom, path: ["endTime"], message: `Buổi ${value.session === "MORNING" ? "sáng" : "chiều"} phải đúng ${required.start}–${required.end}` });
 });
 
 export type StaffFormValues = z.infer<typeof staffSchema>;

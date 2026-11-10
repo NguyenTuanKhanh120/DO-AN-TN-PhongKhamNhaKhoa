@@ -19,6 +19,7 @@ public record SendChatMessageResponse(
         List<ChatSourceResponse> sources,
         List<DentalServiceResponse> suggestedServices,
         List<DoctorResponse> suggestedDoctors,
+        @Schema(description = "Các ca khám còn trống đã được Backend xác minh")
         List<ChatSlotSuggestion> suggestedSlots,
         boolean needsClarification,
         Instant createdAt

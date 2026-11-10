@@ -32,6 +32,9 @@ public interface KnowledgeSourceRepository extends JpaRepository<KnowledgeSource
                 file_type,
                 status,
                 chunk_count,
+                pending_content_hash,
+                processed_chunk_count,
+                total_chunk_count,
                 last_synced_at,
                 sync_token
             ) values (
@@ -41,6 +44,9 @@ public interface KnowledgeSourceRepository extends JpaRepository<KnowledgeSource
                 :fileType,
                 cast('SYNCING' as knowledge_source_status_enum),
                 0,
+                :contentHash,
+                0,
+                0,
                 :attemptedAt,
                 :syncToken
             )
@@ -48,6 +54,17 @@ public interface KnowledgeSourceRepository extends JpaRepository<KnowledgeSource
             set file_name = excluded.file_name,
                 file_type = excluded.file_type,
                 status = cast('SYNCING' as knowledge_source_status_enum),
+                pending_content_hash = excluded.pending_content_hash,
+                processed_chunk_count = case
+                    when knowledge_sources.pending_content_hash = excluded.pending_content_hash
+                        then knowledge_sources.processed_chunk_count
+                    else 0
+                end,
+                total_chunk_count = case
+                    when knowledge_sources.pending_content_hash = excluded.pending_content_hash
+                        then knowledge_sources.total_chunk_count
+                    else 0
+                end,
                 last_synced_at = excluded.last_synced_at,
                 last_error = null,
                 sync_token = excluded.sync_token
@@ -59,6 +76,7 @@ public interface KnowledgeSourceRepository extends JpaRepository<KnowledgeSource
             @Param("sourceKey") String sourceKey,
             @Param("fileName") String fileName,
             @Param("fileType") String fileType,
+            @Param("contentHash") String contentHash,
             @Param("attemptedAt") Instant attemptedAt,
             @Param("staleBefore") Instant staleBefore,
             @Param("syncToken") UUID syncToken

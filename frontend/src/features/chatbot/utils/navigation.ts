@@ -2,7 +2,8 @@ interface BookingNavigationInput {
   serviceId?: string | null;
   doctorId?: string | null;
   date?: string | null;
-  scheduledStartAt?: string | null;
+  session?: "MORNING" | "AFTERNOON" | null;
+  queueNumber?: number | null;
 }
 
 export function buildBookingUrl(input: BookingNavigationInput): string {
@@ -10,7 +11,8 @@ export function buildBookingUrl(input: BookingNavigationInput): string {
   if (input.serviceId) params.set("serviceId", input.serviceId);
   if (input.doctorId) params.set("doctorId", input.doctorId);
   if (input.date) params.set("date", input.date);
-  if (input.scheduledStartAt) params.set("scheduledStartAt", input.scheduledStartAt);
+  if (input.session) params.set("session", input.session);
+  if (input.queueNumber === 1 || input.queueNumber === 2) params.set("queueNumber", String(input.queueNumber));
   const query = params.toString();
   return query ? `/patient/book-appointment?${query}` : "/patient/book-appointment";
 }

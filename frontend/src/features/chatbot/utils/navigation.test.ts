@@ -7,9 +7,10 @@ describe("chatbot navigation", () => {
       serviceId: "service-1",
       doctorId: "doctor-1",
       date: "2026-11-02",
-      scheduledStartAt: "2026-11-02T08:00:00+07:00",
+      session: "MORNING",
+      queueNumber: 1,
     })).toBe(
-      "/patient/book-appointment?serviceId=service-1&doctorId=doctor-1&date=2026-11-02&scheduledStartAt=2026-11-02T08%3A00%3A00%2B07%3A00",
+      "/patient/book-appointment?serviceId=service-1&doctorId=doctor-1&date=2026-11-02&session=MORNING&queueNumber=1",
     );
   });
 

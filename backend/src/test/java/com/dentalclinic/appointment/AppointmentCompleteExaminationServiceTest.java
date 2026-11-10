@@ -19,6 +19,7 @@ import com.dentalclinic.payment.entity.Payment;
 import com.dentalclinic.payment.entity.PaymentItemSnapshot;
 import com.dentalclinic.payment.entity.PaymentStatus;
 import com.dentalclinic.payment.service.PaymentService;
+import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.user.entity.User;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.BeforeEach;
@@ -99,6 +100,11 @@ class AppointmentCompleteExaminationServiceTest {
         assertThat(appointment.getActualEndAt()).isEqualTo(FIXED_NOW);
         assertThat(response.id()).isEqualTo(appointment.getId());
         assertThat(response.status()).isEqualTo(AppointmentStatus.COMPLETED);
+        assertThat(response.appointmentDate()).isEqualTo(LocalDate.of(2026, 10, 12));
+        assertThat(response.session()).isEqualTo(ScheduleSession.MORNING);
+        assertThat(response.queueNumber()).isEqualTo(2);
+        assertThat(response.estimatedStartAt().toString())
+                .isEqualTo("2026-10-12T09:30+07:00");
         assertThat(response.actualStartAt().toString())
                 .isEqualTo("2026-10-12T09:15+07:00");
         assertThat(response.actualEndAt().toString())
@@ -117,6 +123,12 @@ class AppointmentCompleteExaminationServiceTest {
                 .isEqualTo("IN_PROGRESS");
         assertThat(history.getDetails().path("new_status").asText())
                 .isEqualTo("COMPLETED");
+        assertThat(history.getDetails().path("appointment_date").asText())
+                .isEqualTo("2026-10-12");
+        assertThat(history.getDetails().path("session").asText()).isEqualTo("MORNING");
+        assertThat(history.getDetails().path("queue_number").asInt()).isEqualTo(2);
+        assertThat(history.getDetails().path("estimated_start_at").asText())
+                .isEqualTo("2026-10-12T09:30+07:00");
         assertThat(history.getDetails().path("actual_end_at").asText())
                 .isEqualTo("2026-10-12T09:45+07:00");
         assertThat(history.getDetails().path("medical_record_id").asText())
@@ -289,7 +301,10 @@ class AppointmentCompleteExaminationServiceTest {
     private Appointment appointment(AppointmentStatus status) {
         Appointment appointment = new Appointment();
         appointment.setId(UUID.randomUUID());
-        appointment.setScheduledStartAt(Instant.parse("2026-10-12T02:00:00Z"));
+        appointment.setScheduledStartAt(Instant.parse("2026-10-12T02:30:00Z"));
+        appointment.setAppointmentDate(LocalDate.of(2026, 10, 12));
+        appointment.setSession(ScheduleSession.MORNING);
+        appointment.setQueueNumber((short) 2);
         appointment.setCheckedInAt(Instant.parse("2026-10-12T01:55:00Z"));
         appointment.setActualStartAt(Instant.parse("2026-10-12T02:15:00Z"));
         appointment.setStatus(status);

@@ -56,8 +56,11 @@ const slotSchema = z.object({
   serviceId: z.string().nullable(),
   date: z.string(),
   session: z.enum(["MORNING", "AFTERNOON"]),
-  startAt: z.string(),
-  endAt: z.string(),
+  queueNumber: z.number().int().min(1).max(2),
+  sessionStartTime: z.string(),
+  sessionEndTime: z.string(),
+  estimatedStartTime: z.string(),
+  estimatedStartAt: z.string(),
 });
 
 export const chatMessageSchema = z.object({

@@ -12,6 +12,7 @@ import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
 import com.dentalclinic.user.entity.Role;
@@ -128,7 +129,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.id")
                         .value(fixture.eligibleAppointmentId().toString()))
                 .andExpect(jsonPath("$.data.status").value("NO_SHOW"))
-                .andExpect(jsonPath("$.data.scheduledStartAt")
+                .andExpect(jsonPath("$.data.estimatedStartAt")
                         .value("2026-10-12T09:00:00+07:00"))
                 .andExpect(jsonPath("$.data.noShowAt")
                         .value("2026-10-12T09:15:00+07:00"));
@@ -149,7 +150,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
                        reason,
                        details ->> 'old_status' as old_status,
                        details ->> 'new_status' as new_status,
-                       details ->> 'scheduled_start_at' as scheduled_start_at,
+                       details ->> 'estimated_start_at' as estimated_start_at,
                        details ->> 'no_show_at' as no_show_at
                 from appointment_histories
                 where appointment_id = ? and action = 'NO_SHOW'
@@ -159,7 +160,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
         assertThat(historyRow.get("reason")).isNull();
         assertThat(historyRow.get("old_status")).isEqualTo("BOOKED");
         assertThat(historyRow.get("new_status")).isEqualTo("NO_SHOW");
-        assertThat(historyRow.get("scheduled_start_at"))
+        assertThat(historyRow.get("estimated_start_at"))
                 .isEqualTo("2026-10-12T09:00+07:00");
         assertThat(historyRow.get("no_show_at"))
                 .isEqualTo("2026-10-12T09:15+07:00");
@@ -242,6 +243,21 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
                 Role.PATIENT
         );
         Patient patient = savePatient(patientUser);
+        Patient tooEarlyPatient = savePatient(saveUser(
+                "phase18-patient-too-early-" + marker + "@example.com",
+                "Bệnh nhân Phase 18 chưa đủ thời gian",
+                Role.PATIENT
+        ));
+        Patient checkedInPatient = savePatient(saveUser(
+                "phase18-patient-checked-in-" + marker + "@example.com",
+                "Bệnh nhân Phase 18 đã check-in",
+                Role.PATIENT
+        ));
+        Patient otherDoctorPatient = savePatient(saveUser(
+                "phase18-patient-other-doctor-" + marker + "@example.com",
+                "Bệnh nhân Phase 18 bác sĩ khác",
+                Role.PATIENT
+        ));
         DentalService service = saveService("Dịch vụ Phase 18 " + marker);
         DoctorService firstMapping = saveMapping(firstDoctor, service);
         DoctorService secondMapping = saveMapping(secondDoctor, service);
@@ -251,27 +267,35 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
                 patient,
                 firstMapping,
                 eligibleStart,
+                ScheduleSession.MORNING,
+                (short) 2,
                 AppointmentStatus.BOOKED,
                 null
         );
         Appointment tooEarly = saveAppointment(
-                patient,
+                tooEarlyPatient,
                 firstMapping,
                 FIXED_NOW.minusSeconds(15 * 60L - 1),
+                ScheduleSession.AFTERNOON,
+                (short) 1,
                 AppointmentStatus.BOOKED,
                 null
         );
         Appointment checkedIn = saveAppointment(
-                patient,
+                checkedInPatient,
                 firstMapping,
                 FIXED_NOW.minusSeconds(45 * 60L),
+                ScheduleSession.MORNING,
+                (short) 1,
                 AppointmentStatus.CHECKED_IN,
                 FIXED_NOW.minusSeconds(30 * 60L)
         );
         Appointment otherDoctorAppointment = saveAppointment(
-                patient,
+                otherDoctorPatient,
                 secondMapping,
                 FIXED_NOW.minusSeconds(60 * 60L),
+                ScheduleSession.MORNING,
+                (short) 1,
                 AppointmentStatus.BOOKED,
                 null
         );
@@ -311,6 +335,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
@@ -336,6 +361,8 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
             Patient patient,
             DoctorService doctorService,
             Instant startAt,
+            ScheduleSession session,
+            short queueNumber,
             AppointmentStatus status,
             Instant checkedInAt
     ) {
@@ -343,6 +370,9 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setScheduledStartAt(startAt);
+        appointment.setAppointmentDate(startAt.atZone(CLINIC_ZONE).toLocalDate());
+        appointment.setSession(session);
+        appointment.setQueueNumber(queueNumber);
         appointment.setStatus(status);
         appointment.setCheckedInAt(checkedInAt);
         return appointmentRepository.saveAndFlush(appointment);

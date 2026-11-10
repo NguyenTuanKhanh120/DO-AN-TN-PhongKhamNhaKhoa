@@ -2,6 +2,7 @@ package com.dentalclinic.appointment.entity;
 
 import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.patient.entity.Patient;
+import com.dentalclinic.schedule.entity.ScheduleSession;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -23,6 +24,7 @@ import org.hibernate.generator.EventType;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Getter
@@ -54,6 +56,22 @@ public class Appointment {
 
     @Column(name = "scheduled_start_at", nullable = false)
     private Instant scheduledStartAt;
+
+    @Column(name = "appointment_date", nullable = false)
+    private LocalDate appointmentDate;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "session", nullable = false, columnDefinition = "session_enum")
+    private ScheduleSession session;
+
+    @Column(name = "queue_number", nullable = false)
+    private Short queueNumber;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "booking_source", nullable = false, columnDefinition = "booking_source_enum")
+    private BookingSource bookingSource = BookingSource.ONLINE;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)

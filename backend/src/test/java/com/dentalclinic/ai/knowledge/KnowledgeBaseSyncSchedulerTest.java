@@ -16,21 +16,21 @@ class KnowledgeBaseSyncSchedulerTest {
     private final KnowledgeBaseSyncScheduler scheduler = new KnowledgeBaseSyncScheduler(syncService);
 
     @Test
-    void shouldCheckPrimaryDatasetOnScheduledRun() {
-        when(syncService.synchronizePrimaryDataset()).thenReturn(KnowledgeSyncOutcome.UNCHANGED);
+    void shouldCheckDatasetsOnScheduledRun() {
+        when(syncService.synchronizeAllDatasets()).thenReturn(KnowledgeSyncOutcome.UNCHANGED);
 
-        scheduler.checkPrimaryDataset();
+        scheduler.checkDatasets();
 
-        verify(syncService).synchronizePrimaryDataset();
+        verify(syncService).synchronizeAllDatasets();
     }
 
     @Test
     void shouldContainFailureSoSchedulerCanRunAgain() {
-        when(syncService.synchronizePrimaryDataset())
+        when(syncService.synchronizeAllDatasets())
                 .thenThrow(new KnowledgeBaseException("test failure"));
 
-        scheduler.checkPrimaryDataset();
+        scheduler.checkDatasets();
 
-        verify(syncService).synchronizePrimaryDataset();
+        verify(syncService).synchronizeAllDatasets();
     }
 }

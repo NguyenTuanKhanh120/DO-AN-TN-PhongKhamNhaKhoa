@@ -2,6 +2,7 @@ package com.dentalclinic.payment;
 
 import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.AppointmentQueueFixtureSupport;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.appointment.service.AppointmentCompleteExaminationService;
 import com.dentalclinic.appointment.service.AppointmentStartExaminationService;
@@ -42,6 +43,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -49,7 +54,9 @@ import org.springframework.test.context.DynamicPropertySource;
 
 import javax.crypto.SecretKey;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,9 +70,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("development")
+@Import(PaymentPostgreSqlIntegrationTest.FixedClockConfiguration.class)
 class PaymentPostgreSqlIntegrationTest {
 
     private static final String TEST_JWT_SECRET = generateSecret();
+    private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final Instant FIXED_NOW = Instant.parse("2026-10-12T02:00:00Z");
 
     @Autowired
     private PaymentService paymentService;
@@ -212,7 +222,7 @@ class PaymentPostgreSqlIntegrationTest {
 
     @Test
     void shouldRollbackPaymentFinalizationWhenCompletionFailsAfterFlush() {
-        Instant futureStart = Instant.now().plus(2, ChronoUnit.HOURS);
+        Instant futureStart = FIXED_NOW.plus(2, ChronoUnit.HOURS);
         Fixture fixture = createFixture(AppointmentStatus.IN_PROGRESS, futureStart);
         saveMedicalRecord(fixture.appointmentId());
         Payment payment = saveDraftPayment(fixture);
@@ -239,7 +249,7 @@ class PaymentPostgreSqlIntegrationTest {
 
     @Test
     void shouldAllowOnlyOneConcurrentConfirmation() throws Exception {
-        Fixture fixture = createFixture(AppointmentStatus.COMPLETED, Instant.now());
+        Fixture fixture = createFixture(AppointmentStatus.COMPLETED, FIXED_NOW);
         Payment payment = saveDraftPayment(fixture);
         payment.setStatus(PaymentStatus.UNPAID);
         payment = paymentRepository.saveAndFlush(payment);
@@ -319,6 +329,7 @@ class PaymentPostgreSqlIntegrationTest {
 
         Patient patient = new Patient();
         patient.setUser(patientUser);
+        patient.setFullName(patientUser.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         patient.setPhone("0901000001");
         patient = patientRepository.saveAndFlush(patient);
@@ -333,15 +344,19 @@ class PaymentPostgreSqlIntegrationTest {
         appointment.setDoctorService(doctorServiceRepository.findById(
                 new DoctorServiceId(doctor.getId(), original.getId())
         ).orElseThrow());
-        appointment.setScheduledStartAt(Instant.now().truncatedTo(ChronoUnit.SECONDS));
+        appointment.setScheduledStartAt(FIXED_NOW.truncatedTo(ChronoUnit.SECONDS));
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(
+                appointment,
+                appointment.getScheduledStartAt()
+        );
         appointment.setStatus(status);
         if (status == AppointmentStatus.IN_PROGRESS) {
-            appointment.setCheckedInAt(Instant.now().minus(5, ChronoUnit.MINUTES));
+            appointment.setCheckedInAt(FIXED_NOW.minus(5, ChronoUnit.MINUTES));
             appointment.setActualStartAt(actualStartAt);
         } else if (status == AppointmentStatus.COMPLETED) {
-            appointment.setCheckedInAt(Instant.now().minus(20, ChronoUnit.MINUTES));
+            appointment.setCheckedInAt(FIXED_NOW.minus(20, ChronoUnit.MINUTES));
             appointment.setActualStartAt(actualStartAt);
-            appointment.setActualEndAt(Instant.now());
+            appointment.setActualEndAt(FIXED_NOW);
         }
         appointment = appointmentRepository.saveAndFlush(appointment);
 
@@ -439,6 +454,16 @@ class PaymentPostgreSqlIntegrationTest {
     private static String generateSecret() {
         SecretKey key = Jwts.SIG.HS256.key().build();
         return Encoders.BASE64.encode(key.getEncoded());
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class FixedClockConfiguration {
+
+        @Bean
+        @Primary
+        Clock fixedClinicClock() {
+            return Clock.fixed(FIXED_NOW, CLINIC_ZONE);
+        }
     }
 
     private record Fixture(

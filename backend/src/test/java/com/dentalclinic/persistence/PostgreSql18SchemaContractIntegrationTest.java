@@ -15,6 +15,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -277,9 +278,9 @@ class PostgreSql18SchemaContractIntegrationTest {
                         from doctor_schedules
                         where day_of_week not between 1 and 6
                            or (session = 'MORNING'
-                               and (start_time < time '08:00' or end_time > time '11:00'))
+                               and (start_time <> time '08:00' or end_time <> time '11:00'))
                            or (session = 'AFTERNOON'
-                               and (start_time < time '13:00' or end_time > time '17:00'))
+                               and (start_time <> time '14:00' or end_time <> time '17:00'))
                         """,
                 Integer.class
         );
@@ -353,6 +354,308 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(sourceKeyUniqueConstraint).isEqualTo(1);
         assertThat(syncTokenColumn.get("data_type")).isEqualTo("uuid");
         assertThat(syncTokenColumn.get("is_nullable")).isEqualTo("YES");
+
+        Boolean appointmentQueueMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '15'",
+                Boolean.class
+        );
+        Boolean appointmentQueueContractMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '18'",
+                Boolean.class
+        );
+        List<Map<String, Object>> queueColumns = jdbcTemplate.queryForList(
+                """
+                        select column_name, data_type, udt_name, is_nullable
+                        from information_schema.columns
+                        where table_schema = 'public'
+                          and table_name = 'appointments'
+                          and column_name in ('appointment_date', 'session', 'queue_number')
+                        order by column_name
+                        """
+        );
+        List<String> queueConstraints = jdbcTemplate.queryForList(
+                """
+                        select conname
+                        from pg_constraint
+                        where conrelid = 'appointments'::regclass
+                          and conname in (
+                              'ck_appointments_queue_number',
+                              'ck_appointments_queue_model_complete'
+                          )
+                        order by conname
+                        """,
+                String.class
+        );
+        List<String> queueIndexes = jdbcTemplate.queryForList(
+                """
+                        select indexname
+                        from pg_indexes
+                        where schemaname = 'public'
+                          and indexname in (
+                              'ux_appointments_doctor_start_active_legacy',
+                              'ux_appointments_doctor_queue_active',
+                              'ux_appointments_patient_session_active'
+                          )
+                        order by indexname
+                        """,
+                String.class
+        );
+        Integer oldDoctorStartIndexCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_indexes
+                        where schemaname = 'public'
+                          and indexname = 'ux_appointments_doctor_start_not_cancelled'
+                        """,
+                Integer.class
+        );
+
+        assertThat(appointmentQueueMigrationSucceeded).isTrue();
+        assertThat(appointmentQueueContractMigrationSucceeded).isTrue();
+        assertThat(queueColumns)
+                .extracting(
+                        row -> row.get("column_name"),
+                        row -> row.get("data_type"),
+                        row -> row.get("udt_name"),
+                        row -> row.get("is_nullable")
+                )
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "appointment_date", "date", "date", "NO"
+                        ),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "queue_number", "smallint", "int2", "NO"
+                        ),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "session", "USER-DEFINED", "session_enum", "NO"
+                        )
+                );
+        assertThat(queueConstraints).containsExactly("ck_appointments_queue_number");
+        assertThat(queueIndexes).containsExactly(
+                "ux_appointments_doctor_queue_active",
+                "ux_appointments_patient_session_active"
+        );
+        assertThat(oldDoctorStartIndexCount).isZero();
+
+        Boolean standardScheduleMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '16'",
+                Boolean.class
+        );
+        String dayOfWeekConstraint = jdbcTemplate.queryForObject(
+                """
+                        select pg_get_constraintdef(oid)
+                        from pg_constraint
+                        where conrelid = 'doctor_schedules'::regclass
+                          and conname = 'ck_doctor_schedules_day_of_week'
+                        """,
+                String.class
+        );
+        assertThat(standardScheduleMigrationSucceeded).isTrue();
+        assertThat(dayOfWeekConstraint).contains("day_of_week >= 1", "day_of_week <= 6");
+
+        Boolean resumableKnowledgeSyncMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '17'",
+                Boolean.class
+        );
+        List<String> knowledgeProgressColumns = jdbcTemplate.queryForList(
+                """
+                        select column_name
+                        from information_schema.columns
+                        where table_schema = 'public'
+                          and table_name = 'knowledge_sources'
+                          and column_name in (
+                              'pending_content_hash',
+                              'processed_chunk_count',
+                              'total_chunk_count'
+                          )
+                        order by column_name
+                        """,
+                String.class
+        );
+        Integer resumableVectorIndexCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_indexes
+                        where schemaname = 'public'
+                          and indexname = 'ux_vector_store_source_version_record'
+                        """,
+                Integer.class
+        );
+        assertThat(resumableKnowledgeSyncMigrationSucceeded).isTrue();
+        assertThat(knowledgeProgressColumns).containsExactly(
+                "pending_content_hash",
+                "processed_chunk_count",
+                "total_chunk_count"
+        );
+        assertThat(resumableVectorIndexCount).isEqualTo(1);
+    }
+
+    @Test
+    void shouldExposeWalkInPersistenceContractWithoutLosingExistingData() {
+        Boolean migrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '19'",
+                Boolean.class
+        );
+        Boolean patientNameContractSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '20'",
+                Boolean.class
+        );
+        Map<String, Object> patientUserColumn = jdbcTemplate.queryForMap(
+                """
+                        select is_nullable
+                        from information_schema.columns
+                        where table_schema = 'public'
+                          and table_name = 'patients'
+                          and column_name = 'user_id'
+                        """
+        );
+        Map<String, Object> patientNameColumn = jdbcTemplate.queryForMap(
+                """
+                        select data_type, character_maximum_length, is_nullable
+                        from information_schema.columns
+                        where table_schema = 'public'
+                          and table_name = 'patients'
+                          and column_name = 'full_name'
+                        """
+        );
+        String patientUserForeignKey = jdbcTemplate.queryForObject(
+                """
+                        select pg_get_constraintdef(oid)
+                        from pg_constraint
+                        where conrelid = 'patients'::regclass
+                          and conname = 'fk_patients_user'
+                        """,
+                String.class
+        );
+        Integer patientPhoneIndexCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from pg_indexes
+                        where schemaname = 'public'
+                          and tablename = 'patients'
+                          and indexname = 'ix_patients_phone'
+                        """,
+                Integer.class
+        );
+        List<String> bookingSources = jdbcTemplate.queryForList(
+                "select unnest(enum_range(null::booking_source_enum))::text",
+                String.class
+        );
+        Map<String, Object> bookingSourceColumn = jdbcTemplate.queryForMap(
+                """
+                        select udt_name, is_nullable, column_default
+                        from information_schema.columns
+                        where table_schema = 'public'
+                          and table_name = 'appointments'
+                          and column_name = 'booking_source'
+                        """
+        );
+        Integer patientsWithMissingBackfilledName = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from patients patient
+                        join users clinic_user on clinic_user.id = patient.user_id
+                        where patient.full_name is distinct from clinic_user.full_name
+                        """,
+                Integer.class
+        );
+        Integer appointmentsWithoutOnlineSource = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from appointments
+                        where booking_source <> 'ONLINE'
+                        """,
+                Integer.class
+        );
+
+        assertThat(migrationSucceeded).isTrue();
+        assertThat(patientNameContractSucceeded).isTrue();
+        assertThat(patientUserColumn.get("is_nullable")).isEqualTo("YES");
+        assertThat(patientNameColumn.get("data_type")).isEqualTo("character varying");
+        assertThat(patientNameColumn.get("character_maximum_length")).isEqualTo(150);
+        assertThat(patientNameColumn.get("is_nullable")).isEqualTo("NO");
+        assertThat(patientUserForeignKey).contains("ON DELETE SET NULL");
+        assertThat(patientPhoneIndexCount).isEqualTo(1);
+        assertThat(bookingSources).containsExactly("ONLINE", "WALK_IN");
+        assertThat(bookingSourceColumn.get("udt_name")).isEqualTo("booking_source_enum");
+        assertThat(bookingSourceColumn.get("is_nullable")).isEqualTo("NO");
+        assertThat(bookingSourceColumn.get("column_default").toString()).contains("ONLINE");
+        assertThat(patientsWithMissingBackfilledName).isZero();
+        assertThat(appointmentsWithoutOnlineSource).isZero();
+    }
+
+    @Test
+    void shouldPersistPatientWithoutUserAndPreservePatientWhenLinkedUserIsDeleted() {
+        String marker = UUID.randomUUID().toString();
+        UUID walkInPatientId = UUID.randomUUID();
+        UUID linkedUserId = UUID.randomUUID();
+        UUID linkedPatientId = UUID.randomUUID();
+
+        jdbcTemplate.update(
+                """
+                        insert into patients (id, user_id, full_name, phone)
+                        values (?, null, ?, ?)
+                        """,
+                walkInPatientId,
+                "Bệnh nhân trực tiếp " + marker,
+                "090" + marker.substring(0, 7)
+        );
+        jdbcTemplate.update(
+                """
+                        insert into users (id, email, password_hash, full_name, role)
+                        values (?, ?, ?, ?, 'PATIENT')
+                        """,
+                linkedUserId,
+                "walk-in-fk-" + marker + "@example.com",
+                "not-a-real-password-hash",
+                "Bệnh nhân liên kết " + marker
+        );
+        jdbcTemplate.update(
+                """
+                        insert into patients (id, user_id, full_name)
+                        values (?, ?, ?)
+                        """,
+                linkedPatientId,
+                linkedUserId,
+                "Bệnh nhân liên kết " + marker
+        );
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select user_id from patients where id = ?",
+                UUID.class,
+                walkInPatientId
+        )).isNull();
+
+        jdbcTemplate.update("delete from users where id = ?", linkedUserId);
+
+        Integer preservedPatientCount = jdbcTemplate.queryForObject(
+                "select count(*) from patients where id = ? and user_id is null",
+                Integer.class,
+                linkedPatientId
+        );
+        assertThat(preservedPatientCount).isEqualTo(1);
+    }
+
+    @Test
+    void shouldRefusePatientNameContractWhenARecordHasNoValidName() throws Exception {
+        jdbcTemplate.execute("""
+                create temporary table patients (
+                    full_name varchar(150)
+                ) on commit drop
+                """);
+        jdbcTemplate.update("insert into patients (full_name) values (null)");
+        String migrationSql = new ClassPathResource(
+                "db/migration/V20__require_patient_full_name.sql"
+        ).getContentAsString(StandardCharsets.UTF_8);
+
+        Throwable failure = catchThrowable(() -> jdbcTemplate.execute(migrationSql));
+
+        assertThat(failure).isInstanceOf(DataAccessException.class);
+        SQLException sqlException = findSqlException(failure);
+        assertThat(sqlException.getSQLState()).isEqualTo("P0001");
+        assertThat(sqlException.getMessage()).contains(
+                "Refusing to require patients.full_name"
+        );
     }
 
     @Test
@@ -402,6 +705,137 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(sqlException.getSQLState()).isEqualTo("P0001");
         assertThat(sqlException.getMessage()).contains(
                 "Refusing to enforce one chat session per user"
+        );
+    }
+
+    @Test
+    void shouldRefuseAppointmentQueueBackfillWhenDoctorSessionHasMoreThanTwoActiveAppointments()
+            throws Exception {
+        createTemporaryLegacyAppointmentsTable();
+        UUID doctorId = UUID.randomUUID();
+        insertTemporaryLegacyAppointment(UUID.randomUUID(), doctorId, "2031-01-06 08:00:00+07");
+        insertTemporaryLegacyAppointment(UUID.randomUUID(), doctorId, "2031-01-06 09:00:00+07");
+        insertTemporaryLegacyAppointment(UUID.randomUUID(), doctorId, "2031-01-06 10:00:00+07");
+
+        Throwable failure = executeAppointmentQueueMigration();
+
+        assertMigrationRefusal(
+                failure,
+                "doctor/date/session group(s) contain more than two active appointments"
+        );
+    }
+
+    @Test
+    void shouldRefuseAppointmentQueueBackfillWhenPatientHasTwoActiveAppointmentsInOneSession()
+            throws Exception {
+        createTemporaryLegacyAppointmentsTable();
+        UUID patientId = UUID.randomUUID();
+        insertTemporaryLegacyAppointment(patientId, UUID.randomUUID(), "2031-01-06 08:00:00+07");
+        insertTemporaryLegacyAppointment(patientId, UUID.randomUUID(), "2031-01-06 10:00:00+07");
+
+        Throwable failure = executeAppointmentQueueMigration();
+
+        assertMigrationRefusal(
+                failure,
+                "patient/date/session group(s) contain more than one active appointment"
+        );
+    }
+
+    @Test
+    void shouldBackfillSafeLegacyAppointmentsWithoutChangingScheduledStart() throws Exception {
+        createTemporaryLegacyAppointmentsTable();
+        UUID doctorId = UUID.randomUUID();
+        insertTemporaryLegacyAppointment(
+                UUID.randomUUID(),
+                doctorId,
+                "2031-01-06 08:00:00+07",
+                "BOOKED"
+        );
+        insertTemporaryLegacyAppointment(
+                UUID.randomUUID(),
+                doctorId,
+                "2031-01-06 09:00:00+07",
+                "CANCELLED"
+        );
+        insertTemporaryLegacyAppointment(
+                UUID.randomUUID(),
+                doctorId,
+                "2031-01-06 10:00:00+07",
+                "BOOKED"
+        );
+
+        Throwable failure = executeAppointmentQueueMigration();
+
+        assertThat(failure).isNull();
+        List<Map<String, Object>> appointments = jdbcTemplate.queryForList(
+                """
+                        select
+                            to_char(
+                                scheduled_start_at at time zone 'Asia/Ho_Chi_Minh',
+                                'HH24:MI'
+                            ) as start_time,
+                            appointment_date::text as appointment_date,
+                            session::text as session,
+                            queue_number::integer as queue_number,
+                            status::text as status
+                        from appointments
+                        order by scheduled_start_at
+                        """
+        );
+        assertThat(appointments)
+                .extracting(
+                        row -> row.get("start_time"),
+                        row -> row.get("appointment_date"),
+                        row -> row.get("session"),
+                        row -> row.get("queue_number"),
+                        row -> row.get("status")
+                )
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "08:00", "2031-01-06", "MORNING", 1, "BOOKED"
+                        ),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "09:00", "2031-01-06", "MORNING", 1, "CANCELLED"
+                        ),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "10:00", "2031-01-06", "MORNING", 2, "BOOKED"
+                        )
+                );
+    }
+
+    @Test
+    void shouldRefuseQueueContractWhenAnAppointmentIsIncomplete() throws Exception {
+        createTemporaryLegacyAppointmentsTable();
+        assertThat(executeAppointmentQueueMigration()).isNull();
+        insertTemporaryLegacyAppointment(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "2031-01-06 08:00:00+07"
+        );
+
+        Throwable failure = executeAppointmentQueueContractMigration();
+
+        assertMigrationRefusal(
+                failure,
+                "appointment(s) have an incomplete queue model"
+        );
+    }
+
+    @Test
+    void shouldRefuseScheduleStandardizationWhenActiveFutureAppointmentIsOutsidePolicy()
+            throws Exception {
+        createTemporaryLegacyAppointmentsTable();
+        insertTemporaryLegacyAppointment(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "2031-01-06 13:00:00+07"
+        );
+
+        Throwable failure = executeStandardScheduleMigration();
+
+        assertMigrationRefusal(
+                failure,
+                "active future appointment(s) fall outside the new Monday-Saturday"
         );
     }
 
@@ -507,7 +941,7 @@ class PostgreSql18SchemaContractIntegrationTest {
     }
 
     @Test
-    void shouldReleaseCancelledSlotAndRejectASecondActiveAppointment() {
+    void shouldReleaseCancelledQueueAndRejectASecondActiveAppointment() {
         Fixture fixture = createFixture();
         insertAppointment(
                 fixture.patientId(),
@@ -545,8 +979,166 @@ class PostgreSql18SchemaContractIntegrationTest {
                         "CHECKED_IN"
                 ),
                 "23505",
-                "ux_appointments_doctor_start_not_cancelled"
+                "ux_appointments_doctor_queue_active"
         );
+    }
+
+    @Test
+    void shouldRestrictQueueNumberToOneOrTwo() {
+        Fixture fixture = createFixture();
+
+        assertConstraintViolation(
+                () -> insertQueueAppointment(
+                        fixture.patientId(),
+                        fixture.doctorId(),
+                        fixture.serviceId(),
+                        APPOINTMENT_START,
+                        "BOOKED",
+                        LocalDate.of(2031, 1, 6),
+                        "MORNING",
+                        3
+                ),
+                "23514",
+                "ck_appointments_queue_number"
+        );
+    }
+
+    @Test
+    void shouldRequireEveryQueueColumn() {
+        Fixture fixture = createFixture();
+
+        assertConstraintViolation(
+                () -> jdbcTemplate.update(
+                        """
+                                insert into appointments (
+                                    patient_id,
+                                    doctor_id,
+                                    service_id,
+                                    scheduled_start_at,
+                                    status,
+                                    appointment_date
+                                ) values (?, ?, ?, ?, 'BOOKED', ?)
+                                """,
+                        fixture.patientId(),
+                        fixture.doctorId(),
+                        fixture.serviceId(),
+                        Timestamp.from(APPOINTMENT_START),
+                        LocalDate.of(2031, 1, 6)
+                ),
+                "23502",
+                "session"
+        );
+    }
+
+    @Test
+    void shouldRejectTwoActivePatientsInTheSameDoctorQueue() {
+        Fixture fixture = createFixture();
+        UUID secondPatientId = insertPatient("doctor-queue-" + fixture.marker());
+        LocalDate appointmentDate = LocalDate.of(2031, 1, 6);
+        insertQueueAppointment(
+                fixture.patientId(),
+                fixture.doctorId(),
+                fixture.serviceId(),
+                APPOINTMENT_START,
+                "BOOKED",
+                appointmentDate,
+                "MORNING",
+                1
+        );
+
+        assertConstraintViolation(
+                () -> insertQueueAppointment(
+                        secondPatientId,
+                        fixture.doctorId(),
+                        fixture.serviceId(),
+                        APPOINTMENT_START.plusSeconds(1_800),
+                        "CHECKED_IN",
+                        appointmentDate,
+                        "MORNING",
+                        1
+                ),
+                "23505",
+                "ux_appointments_doctor_queue_active"
+        );
+    }
+
+    @Test
+    void shouldRejectOnePatientBookingTwoDoctorsInTheSameSession() {
+        Fixture fixture = createFixture();
+        UUID secondDoctorId = insertDoctor(
+                "patient-session-doctor-" + fixture.marker(),
+                fixture.serviceId()
+        );
+        LocalDate appointmentDate = LocalDate.of(2031, 1, 6);
+        insertQueueAppointment(
+                fixture.patientId(),
+                fixture.doctorId(),
+                fixture.serviceId(),
+                APPOINTMENT_START,
+                "BOOKED",
+                appointmentDate,
+                "MORNING",
+                1
+        );
+
+        assertConstraintViolation(
+                () -> insertQueueAppointment(
+                        fixture.patientId(),
+                        secondDoctorId,
+                        fixture.serviceId(),
+                        APPOINTMENT_START.plusSeconds(5_400),
+                        "BOOKED",
+                        appointmentDate,
+                        "MORNING",
+                        2
+                ),
+                "23505",
+                "ux_appointments_patient_session_active"
+        );
+    }
+
+    @Test
+    void shouldReleaseDoctorQueueAndPatientSessionWhenAppointmentIsCancelled() {
+        Fixture fixture = createFixture();
+        LocalDate appointmentDate = LocalDate.of(2031, 1, 6);
+        insertQueueAppointment(
+                fixture.patientId(),
+                fixture.doctorId(),
+                fixture.serviceId(),
+                APPOINTMENT_START,
+                "CANCELLED",
+                appointmentDate,
+                "MORNING",
+                1
+        );
+
+        insertQueueAppointment(
+                fixture.patientId(),
+                fixture.doctorId(),
+                fixture.serviceId(),
+                APPOINTMENT_START,
+                "BOOKED",
+                appointmentDate,
+                "MORNING",
+                1
+        );
+
+        Integer appointmentCount = jdbcTemplate.queryForObject(
+                """
+                        select count(*)
+                        from appointments
+                        where patient_id = ?
+                          and doctor_id = ?
+                          and appointment_date = ?
+                          and session = 'MORNING'
+                          and queue_number = 1
+                        """,
+                Integer.class,
+                fixture.patientId(),
+                fixture.doctorId(),
+                appointmentDate
+        );
+        assertThat(appointmentCount).isEqualTo(2);
     }
 
     @Test
@@ -561,10 +1153,16 @@ class PostgreSql18SchemaContractIntegrationTest {
                                     doctor_id,
                                     service_id,
                                     scheduled_start_at,
+                                    appointment_date,
+                                    session,
+                                    queue_number,
                                     status,
                                     actual_start_at,
                                     actual_end_at
-                                ) values (?, ?, ?, ?, 'COMPLETED', ?, ?)
+                                ) values (
+                                    ?, ?, ?, ?, date '2031-01-06', 'MORNING', 1,
+                                    'COMPLETED', ?, ?
+                                )
                                 """,
                         fixture.patientId(),
                         fixture.doctorId(),
@@ -717,9 +1315,10 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "PATIENT"
         );
         UUID patientId = jdbcTemplate.queryForObject(
-                "insert into patients (user_id) values (?) returning id",
+                "insert into patients (user_id, full_name) values (?, ?) returning id",
                 UUID.class,
-                patientUserId
+                patientUserId,
+                "Bệnh nhân Phase 25"
         );
         UUID doctorUserId = insertUser(
                 "phase25-doctor-" + marker + "@example.com",
@@ -780,6 +1379,48 @@ class PostgreSql18SchemaContractIntegrationTest {
         );
     }
 
+    private UUID insertPatient(String marker) {
+        UUID userId = insertUser(
+                "phase-slot01-patient-" + marker + "@example.com",
+                "Bệnh nhân Slot 01",
+                "PATIENT"
+        );
+        return jdbcTemplate.queryForObject(
+                "insert into patients (user_id, full_name) values (?, ?) returning id",
+                UUID.class,
+                userId,
+                "Bệnh nhân Slot 01"
+        );
+    }
+
+    private UUID insertDoctor(String marker, UUID serviceId) {
+        UUID userId = insertUser(
+                "phase-slot01-doctor-" + marker + "@example.com",
+                "Bác sĩ Slot 01",
+                "DOCTOR"
+        );
+        UUID doctorId = jdbcTemplate.queryForObject(
+                """
+                        insert into doctors (
+                            user_id,
+                            specialization,
+                            license_number,
+                            working_status
+                        ) values (?, 'Nha khoa tổng quát', ?, 'ACTIVE')
+                        returning id
+                        """,
+                UUID.class,
+                userId,
+                "SLOT01-" + marker
+        );
+        jdbcTemplate.update(
+                "insert into doctor_services (doctor_id, service_id) values (?, ?)",
+                doctorId,
+                serviceId
+        );
+        return doctorId;
+    }
+
     private UUID insertAppointment(
             UUID patientId,
             UUID doctorId,
@@ -794,8 +1435,14 @@ class PostgreSql18SchemaContractIntegrationTest {
                             doctor_id,
                             service_id,
                             scheduled_start_at,
+                            appointment_date,
+                            session,
+                            queue_number,
                             status
-                        ) values (?, ?, ?, ?, ?::appointment_status_enum)
+                        ) values (
+                            ?, ?, ?, ?, date '2031-01-06', 'MORNING', 1,
+                            ?::appointment_status_enum
+                        )
                         returning id
                         """,
                 UUID.class,
@@ -805,6 +1452,117 @@ class PostgreSql18SchemaContractIntegrationTest {
                 Timestamp.from(scheduledStartAt),
                 status
         );
+    }
+
+    private UUID insertQueueAppointment(
+            UUID patientId,
+            UUID doctorId,
+            UUID serviceId,
+            Instant scheduledStartAt,
+            String status,
+            LocalDate appointmentDate,
+            String session,
+            int queueNumber
+    ) {
+        return jdbcTemplate.queryForObject(
+                """
+                        insert into appointments (
+                            patient_id,
+                            doctor_id,
+                            service_id,
+                            scheduled_start_at,
+                            status,
+                            appointment_date,
+                            session,
+                            queue_number
+                        ) values (?, ?, ?, ?, ?::appointment_status_enum, ?, ?::session_enum, ?)
+                        returning id
+                        """,
+                UUID.class,
+                patientId,
+                doctorId,
+                serviceId,
+                Timestamp.from(scheduledStartAt),
+                status,
+                appointmentDate,
+                session,
+                queueNumber
+        );
+    }
+
+    private void createTemporaryLegacyAppointmentsTable() {
+        jdbcTemplate.execute("""
+                create temporary table appointments (
+                    id uuid primary key default uuid_generate_v4(),
+                    patient_id uuid not null,
+                    doctor_id uuid not null,
+                    scheduled_start_at timestamptz not null,
+                    status appointment_status_enum not null
+                ) on commit drop
+                """);
+        jdbcTemplate.execute("""
+                create unique index ux_appointments_doctor_start_not_cancelled
+                    on appointments (doctor_id, scheduled_start_at)
+                    where status <> 'CANCELLED'
+                """);
+    }
+
+    private void insertTemporaryLegacyAppointment(
+            UUID patientId,
+            UUID doctorId,
+            String scheduledStartAt
+    ) {
+        insertTemporaryLegacyAppointment(patientId, doctorId, scheduledStartAt, "BOOKED");
+    }
+
+    private void insertTemporaryLegacyAppointment(
+            UUID patientId,
+            UUID doctorId,
+            String scheduledStartAt,
+            String status
+    ) {
+        jdbcTemplate.update(
+                """
+                        insert into appointments (
+                            patient_id,
+                            doctor_id,
+                            scheduled_start_at,
+                            status
+                        ) values (?, ?, ?::timestamptz, ?::appointment_status_enum)
+                        """,
+                patientId,
+                doctorId,
+                scheduledStartAt,
+                status
+        );
+    }
+
+    private Throwable executeAppointmentQueueMigration() throws Exception {
+        String migrationSql = new ClassPathResource(
+                "db/migration/V15__add_appointment_queue_model.sql"
+        ).getContentAsString(StandardCharsets.UTF_8);
+        return catchThrowable(() -> jdbcTemplate.execute(migrationSql));
+    }
+
+    private Throwable executeStandardScheduleMigration() throws Exception {
+        String migrationSql = new ClassPathResource(
+                "db/migration/V16__standardize_doctor_working_sessions.sql"
+        ).getContentAsString(StandardCharsets.UTF_8);
+        return catchThrowable(() -> jdbcTemplate.execute(migrationSql));
+    }
+
+    private Throwable executeAppointmentQueueContractMigration() throws Exception {
+        String migrationSql = new ClassPathResource(
+                "db/migration/V18__enforce_appointment_queue_contract.sql"
+        ).getContentAsString(StandardCharsets.UTF_8);
+        return catchThrowable(() -> jdbcTemplate.execute(migrationSql));
+    }
+
+    private void assertMigrationRefusal(Throwable failure, String expectedMessage) {
+        assertThat(failure).isInstanceOf(DataAccessException.class);
+        SQLException sqlException = findSqlException(failure);
+        assertThat(sqlException.getSQLState()).isEqualTo("P0001");
+        assertThat(sqlException.getMessage()).contains(expectedMessage);
     }
 
     private void insertMedicalRecord(

@@ -54,6 +54,8 @@ public class OpenApiConfig {
             "POST /api/admin/services",
             "POST /api/admin/services/images",
             "POST /api/admin/doctors/{doctorId}/schedules",
+            "POST /api/staff/patients",
+            "POST /api/staff/appointments/walk-in",
             "POST /api/patient/appointments",
             "POST /api/doctor/appointments/{id}/medical-record",
             "POST /api/chat/messages"
@@ -90,7 +92,7 @@ public class OpenApiConfig {
                         new Tag().name("Doctor Schedules").description(
                                 "Admin quản lý lịch làm việc tuần; bác sĩ chỉ xem lịch của mình"
                         ),
-                        new Tag().name("Available Slots").description("Khung giờ khám còn trống"),
+                        new Tag().name("Available Slots").description("Ca khám còn trống theo ngày và buổi"),
                         new Tag().name("Doctor Calendar").description(
                                 "Lịch khả dụng theo thời gian thực trong cửa sổ 30 ngày"
                         ),
@@ -98,12 +100,17 @@ public class OpenApiConfig {
                         new Tag().name("Doctor Appointments").description("Quy trình khám của bác sĩ"),
                         new Tag().name("Doctor Payments").description("Bác sĩ ghi nhận dịch vụ thực tế"),
                         new Tag().name("Patient Payments").description("Bệnh nhân xem phiếu thanh toán"),
-                        new Tag().name("Staff Appointments").description("Nhân viên tra cứu lịch khám toàn phòng khám"),
+                        new Tag().name("Staff Appointments").description(
+                                "Nhân viên tra cứu lịch khám và ca WALK_IN còn trống trong ngày"
+                        ),
+                        new Tag().name("Staff Patients").description(
+                                "Nhân viên tìm kiếm và tiếp nhận hồ sơ bệnh nhân tại quầy"
+                        ),
                         new Tag().name("Staff Payments").description("Nhân viên thu tiền trực tiếp tại quầy"),
                         new Tag().name("Admin Payments").description("Admin tra cứu và xác nhận thanh toán dự phòng"),
                         new Tag().name("Patient Medical History").description("Lịch sử bệnh án của bệnh nhân"),
                         new Tag().name("Patient Chatbot").description(
-                                "Chatbot RAG dành riêng cho bệnh nhân, trả gợi ý dịch vụ, bác sĩ và slot đã xác minh"
+                                "Chatbot RAG dành riêng cho bệnh nhân, trả gợi ý dịch vụ, bác sĩ và ca khám đã xác minh"
                         ),
                         new Tag().name("Admin AI Knowledge").description(
                                 "Theo dõi, đồng bộ thủ công và kiểm thử truy xuất kho tri thức RAG"
@@ -273,6 +280,12 @@ public class OpenApiConfig {
                 cookie HttpOnly; các API dùng cookie yêu cầu header `X-XSRF-TOKEN`.
                 Thời gian nghiệp vụ sử dụng múi giờ `Asia/Ho_Chi_Minh`; timestamp trao đổi theo ISO-8601.
 
+                ### Scheduling contract
+
+                API đặt và đổi lịch nhận `appointmentDate`, `session` (`MORNING` hoặc `AFTERNOON`)
+                và `queueNumber` (`1` hoặc `2`). `estimatedStartAt` chỉ là giờ bắt đầu dự kiến để
+                bệnh nhân sắp xếp thời gian có mặt; giờ khám thực tế được ghi bằng `actualStartAt`.
+
                 ### Error codes
 
                 | Code | HTTP | Message mặc định |
@@ -343,6 +356,9 @@ public class OpenApiConfig {
         }
         if (path.startsWith("/api/staff/appointments")) {
             return "Staff Appointments";
+        }
+        if (path.startsWith("/api/staff/patients")) {
+            return "Staff Patients";
         }
         if (path.startsWith("/api/staff/payments")) {
             return "Staff Payments";

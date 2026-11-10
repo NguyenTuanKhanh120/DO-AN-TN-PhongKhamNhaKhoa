@@ -102,6 +102,8 @@ class AuthenticationPostgreSqlIntegrationTest {
         assertThat(persistedUser.getPasswordHash()).isNotEqualTo(password);
         assertThat(passwordEncoder.matches(password, persistedUser.getPasswordHash())).isTrue();
         assertThat(patientRepository.existsByUserId(userId)).isTrue();
+        assertThat(patientRepository.findByUserId(userId).orElseThrow().getFullName())
+                .isEqualTo("Nguyễn Văn An");
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

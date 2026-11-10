@@ -62,6 +62,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -76,7 +77,7 @@ class AppointmentBookingPostgreSqlIntegrationTest {
     private static final String PASSWORD = "StrongPassword123!";
     private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     private static final LocalDate MONDAY = LocalDate.of(2026, 10, 12);
-    private static final Instant FIXED_NOW = Instant.parse("2026-10-12T03:00:00Z");
+    private static final Instant FIXED_NOW = Instant.parse("2026-10-11T21:59:00Z");
 
     @Autowired
     private MockMvc mockMvc;
@@ -118,8 +119,6 @@ class AppointmentBookingPostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "appointment-booking-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
-        registry.add("clinic.appointment.booking-min-advance-minutes", () -> 120);
     }
 
     @AfterEach
@@ -131,32 +130,43 @@ class AppointmentBookingPostgreSqlIntegrationTest {
             jdbcTemplate.update("""
                     delete from appointment_histories
                     where appointment_id in (
-                        select id from appointments where doctor_id = ?
+                        select id from appointments where doctor_id in (?, ?)
                     )
-                    """, fixture.doctorId());
+                    """, fixture.doctorId(), fixture.secondDoctorId());
             jdbcTemplate.update(
-                    "delete from appointments where doctor_id = ?",
-                    fixture.doctorId()
-            );
-            jdbcTemplate.update(
-                    "delete from doctor_schedules where doctor_id = ?",
-                    fixture.doctorId()
-            );
-            jdbcTemplate.update(
-                    "delete from doctor_services where doctor_id = ? and service_id = ?",
+                    "delete from appointments where doctor_id in (?, ?)",
                     fixture.doctorId(),
-                    fixture.serviceId()
+                    fixture.secondDoctorId()
+            );
+            jdbcTemplate.update(
+                    "delete from doctor_schedules where doctor_id in (?, ?)",
+                    fixture.doctorId(),
+                    fixture.secondDoctorId()
+            );
+            jdbcTemplate.update(
+                    "delete from doctor_services where doctor_id in (?, ?)",
+                    fixture.doctorId(),
+                    fixture.secondDoctorId()
             );
             jdbcTemplate.update(
                     "delete from patients where id in (?, ?)",
                     fixture.firstPatientId(),
                     fixture.secondPatientId()
             );
-            jdbcTemplate.update("delete from doctors where id = ?", fixture.doctorId());
-            jdbcTemplate.update("delete from dental_services where id = ?", fixture.serviceId());
             jdbcTemplate.update(
-                    "delete from users where id in (?, ?, ?)",
+                    "delete from doctors where id in (?, ?)",
+                    fixture.doctorId(),
+                    fixture.secondDoctorId()
+            );
+            jdbcTemplate.update(
+                    "delete from dental_services where id in (?, ?)",
+                    fixture.serviceId(),
+                    fixture.secondServiceId()
+            );
+            jdbcTemplate.update(
+                    "delete from users where id in (?, ?, ?, ?)",
                     fixture.doctorUserId(),
+                    fixture.secondDoctorUserId(),
                     fixture.firstPatientUserId(),
                     fixture.secondPatientUserId()
             );
@@ -169,7 +179,7 @@ class AppointmentBookingPostgreSqlIntegrationTest {
         fixture = createFixture();
         String firstPatientToken = login(fixture.firstPatientEmail());
         String secondPatientToken = login(fixture.secondPatientEmail());
-        Instant scheduledStart = toInstant(MONDAY, LocalTime.of(13, 0));
+        Instant scheduledStart = toInstant(MONDAY, LocalTime.of(14, 0));
         byte[] requestBody = bookingBody(scheduledStart);
 
         MvcResult created = mockMvc.perform(post("/api/patient/appointments")
@@ -182,15 +192,25 @@ class AppointmentBookingPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.doctorId").value(fixture.doctorId().toString()))
                 .andExpect(jsonPath("$.data.serviceId").value(fixture.serviceId().toString()))
                 .andExpect(jsonPath("$.data.status").value("BOOKED"))
-                .andExpect(jsonPath("$.data.scheduledStartAt")
-                        .value("2026-10-12T13:00:00+07:00"))
-                .andExpect(jsonPath("$.data.scheduledEndAt")
+                .andExpect(jsonPath("$.data.appointmentDate").value("2026-10-12"))
+                .andExpect(jsonPath("$.data.session").value("AFTERNOON"))
+                .andExpect(jsonPath("$.data.queueNumber").value(1))
+                .andExpect(jsonPath("$.data.sessionStartTime").value("14:00:00"))
+                .andExpect(jsonPath("$.data.sessionEndTime").value("17:00:00"))
+                .andExpect(jsonPath("$.data.estimatedStartAt")
                         .value("2026-10-12T14:00:00+07:00"))
                 .andReturn();
         UUID appointmentId = responseAppointmentId(created);
 
         Map<String, Object> appointmentRow = jdbcTemplate.queryForMap("""
-                select patient_id, doctor_id, service_id, scheduled_start_at, status::text as status
+                select patient_id,
+                       doctor_id,
+                       service_id,
+                       appointment_date,
+                       session::text as session,
+                       queue_number,
+                       scheduled_start_at,
+                       status::text as status
                 from appointments
                 where id = ?
                 """, appointmentId);
@@ -199,20 +219,30 @@ class AppointmentBookingPostgreSqlIntegrationTest {
         assertThat(appointmentRow.get("service_id")).isEqualTo(fixture.serviceId());
         assertThat(((Timestamp) appointmentRow.get("scheduled_start_at")).toInstant())
                 .isEqualTo(scheduledStart);
+        assertThat(((java.sql.Date) appointmentRow.get("appointment_date")).toLocalDate())
+                .isEqualTo(MONDAY);
+        assertThat(appointmentRow.get("session")).isEqualTo("AFTERNOON");
+        assertThat(((Number) appointmentRow.get("queue_number")).intValue()).isEqualTo(1);
         assertThat(appointmentRow.get("status")).isEqualTo("BOOKED");
 
         Map<String, Object> historyRow = jdbcTemplate.queryForMap("""
                 select action::text as action,
                        changed_by,
                        details ->> 'status' as detail_status,
-                       details ->> 'scheduled_start_at' as detail_start
+                       details ->> 'appointment_date' as detail_date,
+                       details ->> 'session' as detail_session,
+                       details ->> 'queue_number' as detail_queue,
+                       details ->> 'estimated_start_at' as detail_start
                 from appointment_histories
                 where appointment_id = ?
                 """, appointmentId);
         assertThat(historyRow.get("action")).isEqualTo("BOOK");
         assertThat(historyRow.get("changed_by")).isEqualTo(fixture.firstPatientUserId());
         assertThat(historyRow.get("detail_status")).isEqualTo("BOOKED");
-        assertThat(historyRow.get("detail_start")).isEqualTo("2026-10-12T13:00+07:00");
+        assertThat(historyRow.get("detail_date")).isEqualTo("2026-10-12");
+        assertThat(historyRow.get("detail_session")).isEqualTo("AFTERNOON");
+        assertThat(historyRow.get("detail_queue")).isEqualTo("1");
+        assertThat(historyRow.get("detail_start")).isEqualTo("2026-10-12T14:00+07:00");
 
         mockMvc.perform(post("/api/patient/appointments")
                         .header(HttpHeaders.AUTHORIZATION, bearer(secondPatientToken))
@@ -270,6 +300,161 @@ class AppointmentBookingPostgreSqlIntegrationTest {
         }
     }
 
+    @Test
+    void shouldNotAllowPatientToBypassSessionLimitByChangingDoctorOrService() throws Exception {
+        fixture = createFixture();
+        String patientToken = login(fixture.firstPatientEmail());
+
+        mockMvc.perform(post("/api/patient/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingBody(
+                                fixture.doctorId(),
+                                fixture.serviceId(),
+                                toInstant(MONDAY, LocalTime.of(14, 0))
+                        )))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/patient/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingBody(
+                                fixture.doctorId(),
+                                fixture.secondServiceId(),
+                                toInstant(MONDAY, LocalTime.of(15, 30))
+                        )))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("Bạn đã có một lịch khám đang hoạt động trong buổi này"));
+
+        mockMvc.perform(post("/api/patient/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingBody(
+                                fixture.secondDoctorId(),
+                                fixture.serviceId(),
+                                toInstant(MONDAY, LocalTime.of(15, 30))
+                        )))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("Bạn đã có một lịch khám đang hoạt động trong buổi này"));
+
+        assertThat(countActivePatientSession(
+                fixture.firstPatientId(), ScheduleSession.AFTERNOON
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void shouldAllowSamePatientToBookMorningAndAfternoon() throws Exception {
+        fixture = createFixture();
+        String patientToken = login(fixture.firstPatientEmail());
+
+        mockMvc.perform(post("/api/patient/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingBody(toInstant(MONDAY, LocalTime.of(8, 0)))))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/patient/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingBody(toInstant(MONDAY, LocalTime.of(14, 0)))))
+                .andExpect(status().isCreated());
+
+        assertThat(countActivePatientSession(
+                fixture.firstPatientId(), ScheduleSession.MORNING
+        )).isEqualTo(1);
+        assertThat(countActivePatientSession(
+                fixture.firstPatientId(), ScheduleSession.AFTERNOON
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void shouldReleasePatientSessionAndDoctorQueueWhenPreviousAppointmentIsCancelled() throws Exception {
+        fixture = createFixture();
+        String patientToken = login(fixture.firstPatientEmail());
+        MvcResult firstBooking = mockMvc.perform(post("/api/patient/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingBody(toInstant(MONDAY, LocalTime.of(14, 0)))))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID cancelledAppointmentId = responseAppointmentId(firstBooking);
+        mockMvc.perform(patch(
+                        "/api/patient/appointments/{id}/cancel",
+                        cancelledAppointmentId
+                ).header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Đổi sang bác sĩ khác\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"));
+
+        mockMvc.perform(post("/api/patient/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(patientToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingBody(
+                                fixture.secondDoctorId(),
+                                fixture.secondServiceId(),
+                                toInstant(MONDAY, LocalTime.of(15, 30))
+                        )))
+                .andExpect(status().isCreated());
+
+        assertThat(countPatientAppointments(fixture.firstPatientId())).isEqualTo(2);
+        assertThat(countActivePatientSession(
+                fixture.firstPatientId(), ScheduleSession.AFTERNOON
+        )).isEqualTo(1);
+        assertThat(countPatientHistories(fixture.firstPatientId(), "BOOK")).isEqualTo(2);
+        assertThat(countPatientHistories(fixture.firstPatientId(), "CANCEL")).isEqualTo(1);
+        assertThat(appointmentStatus(cancelledAppointmentId)).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void shouldAllowOnlyOneConcurrentCaseForSamePatientAcrossDifferentDoctors() throws Exception {
+        fixture = createFixture();
+        String patientToken = login(fixture.firstPatientEmail());
+        byte[] firstCase = bookingBody(
+                fixture.doctorId(),
+                fixture.serviceId(),
+                toInstant(MONDAY, LocalTime.of(14, 0))
+        );
+        byte[] secondCase = bookingBody(
+                fixture.secondDoctorId(),
+                fixture.secondServiceId(),
+                toInstant(MONDAY, LocalTime.of(15, 30))
+        );
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<Integer>> futures = List.of(
+                    executor.submit(() -> concurrentBookingStatus(
+                            patientToken, firstCase, ready, start
+                    )),
+                    executor.submit(() -> concurrentBookingStatus(
+                            patientToken, secondCase, ready, start
+                    ))
+            );
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            List<Integer> statuses = new ArrayList<>();
+            for (Future<Integer> future : futures) {
+                statuses.add(future.get(20, TimeUnit.SECONDS));
+            }
+            Collections.sort(statuses);
+
+            assertThat(statuses).containsExactly(201, 409);
+            assertThat(countActivePatientSession(
+                    fixture.firstPatientId(), ScheduleSession.AFTERNOON
+            )).isEqualTo(1);
+            assertThat(countBookHistories()).isEqualTo(1);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
     private int concurrentBookingStatus(
             String accessToken,
             byte[] requestBody,
@@ -302,6 +487,20 @@ class AppointmentBookingPostgreSqlIntegrationTest {
             saveMapping(doctor, dentalService);
             saveSchedule(doctor);
 
+            User secondDoctorUser = saveUser(
+                    "phase12-doctor-b-" + marker + "@example.com",
+                    "Bác sĩ Booking B",
+                    Role.DOCTOR
+            );
+            Doctor secondDoctor = saveDoctor(secondDoctorUser, "PHASE12-B-" + marker);
+            DentalService secondDentalService = saveDentalService(
+                    "Dịch vụ Phase 12 B " + marker
+            );
+            saveMapping(doctor, secondDentalService);
+            saveMapping(secondDoctor, dentalService);
+            saveMapping(secondDoctor, secondDentalService);
+            saveSchedule(secondDoctor);
+
             User firstPatientUser = saveUser(
                     "phase12-patient-a-" + marker + "@example.com",
                     "Bệnh nhân A",
@@ -319,6 +518,9 @@ class AppointmentBookingPostgreSqlIntegrationTest {
                     doctorUser.getId(),
                     doctor.getId(),
                     dentalService.getId(),
+                    secondDoctorUser.getId(),
+                    secondDoctor.getId(),
+                    secondDentalService.getId(),
                     firstPatientUser.getId(),
                     firstPatient.getId(),
                     firstPatientUser.getEmail(),
@@ -369,27 +571,52 @@ class AppointmentBookingPostgreSqlIntegrationTest {
     }
 
     private void saveSchedule(Doctor doctor) {
-        DoctorSchedule schedule = new DoctorSchedule();
-        schedule.setDoctor(doctor);
-        schedule.setDayOfWeek((short) 1);
-        schedule.setSession(ScheduleSession.AFTERNOON);
-        schedule.setStartTime(LocalTime.of(13, 0));
-        schedule.setEndTime(LocalTime.of(17, 0));
-        doctorScheduleRepository.saveAndFlush(schedule);
+        DoctorSchedule morning = new DoctorSchedule();
+        morning.setDoctor(doctor);
+        morning.setDayOfWeek((short) 1);
+        morning.setSession(ScheduleSession.MORNING);
+        morning.setStartTime(LocalTime.of(8, 0));
+        morning.setEndTime(LocalTime.of(11, 0));
+
+        DoctorSchedule afternoon = new DoctorSchedule();
+        afternoon.setDoctor(doctor);
+        afternoon.setDayOfWeek((short) 1);
+        afternoon.setSession(ScheduleSession.AFTERNOON);
+        afternoon.setStartTime(LocalTime.of(14, 0));
+        afternoon.setEndTime(LocalTime.of(17, 0));
+        doctorScheduleRepository.saveAllAndFlush(List.of(morning, afternoon));
     }
 
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
 
     private byte[] bookingBody(Instant scheduledStart) throws Exception {
+        return bookingBody(fixture.doctorId(), fixture.serviceId(), scheduledStart);
+    }
+
+    private byte[] bookingBody(
+            UUID doctorId,
+            UUID serviceId,
+            Instant scheduledStart
+    ) throws Exception {
+        java.time.ZonedDateTime clinicStart = scheduledStart.atZone(CLINIC_ZONE);
+        ScheduleSession session = clinicStart.toLocalTime().isBefore(LocalTime.NOON)
+                ? ScheduleSession.MORNING
+                : ScheduleSession.AFTERNOON;
+        LocalTime firstCaseTime = session == ScheduleSession.MORNING
+                ? LocalTime.of(8, 0)
+                : LocalTime.of(14, 0);
         return objectMapper.writeValueAsBytes(Map.of(
-                "doctorId", fixture.doctorId(),
-                "serviceId", fixture.serviceId(),
-                "scheduledStartAt", scheduledStart.atZone(CLINIC_ZONE).toOffsetDateTime()
+                "doctorId", doctorId,
+                "serviceId", serviceId,
+                "appointmentDate", clinicStart.toLocalDate(),
+                "session", session,
+                "queueNumber", clinicStart.toLocalTime().equals(firstCaseTime) ? 1 : 2
         ));
     }
 
@@ -429,9 +656,48 @@ class AppointmentBookingPostgreSqlIntegrationTest {
                 select count(*)
                 from appointment_histories history
                 join appointments appointment on appointment.id = history.appointment_id
-                where appointment.doctor_id = ? and history.action = 'BOOK'
-                """, Integer.class, fixture.doctorId());
+                where appointment.doctor_id in (?, ?) and history.action = 'BOOK'
+                """, Integer.class, fixture.doctorId(), fixture.secondDoctorId());
         return count == null ? 0 : count;
+    }
+
+    private int countActivePatientSession(UUID patientId, ScheduleSession session) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*)
+                from appointments
+                where patient_id = ?
+                  and appointment_date = ?
+                  and session = ?::session_enum
+                  and status in ('BOOKED', 'CHECKED_IN', 'IN_PROGRESS')
+                """, Integer.class, patientId, MONDAY, session.name());
+        return count == null ? 0 : count;
+    }
+
+    private int countPatientAppointments(UUID patientId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "select count(*) from appointments where patient_id = ?",
+                Integer.class,
+                patientId
+        );
+        return count == null ? 0 : count;
+    }
+
+    private int countPatientHistories(UUID patientId, String action) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*)
+                from appointment_histories history
+                join appointments appointment on appointment.id = history.appointment_id
+                where appointment.patient_id = ? and history.action::text = ?
+                """, Integer.class, patientId, action);
+        return count == null ? 0 : count;
+    }
+
+    private String appointmentStatus(UUID appointmentId) {
+        return jdbcTemplate.queryForObject(
+                "select status::text from appointments where id = ?",
+                String.class,
+                appointmentId
+        );
     }
 
     private Instant toInstant(LocalDate date, LocalTime time) {
@@ -451,6 +717,9 @@ class AppointmentBookingPostgreSqlIntegrationTest {
             UUID doctorUserId,
             UUID doctorId,
             UUID serviceId,
+            UUID secondDoctorUserId,
+            UUID secondDoctorId,
+            UUID secondServiceId,
             UUID firstPatientUserId,
             UUID firstPatientId,
             String firstPatientEmail,

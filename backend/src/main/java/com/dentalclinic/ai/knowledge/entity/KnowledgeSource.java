@@ -80,6 +80,15 @@ public class KnowledgeSource {
     @Column(name = "sync_token")
     private UUID syncToken;
 
+    @Column(name = "pending_content_hash", length = 64)
+    private String pendingContentHash;
+
+    @Column(name = "processed_chunk_count", nullable = false)
+    private int processedChunkCount;
+
+    @Column(name = "total_chunk_count", nullable = false)
+    private int totalChunkCount;
+
     @Generated(event = EventType.INSERT)
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private Instant createdAt;

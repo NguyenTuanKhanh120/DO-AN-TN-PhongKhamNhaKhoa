@@ -403,6 +403,7 @@ class AppointmentHistoryPostgreSqlIntegrationTest {
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
@@ -445,6 +446,7 @@ class AppointmentHistoryPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(mapping);
         appointment.setScheduledStartAt(scheduledStartAt);
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(appointment, scheduledStartAt);
         appointment.setStatus(status);
         return appointmentRepository.saveAndFlush(appointment);
     }

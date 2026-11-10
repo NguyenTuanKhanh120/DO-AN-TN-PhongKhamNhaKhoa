@@ -12,6 +12,7 @@ import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
 import com.dentalclinic.user.entity.Role;
@@ -24,6 +25,8 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Encoders;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -47,6 +50,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.UUID;
@@ -67,6 +71,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
     private static final String TEST_JWT_SECRET = generateSecret();
     private static final String PASSWORD = "StrongPassword123!";
     private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final LocalDate APPOINTMENT_DATE = LocalDate.of(2026, 10, 12);
     private static final Instant FIXED_NOW = Instant.parse("2026-10-12T02:15:00Z");
     private static final Instant CHECKED_IN_AT = Instant.parse("2026-10-12T01:55:00Z");
 
@@ -127,8 +132,11 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.id")
                         .value(fixture.checkedInAppointmentId().toString()))
                 .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
-                .andExpect(jsonPath("$.data.scheduledStartAt")
-                        .value("2026-10-12T09:00:00+07:00"))
+                .andExpect(jsonPath("$.data.appointmentDate").value("2026-10-12"))
+                .andExpect(jsonPath("$.data.session").value("MORNING"))
+                .andExpect(jsonPath("$.data.queueNumber").value(1))
+                .andExpect(jsonPath("$.data.estimatedStartAt")
+                        .value("2026-10-12T08:00:00+07:00"))
                 .andExpect(jsonPath("$.data.checkedInAt").isEmpty())
                 .andExpect(jsonPath("$.data.actualStartAt")
                         .value("2026-10-12T09:15:00+07:00"));
@@ -154,7 +162,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                        reason,
                        details ->> 'old_status' as old_status,
                        details ->> 'new_status' as new_status,
-                       details ->> 'scheduled_start_at' as scheduled_start_at,
+                       details ->> 'estimated_start_at' as estimated_start_at,
                        details ->> 'checked_in_at' as checked_in_at,
                        details ->> 'actual_start_at' as actual_start_at
                 from appointment_histories
@@ -165,8 +173,8 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
         assertThat(historyRow.get("reason")).isNull();
         assertThat(historyRow.get("old_status")).isEqualTo("BOOKED");
         assertThat(historyRow.get("new_status")).isEqualTo("IN_PROGRESS");
-        assertThat(historyRow.get("scheduled_start_at"))
-                .isEqualTo("2026-10-12T09:00+07:00");
+        assertThat(historyRow.get("estimated_start_at"))
+                .isEqualTo("2026-10-12T08:00+07:00");
         assertThat(historyRow.get("checked_in_at")).isNull();
         assertThat(historyRow.get("actual_start_at"))
                 .isEqualTo("2026-10-12T09:15+07:00");
@@ -223,10 +231,10 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
         Appointment inProgress = saveAppointment(
                 checkedInAppointment.getPatient(),
                 checkedInAppointment.getDoctorService(),
-                Instant.parse("2026-10-12T00:00:00Z"),
+                Instant.parse("2026-10-10T00:00:00Z"),
                 AppointmentStatus.IN_PROGRESS,
-                Instant.parse("2026-10-11T23:55:00Z"),
-                Instant.parse("2026-10-12T00:05:00Z")
+                Instant.parse("2026-10-09T23:55:00Z"),
+                Instant.parse("2026-10-10T00:05:00Z")
         );
         String token = login(fixture.firstDoctorEmail());
 
@@ -244,20 +252,65 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
         assertThat(startHistoryCount(fixture.checkedInAppointmentId())).isZero();
     }
 
-    @Test
-    void shouldAllowLegacyCheckedInAppointmentToContinue() throws Exception {
+    @ParameterizedTest
+    @EnumSource(
+            value = AppointmentStatus.class,
+            names = {"BOOKED", "CHECKED_IN", "IN_PROGRESS"}
+    )
+    void shouldRejectQueueTwoWhileQueueOneIsActive(AppointmentStatus queueOneStatus)
+            throws Exception {
+        updateQueueOneStatus(queueOneStatus);
         String token = login(fixture.firstDoctorEmail());
 
         mockMvc.perform(patch(
                         "/api/doctor/appointments/{id}/start",
-                        fixture.legacyCheckedInAppointmentId()
+                        fixture.queueTwoAppointmentId()
+                ).header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        "Ca 2 chỉ có thể bắt đầu khi Ca 1 đã hoàn thành, bị hủy, "
+                                + "không đến hoặc không tồn tại"
+                ));
+
+        assertThat(statusOf(fixture.queueTwoAppointmentId())).isEqualTo("BOOKED");
+        assertThat(actualStartAtOf(fixture.queueTwoAppointmentId())).isNull();
+        assertThat(startHistoryCount(fixture.queueTwoAppointmentId())).isZero();
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = AppointmentStatus.class,
+            names = {"COMPLETED", "CANCELLED", "NO_SHOW"}
+    )
+    void shouldStartQueueTwoWhenQueueOneIsTerminal(AppointmentStatus queueOneStatus)
+            throws Exception {
+        updateQueueOneStatus(queueOneStatus);
+
+        assertQueueTwoStartsAndKeepsQueueNumber();
+    }
+
+    @Test
+    void shouldStartQueueTwoWhenQueueOneDoesNotExist() throws Exception {
+        appointmentRepository.deleteById(fixture.checkedInAppointmentId());
+        appointmentRepository.flush();
+
+        assertQueueTwoStartsAndKeepsQueueNumber();
+    }
+
+    @Test
+    void shouldAllowCheckedInAppointmentToContinue() throws Exception {
+        String token = login(fixture.firstDoctorEmail());
+
+        mockMvc.perform(patch(
+                        "/api/doctor/appointments/{id}/start",
+                        fixture.checkedInContinuationAppointmentId()
                 ).header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.data.checkedInAt")
                         .value("2026-10-12T08:55:00+07:00"));
 
-        assertThat(statusOf(fixture.legacyCheckedInAppointmentId()))
+        assertThat(statusOf(fixture.checkedInContinuationAppointmentId()))
                 .isEqualTo("IN_PROGRESS");
     }
 
@@ -281,15 +334,39 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 Role.PATIENT
         );
         Patient patient = savePatient(patientUser);
+        User secondPatientUser = saveUser(
+                "phase17-patient-b-" + marker + "@example.com",
+                "Bệnh nhân Phase 17 B",
+                Role.PATIENT
+        );
+        Patient secondPatient = savePatient(secondPatientUser);
+        User thirdPatientUser = saveUser(
+                "phase17-patient-c-" + marker + "@example.com",
+                "Bệnh nhân Phase 17 C",
+                Role.PATIENT
+        );
+        Patient thirdPatient = savePatient(thirdPatientUser);
         DentalService service = saveService("Dịch vụ Phase 17 " + marker);
         DoctorService firstMapping = saveMapping(firstDoctor, service);
         DoctorService secondMapping = saveMapping(secondDoctor, service);
 
-        Instant checkedInStart = Instant.parse("2026-10-12T02:00:00Z");
-        Appointment checkedIn = saveAppointment(
+        Instant checkedInStart = Instant.parse("2026-10-12T01:00:00Z");
+        Appointment checkedIn = saveQueueAppointment(
                 patient,
                 firstMapping,
                 checkedInStart,
+                ScheduleSession.MORNING,
+                (short) 1,
+                AppointmentStatus.BOOKED,
+                null,
+                null
+        );
+        Appointment queueTwo = saveQueueAppointment(
+                secondPatient,
+                firstMapping,
+                Instant.parse("2026-10-12T02:30:00Z"),
+                ScheduleSession.MORNING,
+                (short) 2,
                 AppointmentStatus.BOOKED,
                 null,
                 null
@@ -303,17 +380,17 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 null
         );
         Appointment otherDoctor = saveAppointment(
-                patient,
+                thirdPatient,
                 secondMapping,
                 Instant.parse("2026-10-12T03:00:00Z"),
                 AppointmentStatus.BOOKED,
                 null,
                 null
         );
-        Appointment legacyCheckedIn = saveAppointment(
+        Appointment checkedInContinuation = saveAppointment(
                 patient,
                 firstMapping,
-                Instant.parse("2026-10-12T05:00:00Z"),
+                Instant.parse("2026-10-11T01:00:00Z"),
                 AppointmentStatus.CHECKED_IN,
                 CHECKED_IN_AT,
                 null
@@ -324,9 +401,10 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 firstDoctorUser.getEmail(),
                 checkedIn.getId(),
                 checkedInStart,
+                queueTwo.getId(),
                 booked.getId(),
                 otherDoctor.getId(),
-                legacyCheckedIn.getId()
+                checkedInContinuation.getId()
         );
     }
 
@@ -354,6 +432,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
@@ -387,10 +466,63 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setScheduledStartAt(startAt);
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(appointment, startAt);
         appointment.setStatus(status);
         appointment.setCheckedInAt(checkedInAt);
         appointment.setActualStartAt(actualStartAt);
         return appointmentRepository.saveAndFlush(appointment);
+    }
+
+    private Appointment saveQueueAppointment(
+            Patient patient,
+            DoctorService doctorService,
+            Instant startAt,
+            ScheduleSession session,
+            short queueNumber,
+            AppointmentStatus status,
+            Instant checkedInAt,
+            Instant actualStartAt
+    ) {
+        Appointment appointment = new Appointment();
+        appointment.setPatient(patient);
+        appointment.setDoctorService(doctorService);
+        appointment.setScheduledStartAt(startAt);
+        appointment.setAppointmentDate(APPOINTMENT_DATE);
+        appointment.setSession(session);
+        appointment.setQueueNumber(queueNumber);
+        appointment.setStatus(status);
+        appointment.setCheckedInAt(checkedInAt);
+        appointment.setActualStartAt(actualStartAt);
+        return appointmentRepository.saveAndFlush(appointment);
+    }
+
+    private void updateQueueOneStatus(AppointmentStatus status) {
+        jdbcTemplate.update(
+                "update appointments set status = ?::appointment_status_enum where id = ?",
+                status.name(),
+                fixture.checkedInAppointmentId()
+        );
+    }
+
+    private void assertQueueTwoStartsAndKeepsQueueNumber() throws Exception {
+        String token = login(fixture.firstDoctorEmail());
+
+        mockMvc.perform(patch(
+                        "/api/doctor/appointments/{id}/start",
+                        fixture.queueTwoAppointmentId()
+                ).header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
+
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select status::text as status, queue_number, actual_start_at
+                from appointments
+                where id = ?
+                """, fixture.queueTwoAppointmentId());
+        assertThat(row.get("status")).isEqualTo("IN_PROGRESS");
+        assertThat(((Number) row.get("queue_number")).shortValue()).isEqualTo((short) 2);
+        assertThat(((Timestamp) row.get("actual_start_at")).toInstant()).isEqualTo(FIXED_NOW);
+        assertThat(startHistoryCount(fixture.queueTwoAppointmentId())).isEqualTo(1);
     }
 
     private String login(String email) throws Exception {
@@ -446,9 +578,10 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
             String firstDoctorEmail,
             UUID checkedInAppointmentId,
             Instant checkedInStartAt,
+            UUID queueTwoAppointmentId,
             UUID bookedAppointmentId,
             UUID otherDoctorAppointmentId,
-            UUID legacyCheckedInAppointmentId
+            UUID checkedInContinuationAppointmentId
     ) {
     }
 

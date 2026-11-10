@@ -36,9 +36,12 @@ public class Patient {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
     private User user;
+
+    @Column(name = "full_name", nullable = false, length = 150)
+    private String fullName;
 
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;

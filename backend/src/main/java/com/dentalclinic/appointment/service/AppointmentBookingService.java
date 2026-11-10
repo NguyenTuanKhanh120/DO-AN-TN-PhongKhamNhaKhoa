@@ -19,14 +19,14 @@ import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.schedule.service.SlotService;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
+import com.dentalclinic.user.entity.User;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -35,7 +35,7 @@ import java.util.UUID;
 @Service
 public class AppointmentBookingService {
 
-    private static final List<AppointmentStatus> ACTIVE_FOLLOW_UP_STATUSES = List.of(
+    private static final List<AppointmentStatus> ACTIVE_APPOINTMENT_STATUSES = List.of(
             AppointmentStatus.BOOKED,
             AppointmentStatus.CHECKED_IN,
             AppointmentStatus.IN_PROGRESS
@@ -47,8 +47,8 @@ public class AppointmentBookingService {
     private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final MedicalRecordRepository medicalRecordRepository;
     private final SlotService slotService;
+    private final SchedulingPolicy schedulingPolicy;
     private final ClinicTimeProvider clinicTimeProvider;
-    private final Duration slotDuration;
 
     public AppointmentBookingService(
             PatientRepository patientRepository,
@@ -57,20 +57,17 @@ public class AppointmentBookingService {
             AppointmentHistoryRepository appointmentHistoryRepository,
             MedicalRecordRepository medicalRecordRepository,
             SlotService slotService,
-            ClinicTimeProvider clinicTimeProvider,
-            @Value("${clinic.appointment.slot-duration-minutes:60}") long slotDurationMinutes
+            SchedulingPolicy schedulingPolicy,
+            ClinicTimeProvider clinicTimeProvider
     ) {
-        if (slotDurationMinutes <= 0) {
-            throw new IllegalArgumentException("Cấu hình thời lượng slot không hợp lệ");
-        }
         this.patientRepository = patientRepository;
         this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.medicalRecordRepository = medicalRecordRepository;
         this.slotService = slotService;
+        this.schedulingPolicy = schedulingPolicy;
         this.clinicTimeProvider = clinicTimeProvider;
-        this.slotDuration = Duration.ofMinutes(slotDurationMinutes);
     }
 
     @Transactional
@@ -80,24 +77,42 @@ public class AppointmentBookingService {
     ) {
         Patient patient = patientRepository.findByUserId(authenticatedUserId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy hồ sơ bệnh nhân"));
+        User patientUser = requireLinkedUser(patient);
         Appointment previousAppointment = requireEligiblePreviousAppointment(
                 patient,
                 request.previousAppointmentId()
         );
+        SchedulingPolicy.ScheduledCase scheduledCase = schedulingPolicy.resolveCase(
+                request.appointmentDate(),
+                request.session(),
+                request.queueNumber()
+        );
+        if (appointmentRepository.existsActivePatientSession(
+                patient.getId(),
+                scheduledCase.appointmentDate(),
+                scheduledCase.session(),
+                ACTIVE_APPOINTMENT_STATUSES
+        )) {
+            throw patientSessionConflict();
+        }
         doctorRepository.findForUpdateById(request.doctorId())
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy bác sĩ"));
-        Instant scheduledStartAt = request.scheduledStartAt().toInstant();
-        DoctorService doctorService = slotService.requireAvailableSlot(
+        DoctorService doctorService = slotService.requireAvailableCase(
                 request.doctorId(),
                 request.serviceId(),
-                scheduledStartAt
+                scheduledCase.appointmentDate(),
+                scheduledCase.session(),
+                scheduledCase.queueNumber()
         );
 
         Appointment appointment = new Appointment();
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setPreviousAppointment(previousAppointment);
-        appointment.setScheduledStartAt(scheduledStartAt);
+        appointment.setScheduledStartAt(scheduledCase.estimatedStartAt());
+        appointment.setAppointmentDate(scheduledCase.appointmentDate());
+        appointment.setSession(scheduledCase.session());
+        appointment.setQueueNumber((short) scheduledCase.queueNumber());
         appointment.setStatus(AppointmentStatus.BOOKED);
 
         try {
@@ -116,7 +131,7 @@ public class AppointmentBookingService {
         AppointmentHistory history = new AppointmentHistory();
         history.setAppointment(appointment);
         history.setAction(AppointmentAction.BOOK);
-        history.setChangedBy(patient.getUser());
+        history.setChangedBy(patientUser);
         history.setDetails(bookDetails(appointment));
         appointmentHistoryRepository.saveAndFlush(history);
 
@@ -141,7 +156,10 @@ public class AppointmentBookingService {
         }
         details.put("doctor_id", appointment.getDoctorService().getDoctor().getId().toString());
         details.put("service_id", appointment.getDoctorService().getService().getId().toString());
-        details.put("scheduled_start_at", scheduledAt.toString());
+        details.put("appointment_date", appointment.getAppointmentDate().toString());
+        details.put("session", appointment.getSession().name());
+        details.put("queue_number", appointment.getQueueNumber());
+        details.put("estimated_start_at", scheduledAt.toString());
         return details;
     }
 
@@ -157,8 +175,16 @@ public class AppointmentBookingService {
                 appointment.getPreviousAppointment() == null
                         ? null
                         : appointment.getPreviousAppointment().getId(),
+                appointment.getAppointmentDate(),
+                appointment.getSession(),
+                appointment.getQueueNumber(),
+                schedulingPolicy.sessionStart(appointment.getSession()),
+                schedulingPolicy.sessionEnd(appointment.getSession()),
+                schedulingPolicy.estimatedStartTime(
+                        appointment.getSession(),
+                        appointment.getQueueNumber()
+                ),
                 scheduledStart,
-                scheduledStart.plus(slotDuration),
                 appointment.getStatus(),
                 appointment.getCreatedAt()
         );
@@ -191,7 +217,7 @@ public class AppointmentBookingService {
         }
         if (appointmentRepository.existsActiveFollowUp(
                 previousAppointmentId,
-                ACTIVE_FOLLOW_UP_STATUSES
+                ACTIVE_APPOINTMENT_STATUSES
         )) {
             throw new ConflictException(
                     "Chỉ định tái khám đã có một lịch hẹn đang hoạt động"
@@ -202,7 +228,20 @@ public class AppointmentBookingService {
 
     private ConflictException slotConflict() {
         return new ConflictException(
-                "Khung giờ vừa được người khác đặt. Vui lòng chọn khung giờ khác"
+                "Ca khám vừa được đặt hoặc bạn đã có lịch trong buổi này. Vui lòng tải lại lịch"
         );
+    }
+
+    private ConflictException patientSessionConflict() {
+        return new ConflictException(
+                "Bạn đã có một lịch khám đang hoạt động trong buổi này"
+        );
+    }
+
+    private User requireLinkedUser(Patient patient) {
+        if (patient.getUser() == null) {
+            throw new NotFoundException("Không tìm thấy tài khoản liên kết của bệnh nhân");
+        }
+        return patient.getUser();
     }
 }

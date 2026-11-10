@@ -8,7 +8,6 @@ public record DoctorAssignedServiceResponse(
         String name,
         String description,
         BigDecimal price,
-        long durationMinutes,
         String imageUrl,
         boolean active
 ) {

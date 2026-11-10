@@ -35,10 +35,12 @@ Hệ thống được xây dựng nhằm các mục tiêu sau:
 - Số hóa quy trình từ đăng ký tài khoản, đặt lịch, khám bệnh đến thanh toán.
 - Quản lý tập trung thông tin người dùng, bệnh nhân, bác sĩ, nhân viên và dịch
   vụ nha khoa.
-- Cho phép bệnh nhân chủ động tra cứu bác sĩ, dịch vụ, calendar và slot trống.
-- Sinh slot động từ lịch làm việc tuần và các Appointment đã có, không cần lưu
-  bảng slot cố định.
-- Ngăn hai bệnh nhân đặt cùng một bác sĩ trong cùng một khung giờ.
+- Cho phép bệnh nhân chủ động tra cứu bác sĩ, dịch vụ, calendar và ca khám còn
+  trống.
+- Sinh hai ca cho mỗi buổi làm việc từ lịch tuần và các Appointment đã có,
+  không cần lưu bảng slot cố định.
+- Ngăn hai bệnh nhân đặt cùng một ca của bác sĩ và ngăn một bệnh nhân giữ hai
+  Appointment đang hoạt động trong cùng ngày, cùng buổi.
 - Chuẩn hóa quy trình khám và bảo đảm chỉ bác sĩ phụ trách được thao tác.
 - Lưu trữ bệnh án chính thức, đơn thuốc và chỉ định tái khám an toàn.
 - Ghi nhận dịch vụ thực tế, lập phiếu thanh toán và hỗ trợ Staff thu tiền tại
@@ -58,7 +60,7 @@ Hệ thống được xây dựng nhằm các mục tiêu sau:
 3.1. Khách chưa đăng nhập
 
 Khách có thể xem danh sách và chi tiết bác sĩ, dịch vụ, ảnh minh họa dịch vụ,
-lịch làm việc, calendar tối đa 30 ngày và các slot còn trống. Khách có thể đăng
+lịch làm việc, calendar tối đa 30 ngày và các ca còn trống. Khách có thể đăng
 ký tài khoản Patient hoặc đăng nhập. Khách không thể tạo Appointment khi chưa
 xác thực.
 
@@ -124,7 +126,7 @@ tác dựa trên Refresh Token cookie được bảo vệ bằng CSRF token.
 
 Admin tạo và cập nhật hồ sơ bác sĩ, gồm họ tên, chuyên khoa, số giấy phép, tiểu
 sử, đánh giá, kinh nghiệm và trạng thái làm việc. Bác sĩ không ACTIVE không
-được sinh slot đặt lịch mới.
+được sinh ca đặt lịch mới.
 
 Admin quản lý danh mục dịch vụ gồm tên, mô tả, giá, trạng thái và ảnh minh họa.
 Dịch vụ ngừng hoạt động không được dùng cho lịch đặt mới. Việc phân công dịch
@@ -138,54 +140,63 @@ cùng một transaction. Nếu tạo lịch thất bại thì toàn bộ thao t�
 
 Lịch mặc định áp dụng từ Thứ Hai đến Thứ Bảy:
 
-- MORNING: 08:00-11:00, tương ứng 3 slot 60 phút.
-- AFTERNOON: 13:00-17:00, tương ứng 4 slot 60 phút.
+- MORNING: 08:00-11:00, gồm Ca 1 dự kiến 08:00 và Ca 2 dự kiến 09:30.
+- AFTERNOON: 14:00-17:00, gồm Ca 1 dự kiến 14:00 và Ca 2 dự kiến 15:30.
 - Chủ Nhật không làm việc.
+
+Giờ dự kiến chỉ hướng dẫn thời điểm bệnh nhân nên có mặt, không phải thời lượng
+khám cố định. Thời gian bắt đầu thực tế có thể sớm hoặc muộn hơn tùy ca trước.
 
 Admin được xem, tạo, cập nhật hoặc xóa lịch tuần trong giới hạn trên. Hệ thống
 không cho phép thay đổi làm mất các Appointment tương lai đang hoạt động. Doctor
 chỉ được xem lịch của mình. Hệ thống không còn chức năng quản lý ngày nghỉ riêng
 của bác sĩ, không có lịch override theo ngày và không sử dụng doctor_days_off.
 
-4.4. Calendar và khung giờ còn trống
+4.4. Calendar và ca khám còn trống
 
-Hệ thống không lưu slot thành bảng riêng. Slot 60 phút được sinh động từ lịch
-tuần, trạng thái bác sĩ, trạng thái dịch vụ, phân công Doctor-Service, các lịch
-đã đặt và thời điểm hiện tại. Calendar hỗ trợ khoảng thời gian tối đa 30 ngày
-với các trạng thái:
+Hệ thống không lưu ca khám thành bảng riêng. Mỗi buổi làm việc sinh động hai ca
+từ lịch tuần, trạng thái bác sĩ, trạng thái dịch vụ, phân công Doctor-Service,
+các Appointment đang hoạt động và thời điểm hiện tại. Calendar hỗ trợ khoảng
+thời gian tối đa 30 ngày với các trạng thái:
 
-- AVAILABLE: còn ít nhất một slot hợp lệ.
-- FULL: có lịch làm việc nhưng tất cả slot đã bị Appointment chiếm.
+- AVAILABLE: còn ít nhất một ca hợp lệ.
+- FULL: có lịch làm việc nhưng cả hai ca đã bị Appointment chiếm.
 - NOT_WORKING: không có lịch làm việc tương ứng, bao gồm Chủ Nhật.
-- UNAVAILABLE: có lịch nhưng không còn slot được phép đặt do điều kiện thời
+- UNAVAILABLE: có lịch nhưng không còn ca được phép đặt do điều kiện thời
   gian hoặc quy tắc khác.
 
-Calendar không hiển thị thông tin bệnh nhân đang chiếm slot. Mỗi lịch mới phải
-được đặt trước ít nhất 120 phút.
+Calendar không hiển thị thông tin bệnh nhân đang chiếm ca. Booking, self-cancel
+và self-reschedule cho một ngày chỉ được thực hiện trước 05:00 sáng ngày đó theo
+múi giờ Asia/Ho_Chi_Minh.
 
 4.5. Đặt lịch khám
 
 Quy trình đặt lịch thực hiện theo thứ tự:
 
-    Chọn dịch vụ -> Chọn bác sĩ -> Chọn ngày -> Chọn slot còn trống
+    Chọn dịch vụ -> Chọn bác sĩ -> Chọn ngày -> Chọn buổi -> Chọn Ca 1/Ca 2
 
 Patient gửi yêu cầu đặt lịch; Backend xác định Patient từ JWT và kiểm tra lại
-bác sĩ, dịch vụ, phân công, lịch tuần, thời gian đặt trước và tình trạng slot.
+bác sĩ, dịch vụ, phân công, lịch tuần, cutoff 05:00 và tình trạng ca.
 Appointment hợp lệ được tạo trực tiếp ở trạng thái BOOKED, không qua PENDING
 hoặc CONFIRMED và không cần Doctor/Admin duyệt. Hệ thống ghi AppointmentHistory
 với action BOOK.
 
 Unique partial index, transaction và kiểm tra ở Backend bảo đảm hai bệnh nhân
-không thể đặt cùng một bác sĩ trong cùng một slot. Nếu xảy ra cạnh tranh, chỉ
-một request thành công; request còn lại nhận HTTP 409 Conflict.
+không thể đặt cùng một `doctor + appointment_date + session + queue_number`.
+Một Patient cũng chỉ có tối đa một Appointment đang hoạt động trong cùng
+`appointment_date + session`, kể cả khi đổi bác sĩ hoặc dịch vụ. Nếu xảy ra
+cạnh tranh, chỉ một request thành công; request còn lại nhận HTTP 409 Conflict.
 
 4.6. Hủy và đổi lịch
 
 Patient chỉ được hủy hoặc đổi Appointment thuộc chính mình và đang BOOKED. Cả
-hai thao tác phải được thực hiện trước giờ hẹn cũ ít nhất 90 phút.
+hai thao tác phải được thực hiện trước 05:00 sáng ngày hẹn cũ; ngày đích khi đổi
+lịch cũng phải chưa qua cutoff 05:00.
 
 Khi hủy, Appointment chuyển BOOKED -> CANCELLED và hệ thống lưu lý do, nguồn
-hủy, thời điểm cùng lịch sử CANCEL. Khi đổi lịch, Backend kiểm tra slot mới như
+hủy, thời điểm cùng lịch sử CANCEL. Appointment CANCELLED vẫn được giữ để audit
+nhưng không còn chiếm ca của bác sĩ hoặc quyền đặt lịch trong buổi của Patient.
+Patient có thể đặt lại nếu vẫn trước 05:00. Khi đổi lịch, Backend kiểm tra ca mới như
 khi đặt lịch, cập nhật chính Appointment hiện tại, giữ trạng thái BOOKED và ghi
 lịch sử RESCHEDULE; không tạo Appointment thay thế.
 
@@ -204,6 +215,10 @@ Bác sĩ bắt đầu khám trực tiếp từ BOOKED; hệ thống lưu actual_
 sử START_EXAM. Hệ thống không còn cung cấp thao tác check-in mới. Trạng thái
 CHECKED_IN chỉ được giữ để tương thích dữ liệu lịch sử nếu có. Mỗi bác sĩ chỉ
 được có một ca IN_PROGRESS tại một thời điểm.
+
+Ca 1 chỉ được bắt đầu khi buổi khám đã bắt đầu. Ca 2 chỉ được bắt đầu khi Ca 1
+của cùng bác sĩ, ngày và buổi đã COMPLETED, CANCELLED, NO_SHOW hoặc không tồn
+tại. Hệ thống không tự đổi queue_number của Ca 2 thành Ca 1.
 
 Nếu bệnh nhân không đến, bác sĩ phụ trách chỉ được chuyển Appointment BOOKED
 sang NO_SHOW sau giờ hẹn ít nhất 15 phút. Thao tác được ghi lịch sử NO_SHOW.
@@ -263,10 +278,10 @@ Bác sĩ chỉ ghi chỉ định tái khám trong MedicalRecord bằng followUpR
 recommendedFollowUpDate và followUpNote. Lưu bệnh án không tự động tạo lịch tái
 khám.
 
-Patient xem chỉ định, tự chọn dịch vụ, bác sĩ, ngày và slot rồi đặt Appointment
-mới kèm previousAppointmentId. Backend kiểm tra quyền sở hữu lần khám cũ, trạng
-thái COMPLETED, chỉ định tái khám, slot và chống tạo trùng. Hệ thống không có
-bảng follow_up_appointments riêng.
+Patient xem chỉ định, tự chọn dịch vụ, bác sĩ, ngày, buổi và ca rồi đặt
+Appointment mới kèm previousAppointmentId. Backend kiểm tra quyền sở hữu lần
+khám cũ, trạng thái COMPLETED, chỉ định tái khám, ca, cutoff 05:00 và chống tạo
+trùng. Hệ thống không có bảng follow_up_appointments riêng.
 
 4.12. Tra cứu, audit và báo cáo
 
@@ -314,9 +329,12 @@ Không sử dụng các dữ liệu nghiệp vụ sau:
 - Backend xác định danh tính và ownership từ JWT/SecurityContext, không tin ID
   người dùng do client gửi.
 - Access Token tồn tại 15 phút; Refresh Token được rotation và có thể thu hồi.
-- Mỗi slot có thời lượng cố định 60 phút.
-- Đặt lịch phải trước ít nhất 120 phút.
-- Hủy và đổi lịch phải trước giờ hẹn cũ ít nhất 90 phút.
+- Mỗi buổi có đúng hai ca; `queue_number` chỉ được là 1 hoặc 2.
+- Giờ dự kiến của ca không phải thời lượng khám được bảo đảm; `actual_start_at`
+  và `actual_end_at` phản ánh thời gian khám thực tế.
+- Booking, self-cancel và self-reschedule phải trước 05:00 sáng ngày khám.
+- Mỗi Patient chỉ có một Appointment đang hoạt động trong cùng ngày và buổi.
+- Appointment CANCELLED giải phóng ca và quyền đặt lại nhưng vẫn được giữ để audit.
 - Chỉ bác sĩ phụ trách được bắt đầu, ghi bệnh án và hoàn tất ca khám.
 - NO_SHOW chỉ được xác nhận sau thời gian chờ 15 phút.
 - Mỗi bác sĩ chỉ có một Appointment IN_PROGRESS tại một thời điểm.
@@ -362,7 +380,7 @@ khai trong hệ thống hiện tại. Các bảng chat_sessions, chat_messages v
 vector_store cùng extension pgvector được giữ để chuẩn bị cho giai đoạn sau.
 
 Các thành phần chưa triển khai gồm Spring AI, Google Gemini API, RAG, Embedding
-Model, API hội thoại, tư vấn triệu chứng, gợi ý bác sĩ bằng AI và tìm slot bằng
+Model, API hội thoại, tư vấn triệu chứng, gợi ý bác sĩ bằng AI và tìm ca bằng
 AI. Khi được phát triển, Chatbot có thể hỗ trợ cung cấp thông tin và điều hướng
 người dùng, nhưng không được tự thay đổi Appointment, MedicalRecord hoặc Payment
 nếu chưa có xác nhận và phân quyền phù hợp.

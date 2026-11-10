@@ -68,13 +68,14 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Luồng chính:** Người dùng chọn bác sĩ; hệ thống trả các buổi làm việc theo thứ trong tuần.
 - **Điều kiện:** Bác sĩ phải tồn tại.
 
-### UC08 - Xem khung giờ còn trống
+### UC08 - Xem ca khám còn trống
 
 - **Tác nhân:** Khách hoặc người dùng đã đăng nhập.
-- **Mục đích:** Tìm thời gian có thể đặt lịch.
-- **Luồng chính:** Người dùng chọn dịch vụ và bác sĩ; hệ thống trả lịch khả dụng dạng rolling 30 ngày hoặc sinh slot 60 phút cho một ngày cụ thể.
+- **Mục đích:** Tìm buổi và ca khám có thể đặt lịch.
+- **Luồng chính:** Người dùng chọn dịch vụ và bác sĩ; hệ thống trả calendar rolling tối đa 30 ngày hoặc danh sách ca khả dụng của một ngày cụ thể.
 - **Điều kiện:** Bác sĩ và dịch vụ đang hoạt động; bác sĩ được phân công dịch vụ; ngày được chọn có lịch làm việc.
-- **Quy tắc:** Hệ thống loại slot đã có lịch và slot cách thời điểm hiện tại dưới 120 phút.
+- **Quy tắc:** Mỗi buổi có hai ca. `MORNING` có Ca 1 dự kiến 08:00 và Ca 2 dự kiến 09:30; `AFTERNOON` có Ca 1 dự kiến 14:00 và Ca 2 dự kiến 15:30. Các mốc này là giờ bắt đầu dự kiến, không phải khoảng thời gian khám cố định.
+- **Cutoff:** Booking online của một ngày chỉ được thực hiện trước 05:00 sáng ngày đó theo múi giờ `Asia/Ho_Chi_Minh`.
 - **Trạng thái calendar:** Phân biệt `AVAILABLE`, `FULL`, `NOT_WORKING` và `UNAVAILABLE`; không trả thông tin bệnh nhân đã đặt lịch.
 
 ## B. CHỨC NĂNG BỆNH NHÂN
@@ -99,10 +100,10 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 
 - **Tác nhân:** Bệnh nhân.
 - **Mục đích:** Đặt lịch với bác sĩ và dịch vụ đã chọn.
-- **Luồng chính:** Bệnh nhân chọn bác sĩ, dịch vụ và slot; hệ thống khóa dữ liệu bác sĩ; kiểm tra lại slot; tạo Appointment `BOOKED`; ghi lịch sử `BOOK`.
-- **Điều kiện:** Slot thuộc lịch làm việc và phải được đặt trước ít nhất 120 phút (2 giờ).
-- **Ngoại lệ:** Nếu người khác vừa đặt cùng slot, request thua nhận HTTP 409 Conflict.
-- **Kết quả:** Chỉ một bệnh nhân có thể đặt thành công cùng một slot.
+- **Luồng chính:** Bệnh nhân chọn bác sĩ, dịch vụ, `appointmentDate`, `session` và `queueNumber`; hệ thống khóa dữ liệu bác sĩ; kiểm tra lại ca; tạo Appointment `BOOKED`; ghi lịch sử `BOOK`.
+- **Điều kiện:** Ca thuộc lịch làm việc; ngày khám chưa qua cutoff 05:00; `queueNumber` chỉ được là 1 hoặc 2; Patient chưa có Appointment đang hoạt động trong cùng ngày và buổi.
+- **Ngoại lệ:** Nếu người khác vừa giữ cùng ca của bác sĩ hoặc chính Patient đồng thời đặt một ca khác trong cùng buổi, request thua nhận HTTP 409 Conflict.
+- **Kết quả:** Chỉ một Appointment đang hoạt động được giữ cho mỗi `doctor + appointmentDate + session + queueNumber` và mỗi `patient + appointmentDate + session`.
 
 ### UC12 - Xem lịch hẹn cá nhân
 
@@ -117,17 +118,18 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Tác nhân:** Bệnh nhân.
 - **Mục đích:** Hủy lịch mà bệnh nhân không thể tham gia.
 - **Luồng chính:** Bệnh nhân chọn lịch và nhập lý do; hệ thống khóa Appointment; kiểm tra điều kiện; chuyển `BOOKED` sang `CANCELLED`; ghi lịch sử `CANCEL`.
-- **Điều kiện:** Lịch thuộc bệnh nhân, đang `BOOKED` và còn ít nhất 90 phút trước giờ hẹn.
+- **Điều kiện:** Lịch thuộc bệnh nhân, đang `BOOKED` và thao tác trước 05:00 sáng ngày khám.
 - **Ngoại lệ:** Không thể hủy lịch đang khám, đã hoàn thành, đã hủy hoặc quá thời hạn.
+- **Kết quả:** Appointment cũ được giữ ở trạng thái `CANCELLED` để audit; ca của bác sĩ và quyền đặt một lịch trong buổi của Patient được giải phóng. Patient chỉ được đặt lại online nếu vẫn trước cutoff 05:00.
 
 ### UC14 - Đổi lịch hẹn
 
 - **Tác nhân:** Bệnh nhân.
-- **Mục đích:** Chuyển lịch hiện tại sang slot khác.
-- **Luồng chính:** Bệnh nhân chọn lịch, slot mới và nhập lý do; hệ thống khóa bác sĩ và Appointment; kiểm tra slot; cập nhật chính Appointment; ghi lịch sử `RESCHEDULE`.
-- **Điều kiện:** Lịch đang `BOOKED`; còn ít nhất 90 phút tính từ giờ hẹn cũ; slot mới phải khác slot hiện tại và nằm trong tương lai.
-- **Quy tắc:** Không tạo Appointment mới; không áp dụng quy tắc đặt trước 120 phút cho slot đổi lịch.
-- **Ngoại lệ:** Nếu slot mới bị tranh chấp, lịch cũ vẫn được giữ nguyên.
+- **Mục đích:** Chuyển lịch hiện tại sang ngày, buổi hoặc ca khác.
+- **Luồng chính:** Bệnh nhân chọn lịch, ca mới và nhập lý do; hệ thống khóa bác sĩ và Appointment; kiểm tra ca; cập nhật chính Appointment; ghi lịch sử `RESCHEDULE`.
+- **Điều kiện:** Lịch đang `BOOKED`; thao tác trước 05:00 sáng ngày hẹn cũ; ngày đích cũng chưa qua cutoff; ca mới phải khác ca hiện tại.
+- **Quy tắc:** Không tạo Appointment mới; tiếp tục áp dụng giới hạn một Appointment đang hoạt động cho mỗi Patient trong cùng ngày và buổi.
+- **Ngoại lệ:** Nếu ca mới bị tranh chấp, lịch cũ vẫn được giữ nguyên.
 
 ### UC15 - Xem lịch sử khám bệnh
 
@@ -167,6 +169,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Mục đích:** Bắt đầu quá trình khám và điều trị.
 - **Luồng chính:** Bác sĩ chọn lịch đã đặt; hệ thống khóa bác sĩ và Appointment; chuyển trực tiếp `BOOKED` sang `IN_PROGRESS`; lưu `actual_start_at`; ghi lịch sử `START_EXAM`.
 - **Điều kiện:** Appointment thuộc bác sĩ và đang `BOOKED`.
+- **Thứ tự ca:** Chỉ bắt đầu khám sau giờ bắt đầu của buổi (`08:00` hoặc `14:00`). Ca 2 chỉ được bắt đầu khi Ca 1 của cùng bác sĩ/ngày/buổi đã `COMPLETED`, `CANCELLED`, `NO_SHOW` hoặc không tồn tại; không tự đổi số thứ tự ca trong dữ liệu.
 - **Ngoại lệ:** Một bác sĩ không thể có đồng thời hai ca `IN_PROGRESS`.
 - **Tương thích dữ liệu cũ:** Appointment lịch sử đang `CHECKED_IN` vẫn được phép chuyển sang `IN_PROGRESS`, nhưng hệ thống không còn cung cấp API check-in mới.
 
@@ -221,11 +224,11 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Điều kiện:** Có bệnh án hợp lệ; có ít nhất một dịch vụ thực tế; tổng tiền khớp với các item.
 - **Transaction:** Hoàn thành Appointment, chốt Payment và ghi audit trong cùng giao dịch. Nếu một bước lỗi thì toàn bộ thay đổi được rollback.
 
-### UC27 - Xem slot để tự đặt tái khám
+### UC27 - Xem ca để tự đặt tái khám
 
 - **Tác nhân:** Bệnh nhân.
-- **Mục đích:** Chọn khung giờ phù hợp sau khi bác sĩ đã khuyến nghị tái khám.
-- **Luồng chính:** Bệnh nhân xem hướng dẫn trong bệnh án; chọn dịch vụ, bác sĩ và ngày; sử dụng API slot công khai giống đặt lịch thường.
+- **Mục đích:** Chọn ngày, buổi và ca phù hợp sau khi bác sĩ đã khuyến nghị tái khám.
+- **Luồng chính:** Bệnh nhân xem hướng dẫn trong bệnh án; chọn dịch vụ, bác sĩ và ngày; sử dụng API ca khả dụng giống đặt lịch thường.
 - **Điều kiện:** Lần khám trước đã `COMPLETED` và MedicalRecord có `followUpRequired = true` cùng ngày tái khám đề xuất.
 
 ### UC28 - Bệnh nhân tự đặt lịch tái khám
@@ -233,8 +236,8 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Tác nhân:** Bệnh nhân.
 - **Mục đích:** Chủ động đặt lịch tái khám theo khuyến nghị điều trị.
 - **Luồng chính:** Bệnh nhân gửi yêu cầu đặt lịch bình thường kèm `previousAppointmentId`; hệ thống xác minh quyền sở hữu lần khám cũ, trạng thái hoàn thành và khuyến nghị tái khám; tạo Appointment mới `BOOKED`; liên kết `previous_appointment_id`; ghi lịch sử `BOOK`.
-- **Điều kiện:** Slot còn trống; bác sĩ cung cấp dịch vụ; đáp ứng quy tắc đặt trước 120 phút (2 giờ); chưa có lịch tái khám đang hoạt động cho cùng lần khám cũ.
-- **Ngoại lệ:** Không được dùng Appointment của bệnh nhân khác; hai request cho cùng slot hoặc cùng khuyến nghị tái khám chỉ một request thành công.
+- **Điều kiện:** Ca còn trống; bác sĩ cung cấp dịch vụ; chưa qua cutoff 05:00 của ngày khám; chưa có lịch tái khám đang hoạt động cho cùng lần khám cũ; không vi phạm giới hạn một lịch hoạt động trong mỗi ngày/buổi của Patient.
+- **Ngoại lệ:** Không được dùng Appointment của bệnh nhân khác; hai request cho cùng ca hoặc cùng khuyến nghị tái khám chỉ một request thành công.
 
 ## D. CHỨC NĂNG QUẢN TRỊ VIÊN
 
@@ -259,7 +262,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Mục đích:** Thêm bác sĩ mới vào hệ thống.
 - **Luồng chính:** Admin nhập email, mật khẩu, họ tên, chuyên khoa, giấy phép, tiểu sử và kinh nghiệm; hệ thống tạo User `DOCTOR`, Doctor và 12 DoctorSchedule mặc định trong một transaction.
 - **Điều kiện:** Email và số giấy phép chưa tồn tại; mật khẩu từ 8 đến 72 ký tự; số năm kinh nghiệm không âm.
-- **Kết quả:** Tài khoản và trạng thái làm việc mặc định là `ACTIVE`; lịch gồm Thứ Hai-Thứ Bảy, mỗi ngày `MORNING 08:00-11:00` và `AFTERNOON 13:00-17:00`.
+- **Kết quả:** Tài khoản và trạng thái làm việc mặc định là `ACTIVE`; lịch gồm Thứ Hai-Thứ Bảy, mỗi ngày `MORNING 08:00-11:00` và `AFTERNOON 14:00-17:00`.
 - **Transaction:** Nếu bất kỳ DoctorSchedule nào không lưu được thì User, Doctor và toàn bộ lịch đều rollback.
 
 ### UC32 - Cập nhật hồ sơ bác sĩ
@@ -274,7 +277,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Tác nhân:** Admin.
 - **Mục đích:** Cho phép hoặc ngừng nhận lịch đối với bác sĩ.
 - **Luồng chính:** Admin chọn trạng thái làm việc; hệ thống cập nhật `Doctor.workingStatus`.
-- **Ảnh hưởng:** Bác sĩ không ở trạng thái `ACTIVE` sẽ không sinh slot mới và không thể được đặt lịch.
+- **Ảnh hưởng:** Bác sĩ không ở trạng thái `ACTIVE` sẽ không sinh ca khả dụng mới và không thể được đặt lịch.
 - **Lưu ý:** Trạng thái làm việc của Doctor khác với trạng thái tài khoản User.
 
 ### UC34 - Quản lý lịch làm việc tuần của bác sĩ
@@ -282,7 +285,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Tác nhân:** Admin.
 - **Mục đích:** Xem và điều chỉnh lịch tuần đã được hệ thống tự tạo cho bác sĩ.
 - **Luồng chính:** Admin chọn bác sĩ; xem, tạo lại buổi đã xóa, cập nhật hoặc xóa lịch tuần của bác sĩ đó.
-- **Điều kiện:** Chỉ Thứ Hai-Thứ Bảy; `MORNING` nằm trong `08:00-11:00`; `AFTERNOON` nằm trong `13:00-17:00`; thời gian khớp ranh giới slot 60 phút.
+- **Điều kiện:** Chỉ Thứ Hai-Thứ Bảy; `MORNING` phải đúng `08:00-11:00`; `AFTERNOON` phải đúng `14:00-17:00`. Mỗi buổi có đúng hai ca theo Scheduling Policy tập trung.
 - **Ngoại lệ:** Không được có hai lịch trùng cùng thứ và cùng buổi; lịch phải thuộc đúng bác sĩ; không được sửa/xóa nếu làm mất Appointment tương lai đang hoạt động.
 - **Mô hình lịch:** Khả năng đặt lịch chỉ dựa trên lịch tuần, Appointment hiện có và trạng thái hoạt động của bác sĩ/dịch vụ; không có ngoại lệ lịch riêng theo ngày.
 - **Bảo mật:** Chỉ Admin được tạo, cập nhật và xóa lịch tuần; bác sĩ chỉ được xem lịch của mình.
@@ -307,7 +310,7 @@ Lưu ý: hệ thống không sử dụng `username`. Người dùng đăng ký v
 - **Tác nhân:** Admin.
 - **Mục đích:** Tạm ngừng hoặc kích hoạt dịch vụ.
 - **Luồng chính:** Admin cập nhật `is_active` của dịch vụ.
-- **Ảnh hưởng:** Dịch vụ ngừng hoạt động không được dùng cho slot hoặc lịch đặt mới.
+- **Ảnh hưởng:** Dịch vụ ngừng hoạt động không được dùng cho ca khả dụng hoặc lịch đặt mới.
 - **Quy tắc:** Không hard delete dịch vụ đã được sử dụng.
 
 ### UC38 - Phân công dịch vụ cho bác sĩ

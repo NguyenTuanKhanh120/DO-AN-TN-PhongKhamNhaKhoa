@@ -6,21 +6,29 @@ import com.dentalclinic.ai.slot.model.ChatSlotLookupResult;
 import com.dentalclinic.ai.slot.model.ChatSlotSuggestion;
 import com.dentalclinic.ai.slot.model.DoctorSlotAvailability;
 import com.dentalclinic.ai.slot.model.SlotLookupTarget;
+import com.dentalclinic.schedule.dto.CalendarSlotResponse;
 import com.dentalclinic.schedule.dto.DoctorCalendarResponse;
 import com.dentalclinic.schedule.dto.DoctorCalendarSessionResponse;
 import com.dentalclinic.schedule.entity.ScheduleSession;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.dentalclinic.schedule.service.SlotService;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
 public class AiSlotLookupService {
 
     private final SlotService slotService;
+    private final SchedulingPolicy schedulingPolicy;
 
-    public AiSlotLookupService(SlotService slotService) {
+    public AiSlotLookupService(
+            SlotService slotService,
+            SchedulingPolicy schedulingPolicy
+    ) {
         this.slotService = slotService;
+        this.schedulingPolicy = schedulingPolicy;
     }
 
     public ChatSlotLookupResult lookup(ChatSlotLookupRequest request) {
@@ -58,19 +66,36 @@ public class AiSlotLookupService {
                                 request.sessionPreference()
                         ))
                         .flatMap(session -> session.availableSlots().stream()
-                                .map(slot -> new ChatSlotSuggestion(
-                                        target.doctorId(),
-                                        target.serviceId(),
+                                .map(availableCase -> toSuggestion(
+                                        target,
                                         day.date(),
-                                        toChatPreference(session.session()),
-                                        slot.startAt(),
-                                        slot.endAt()
+                                        session.session(),
+                                        availableCase
                                 ))))
                 .toList();
         return new DoctorSlotAvailability(
                 target.doctorId(),
                 target.serviceId(),
                 slots
+        );
+    }
+
+    private ChatSlotSuggestion toSuggestion(
+            SlotLookupTarget target,
+            LocalDate date,
+            ScheduleSession session,
+            CalendarSlotResponse availableCase
+    ) {
+        return new ChatSlotSuggestion(
+                target.doctorId(),
+                target.serviceId(),
+                date,
+                toChatPreference(session),
+                availableCase.queueNumber(),
+                schedulingPolicy.sessionStart(session),
+                schedulingPolicy.sessionEnd(session),
+                availableCase.estimatedStartTime(),
+                availableCase.startAt()
         );
     }
 

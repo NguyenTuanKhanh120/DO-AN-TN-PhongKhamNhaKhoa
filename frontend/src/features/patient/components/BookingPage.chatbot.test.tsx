@@ -6,6 +6,7 @@ import BookingPage from "./BookingPage";
 
 const publicMocks = vi.hoisted(() => ({
   refetch: vi.fn(),
+  bookAppointment: vi.fn().mockResolvedValue({ id: "appointment-1" }),
 }));
 
 vi.mock("@/contexts/ToastContext", () => ({
@@ -30,7 +31,15 @@ vi.mock("@/features/public/hooks/usePublicData", () => ({
     refetch: publicMocks.refetch,
   }),
   useAvailableSlots: (_doctorId?: string, _serviceId?: string, date?: string) => ({
-    data: date ? [{ startAt: "2026-11-02T08:00:00+07:00" }] : [],
+    data: date ? [{
+      date: "2026-11-02",
+      session: "MORNING",
+      queueNumber: 1,
+      sessionStartTime: "08:00:00",
+      sessionEndTime: "11:00:00",
+      estimatedStartTime: "08:00:00",
+      estimatedStartAt: "2026-11-02T08:00:00+07:00",
+    }] : [],
     isLoading: false,
     isSuccess: Boolean(date),
     error: null,
@@ -39,14 +48,15 @@ vi.mock("@/features/public/hooks/usePublicData", () => ({
 }));
 
 vi.mock("../hooks/usePatientData", () => ({
-  useBookAppointment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useBookAppointment: () => ({ mutateAsync: publicMocks.bookAppointment, isPending: false }),
+  usePatientAppointments: () => ({ data: { content: [] }, refetch: vi.fn() }),
 }));
 
 function Harness() {
   return (
     <>
-      <Link to="/patient/book-appointment?serviceId=service-1&doctorId=doctor-1&date=2026-11-02&scheduledStartAt=2026-11-02T08%3A00%3A00%2B07%3A00">
-        Áp dụng slot chatbot
+      <Link to="/patient/book-appointment?serviceId=service-1&doctorId=doctor-1&date=2026-11-02&session=MORNING&queueNumber=1">
+        Áp dụng ca chatbot
       </Link>
       <BookingPage />
     </>
@@ -54,7 +64,10 @@ function Harness() {
 }
 
 describe("BookingPage chatbot prefill", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
 
   it("đồng bộ query mới và chỉ chọn slot có trong dữ liệu khả dụng", async () => {
     const user = userEvent.setup();
@@ -66,10 +79,22 @@ describe("BookingPage chatbot prefill", () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByRole("link", { name: "Áp dụng slot chatbot" }));
+    await user.click(screen.getByRole("link", { name: "Áp dụng ca chatbot" }));
 
     expect(await screen.findByText("5. Xác nhận lịch khám")).toBeInTheDocument();
     expect(screen.getAllByText("Khám tổng quát")).toHaveLength(2);
     expect(screen.getAllByText("Bác sĩ An")).toHaveLength(2);
+    expect(screen.getByText("Ca 1 · dự kiến 08:00")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Xác nhận đặt lịch" }));
+
+    expect(publicMocks.bookAppointment).toHaveBeenCalledWith({
+      serviceId: "service-1",
+      doctorId: "doctor-1",
+      appointmentDate: "2026-11-02",
+      session: "MORNING",
+      queueNumber: 1,
+      previousAppointmentId: null,
+    });
   });
 });

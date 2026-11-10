@@ -7,7 +7,9 @@ import com.dentalclinic.auth.security.JwtTokenProvider;
 import com.dentalclinic.auth.security.RestSecurityExceptionHandler;
 import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.auth.service.AuthSessionService;
+import com.dentalclinic.ai.conversation.model.ChatSessionPreference;
 import com.dentalclinic.ai.conversation.model.ChatIntent;
+import com.dentalclinic.ai.slot.model.ChatSlotSuggestion;
 import com.dentalclinic.chat.controller.ChatController;
 import com.dentalclinic.chat.dto.ChatMessageResponse;
 import com.dentalclinic.chat.dto.ChatSessionResponse;
@@ -40,6 +42,9 @@ import reactor.core.publisher.Flux;
 
 import javax.crypto.SecretKey;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -151,6 +156,17 @@ class ChatControllerSecurityTest {
     void shouldAllowPatientToSendMessage() throws Exception {
         UserPrincipal principal = patientPrincipal();
         SendChatMessageRequest request = new SendChatMessageRequest("Tôi bị đau răng");
+        ChatSlotSuggestion appointmentCase = new ChatSlotSuggestion(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                LocalDate.of(2026, 11, 10),
+                ChatSessionPreference.MORNING,
+                2,
+                LocalTime.of(8, 0),
+                LocalTime.of(11, 0),
+                LocalTime.of(9, 30),
+                OffsetDateTime.parse("2026-11-10T09:30:00+07:00")
+        );
         SendChatMessageResponse response = new SendChatMessageResponse(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
@@ -159,7 +175,7 @@ class ChatControllerSecurityTest {
                 List.of(),
                 List.of(),
                 List.of(),
-                List.of(),
+                List.of(appointmentCase),
                 false,
                 NOW
         );
@@ -176,6 +192,15 @@ class ChatControllerSecurityTest {
                 .andExpect(jsonPath("$.data.suggestedServices").isArray())
                 .andExpect(jsonPath("$.data.suggestedDoctors").isArray())
                 .andExpect(jsonPath("$.data.suggestedSlots").isArray())
+                .andExpect(jsonPath("$.data.suggestedSlots[0].session").value("MORNING"))
+                .andExpect(jsonPath("$.data.suggestedSlots[0].queueNumber").value(2))
+                .andExpect(jsonPath("$.data.suggestedSlots[0].sessionStartTime").value("08:00:00"))
+                .andExpect(jsonPath("$.data.suggestedSlots[0].sessionEndTime").value("11:00:00"))
+                .andExpect(jsonPath("$.data.suggestedSlots[0].estimatedStartTime").value("09:30:00"))
+                .andExpect(jsonPath("$.data.suggestedSlots[0].estimatedStartAt")
+                        .value("2026-11-10T09:30:00+07:00"))
+                .andExpect(jsonPath("$.data.suggestedSlots[0].startAt").doesNotExist())
+                .andExpect(jsonPath("$.data.suggestedSlots[0].endAt").doesNotExist())
                 .andExpect(jsonPath("$.data.needsClarification").value(false));
 
         verify(chatService).sendMessage(principal.getId(), request);

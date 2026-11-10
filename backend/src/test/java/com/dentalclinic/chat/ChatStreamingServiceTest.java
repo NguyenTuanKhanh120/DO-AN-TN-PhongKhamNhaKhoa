@@ -4,12 +4,15 @@ import com.dentalclinic.ai.conversation.model.ChatContextResolution;
 import com.dentalclinic.ai.conversation.model.ChatFollowUpType;
 import com.dentalclinic.ai.conversation.model.ChatIntent;
 import com.dentalclinic.ai.conversation.model.ChatSemanticContext;
+import com.dentalclinic.ai.conversation.model.ChatSessionPreference;
 import com.dentalclinic.ai.gateway.AiStreamingChatGateway;
 import com.dentalclinic.ai.orchestration.model.ChatGroundingResult;
 import com.dentalclinic.ai.orchestration.model.ChatPrompt;
 import com.dentalclinic.ai.orchestration.service.ChatResponseValidator;
+import com.dentalclinic.ai.slot.model.ChatSlotSuggestion;
 import com.dentalclinic.chat.dto.ChatMessageResponse;
 import com.dentalclinic.chat.dto.ChatStreamErrorEvent;
+import com.dentalclinic.chat.dto.ChatStreamMetadataEvent;
 import com.dentalclinic.chat.dto.SendChatMessageRequest;
 import com.dentalclinic.chat.dto.SendChatMessageResponse;
 import com.dentalclinic.chat.entity.ChatSender;
@@ -25,6 +28,9 @@ import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -48,7 +54,12 @@ class ChatStreamingServiceTest {
     @Test
     void shouldStreamStartedTokensMetadataAndCompletedInOrder() {
         PreparedChatTurn prepared = generatedTurn();
-        SendChatMessageResponse completed = completedResponse(prepared, "Xin chào");
+        ChatSlotSuggestion appointmentCase = appointmentCase();
+        SendChatMessageResponse completed = completedResponse(
+                prepared,
+                "Xin chào",
+                List.of(appointmentCase)
+        );
         when(orchestrator.prepareTurn(userId, request)).thenReturn(prepared);
         when(gateway.stream("system", "user")).thenReturn(Flux.just("Xin ", "chào"));
         when(orchestrator.completeTurn(prepared, "Xin chào")).thenReturn(completed);
@@ -60,6 +71,10 @@ class ChatStreamingServiceTest {
 
         assertThat(eventNames(events))
                 .containsExactly("started", "token", "token", "metadata", "completed");
+        assertThat(events.get(3).data())
+                .isInstanceOfSatisfying(ChatStreamMetadataEvent.class, metadata ->
+                        assertThat(metadata.suggestedSlots()).containsExactly(appointmentCase)
+                );
         verify(orchestrator).completeTurn(prepared, "Xin chào");
     }
 
@@ -253,6 +268,14 @@ class ChatStreamingServiceTest {
     }
 
     private SendChatMessageResponse completedResponse(PreparedChatTurn prepared, String answer) {
+        return completedResponse(prepared, answer, List.of());
+    }
+
+    private SendChatMessageResponse completedResponse(
+            PreparedChatTurn prepared,
+            String answer,
+            List<ChatSlotSuggestion> suggestedCases
+    ) {
         return new SendChatMessageResponse(
                 prepared.turn().userMessage().id(),
                 UUID.randomUUID(),
@@ -261,9 +284,23 @@ class ChatStreamingServiceTest {
                 List.of(),
                 List.of(),
                 List.of(),
-                List.of(),
+                suggestedCases,
                 false,
                 NOW
+        );
+    }
+
+    private ChatSlotSuggestion appointmentCase() {
+        return new ChatSlotSuggestion(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                LocalDate.of(2026, 11, 10),
+                ChatSessionPreference.AFTERNOON,
+                1,
+                LocalTime.of(14, 0),
+                LocalTime.of(17, 0),
+                LocalTime.of(14, 0),
+                OffsetDateTime.parse("2026-11-10T14:00:00+07:00")
         );
     }
 

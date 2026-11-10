@@ -2,6 +2,7 @@ package com.dentalclinic.schedule;
 
 import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.AppointmentQueueFixtureSupport;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.common.exception.ConflictException;
 import com.dentalclinic.doctor.entity.Doctor;
@@ -90,7 +91,6 @@ class DoctorScheduleAppointmentConflictPostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "doctor-schedule-conflict-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
     }
 
     @Test
@@ -104,25 +104,30 @@ class DoctorScheduleAppointmentConflictPostgreSqlIntegrationTest {
         User patientUser = saveUser("schedule-patient-" + marker + "@example.com", Role.PATIENT);
         Patient patient = new Patient();
         patient.setUser(patientUser);
+        patient.setFullName(patientUser.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         patient = patientRepository.saveAndFlush(patient);
         Appointment appointment = new Appointment();
         appointment.setPatient(patient);
         appointment.setDoctorService(mapping);
         appointment.setScheduledStartAt(FUTURE_MONDAY.atTime(8, 0).atZone(CLINIC_ZONE).toInstant());
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(
+                appointment,
+                appointment.getScheduledStartAt()
+        );
         appointment.setStatus(AppointmentStatus.BOOKED);
         appointmentRepository.saveAndFlush(appointment);
 
-        DoctorScheduleRequest shortened = new DoctorScheduleRequest(
-                1,
+        DoctorScheduleRequest movedToTuesday = new DoctorScheduleRequest(
+                2,
                 ScheduleSession.MORNING,
-                LocalTime.of(9, 0),
+                LocalTime.of(8, 0),
                 LocalTime.of(11, 0)
         );
         assertThatThrownBy(() -> doctorScheduleService.updateSchedule(
                 doctor.getId(),
                 schedule.getId(),
-                shortened
+                movedToTuesday
         )).isInstanceOf(ConflictException.class)
                 .hasMessageContaining("1 lịch hẹn tương lai");
 

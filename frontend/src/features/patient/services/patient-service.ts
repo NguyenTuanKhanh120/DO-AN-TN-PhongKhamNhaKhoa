@@ -1,5 +1,5 @@
 import type { ApiResponse, PageResponse, SearchPageParams } from "@/types/api";
-import type { Appointment, AppointmentStatus, BookAppointmentResult, Gender, PatientMedicalRecord, PatientProfile, Payment } from "@/types/domain";
+import type { Appointment, AppointmentStatus, BookAppointmentResult, Gender, PatientMedicalRecord, PatientProfile, Payment, ScheduleSession } from "@/types/domain";
 import { apiClient, unwrap } from "@/services/api/client";
 import { compactParams } from "@/utils/query";
 
@@ -14,8 +14,17 @@ export interface AppointmentListParams extends SearchPageParams {
 export interface BookAppointmentPayload {
   doctorId: string;
   serviceId: string;
-  scheduledStartAt: string;
+  appointmentDate: string;
+  session: ScheduleSession;
+  queueNumber: number;
   previousAppointmentId: string | null;
+}
+
+export interface RescheduleAppointmentPayload {
+  appointmentDate: string;
+  session: ScheduleSession;
+  queueNumber: number;
+  reason: string;
 }
 
 export interface UpdateProfilePayload {
@@ -57,8 +66,8 @@ export const cancelAppointment = async (id: string, reason: string): Promise<voi
   await apiClient.patch<ApiResponse<unknown>>(`/api/patient/appointments/${id}/cancel`, { reason });
 };
 
-export const rescheduleAppointment = async (id: string, scheduledStartAt: string, reason: string): Promise<void> => {
-  await apiClient.patch<ApiResponse<unknown>>(`/api/patient/appointments/${id}/reschedule`, { scheduledStartAt, reason });
+export const rescheduleAppointment = async (id: string, payload: RescheduleAppointmentPayload): Promise<void> => {
+  await apiClient.patch<ApiResponse<unknown>>(`/api/patient/appointments/${id}/reschedule`, payload);
 };
 
 export const getMedicalRecords = async (page = 0, size = 20): Promise<PageResponse<PatientMedicalRecord>> => {

@@ -11,15 +11,21 @@ import com.dentalclinic.schedule.dto.DoctorCalendarDayResponse;
 import com.dentalclinic.schedule.dto.DoctorCalendarResponse;
 import com.dentalclinic.schedule.dto.DoctorCalendarSessionResponse;
 import com.dentalclinic.schedule.entity.ScheduleSession;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.dentalclinic.schedule.service.SlotService;
+import com.dentalclinic.common.util.ClinicTimeProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,7 +47,11 @@ class AiSlotLookupServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiSlotLookupService(slotService);
+        ClinicTimeProvider timeProvider = new ClinicTimeProvider(Clock.fixed(
+                Instant.parse("2026-11-01T00:00:00Z"),
+                ZoneId.of("Asia/Ho_Chi_Minh")
+        ));
+        service = new AiSlotLookupService(slotService, new SchedulingPolicy(timeProvider));
     }
 
     @Test
@@ -64,8 +74,10 @@ class AiSlotLookupServiceTest {
         assertThat(result.availability()).singleElement().satisfies(availability -> {
             assertThat(availability.doctorId()).isEqualTo(doctorId);
             assertThat(availability.serviceId()).isEqualTo(serviceId);
-            assertThat(availability.slots()).extracting(slot -> slot.startAt().getHour())
-                    .containsExactly(13, 14);
+            assertThat(availability.slots()).extracting(slot -> slot.queueNumber())
+                    .containsExactly(1, 2);
+            assertThat(availability.slots()).extracting(slot -> slot.estimatedStartTime())
+                    .containsExactly(LocalTime.of(14, 0), LocalTime.of(15, 30));
             assertThat(availability.slots()).allSatisfy(slot ->
                     assertThat(slot.session()).isEqualTo(ChatSessionPreference.AFTERNOON)
             );
@@ -93,10 +105,11 @@ class AiSlotLookupServiceTest {
 
         assertThat(result.availability()).singleElement().satisfies(availability -> {
             assertThat(availability.serviceId()).isNull();
-            assertThat(availability.slots()).singleElement().satisfies(slot -> {
+            assertThat(availability.slots()).hasSize(2).first().satisfies(slot -> {
                 assertThat(slot.serviceId()).isNull();
                 assertThat(slot.session()).isEqualTo(ChatSessionPreference.MORNING);
-                assertThat(slot.startAt().getHour()).isEqualTo(8);
+                assertThat(slot.queueNumber()).isEqualTo(1);
+                assertThat(slot.estimatedStartTime()).isEqualTo(LocalTime.of(8, 0));
             });
         });
         verify(slotService).getDoctorCalendar(doctorId, MONDAY, MONDAY);
@@ -124,7 +137,7 @@ class AiSlotLookupServiceTest {
         assertThat(result.availability()).extracting(availability -> availability.doctorId())
                 .containsExactly(firstDoctorId, secondDoctorId);
         assertThat(result.availability()).allSatisfy(availability ->
-                assertThat(availability.slots()).hasSize(3)
+                assertThat(availability.slots()).hasSize(4)
         );
         verify(slotService).getCalendar(firstDoctorId, serviceId, MONDAY, MONDAY.plusDays(1));
         verify(slotService).getCalendar(secondDoctorId, serviceId, MONDAY, MONDAY.plusDays(1));
@@ -193,8 +206,8 @@ class AiSlotLookupServiceTest {
                         date.getDayOfWeek().getValue(),
                         CalendarAvailabilityStatus.AVAILABLE,
                         List.of(
-                                session(ScheduleSession.MORNING, date, 8),
-                                session(ScheduleSession.AFTERNOON, date, 13, 14)
+                                session(ScheduleSession.MORNING, date),
+                                session(ScheduleSession.AFTERNOON, date)
                         )
                 ))
         );
@@ -202,14 +215,28 @@ class AiSlotLookupServiceTest {
 
     private DoctorCalendarSessionResponse session(
             ScheduleSession session,
-            LocalDate date,
-            int... hours
+            LocalDate date
     ) {
-        List<CalendarSlotResponse> slots = java.util.Arrays.stream(hours)
-                .mapToObj(hour -> new CalendarSlotResponse(
-                        OffsetDateTime.parse(date + "T" + "%02d:00:00+07:00".formatted(hour)),
-                        OffsetDateTime.parse(date + "T" + "%02d:00:00+07:00".formatted(hour + 1))
-                ))
+        LocalTime sessionEnd = session == ScheduleSession.MORNING
+                ? LocalTime.of(11, 0)
+                : LocalTime.of(17, 0);
+        List<CalendarSlotResponse> slots = java.util.stream.IntStream.rangeClosed(1, 2)
+                .mapToObj(queueNumber -> {
+                    LocalTime estimatedStartTime = switch (session) {
+                        case MORNING -> queueNumber == 1
+                                ? LocalTime.of(8, 0)
+                                : LocalTime.of(9, 30);
+                        case AFTERNOON -> queueNumber == 1
+                                ? LocalTime.of(14, 0)
+                                : LocalTime.of(15, 30);
+                    };
+                    return new CalendarSlotResponse(
+                            queueNumber,
+                            estimatedStartTime,
+                            OffsetDateTime.parse(date + "T" + estimatedStartTime + ":00+07:00"),
+                            OffsetDateTime.parse(date + "T" + sessionEnd + ":00+07:00")
+                    );
+                })
                 .toList();
         return new DoctorCalendarSessionResponse(
                 session,

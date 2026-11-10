@@ -18,6 +18,7 @@ import com.dentalclinic.medicalrecord.repository.MedicalRecordRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.payment.entity.Payment;
 import com.dentalclinic.payment.entity.PaymentItemSnapshot;
 import com.dentalclinic.payment.entity.PaymentStatus;
@@ -122,6 +123,11 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
         );
 
         assertThat(response.status()).isEqualTo(AppointmentStatus.COMPLETED);
+        assertThat(response.appointmentDate()).isEqualTo(LocalDate.of(2026, 10, 12));
+        assertThat(response.session()).isEqualTo(ScheduleSession.MORNING);
+        assertThat(response.queueNumber()).isEqualTo(2);
+        assertThat(response.estimatedStartAt().toString())
+                .isEqualTo("2026-10-12T09:30+07:00");
         assertThat(response.actualStartAt().toString())
                 .isEqualTo("2026-10-12T09:15+07:00");
         assertThat(response.actualEndAt().toString())
@@ -143,6 +149,10 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
                        changed_by,
                        details ->> 'old_status' as old_status,
                        details ->> 'new_status' as new_status,
+                       details ->> 'appointment_date' as appointment_date,
+                       details ->> 'session' as session,
+                       details ->> 'queue_number' as queue_number,
+                       details ->> 'estimated_start_at' as estimated_start_at,
                        details ->> 'actual_start_at' as actual_start_at,
                        details ->> 'actual_end_at' as actual_end_at,
                        details ->> 'medical_record_id' as medical_record_id,
@@ -156,6 +166,11 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
         assertThat(historyRow.get("changed_by")).isEqualTo(fixture.doctorUserId());
         assertThat(historyRow.get("old_status")).isEqualTo("IN_PROGRESS");
         assertThat(historyRow.get("new_status")).isEqualTo("COMPLETED");
+        assertThat(historyRow.get("appointment_date")).isEqualTo("2026-10-12");
+        assertThat(historyRow.get("session")).isEqualTo("MORNING");
+        assertThat(historyRow.get("queue_number")).isEqualTo("2");
+        assertThat(historyRow.get("estimated_start_at"))
+                .isEqualTo("2026-10-12T09:30+07:00");
         assertThat(historyRow.get("actual_start_at"))
                 .isEqualTo("2026-10-12T09:15+07:00");
         assertThat(historyRow.get("actual_end_at"))
@@ -253,7 +268,10 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
         Appointment appointment = new Appointment();
         appointment.setPatient(patient);
         appointment.setDoctorService(mapping);
-        appointment.setScheduledStartAt(Instant.parse("2026-10-12T02:00:00Z"));
+        appointment.setScheduledStartAt(Instant.parse("2026-10-12T02:30:00Z"));
+        appointment.setAppointmentDate(LocalDate.of(2026, 10, 12));
+        appointment.setSession(ScheduleSession.MORNING);
+        appointment.setQueueNumber((short) 2);
         appointment.setStatus(AppointmentStatus.IN_PROGRESS);
         appointment.setCheckedInAt(Instant.parse("2026-10-12T01:55:00Z"));
         appointment.setActualStartAt(ACTUAL_START_AT);
@@ -317,6 +335,7 @@ class AppointmentCompleteExaminationPostgreSqlIntegrationTest {
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }

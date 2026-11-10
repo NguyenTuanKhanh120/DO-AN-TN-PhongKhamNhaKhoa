@@ -17,9 +17,10 @@ import com.dentalclinic.doctor.entity.DoctorService;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.schedule.entity.ScheduleSession;
+import com.dentalclinic.schedule.service.SchedulingPolicy;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Predicate;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -27,11 +28,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.DateTimeException;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.Locale;
 import java.util.List;
@@ -51,6 +49,9 @@ public class AppointmentQueryService {
     );
     private static final Set<String> STAFF_SORT_FIELDS = Set.of(
             "scheduledStartAt",
+            "appointmentDate",
+            "session",
+            "queueNumber",
             "status",
             "createdAt",
             "updatedAt"
@@ -61,7 +62,7 @@ public class AppointmentQueryService {
     private final PatientRepository patientRepository;
     private final DoctorRepository doctorRepository;
     private final ClinicTimeProvider clinicTimeProvider;
-    private final Duration slotDuration;
+    private final SchedulingPolicy schedulingPolicy;
 
     public AppointmentQueryService(
             AppointmentRepository appointmentRepository,
@@ -69,17 +70,14 @@ public class AppointmentQueryService {
             PatientRepository patientRepository,
             DoctorRepository doctorRepository,
             ClinicTimeProvider clinicTimeProvider,
-            @Value("${clinic.appointment.slot-duration-minutes:60}") long slotDurationMinutes
+            SchedulingPolicy schedulingPolicy
     ) {
-        if (slotDurationMinutes <= 0) {
-            throw new IllegalArgumentException("Cấu hình thời lượng slot không hợp lệ");
-        }
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.patientRepository = patientRepository;
         this.doctorRepository = doctorRepository;
         this.clinicTimeProvider = clinicTimeProvider;
-        this.slotDuration = Duration.ofMinutes(slotDurationMinutes);
+        this.schedulingPolicy = schedulingPolicy;
     }
 
     @Transactional(readOnly = true)
@@ -172,7 +170,12 @@ public class AppointmentQueryService {
                 today,
                 page,
                 size,
-                Sort.by(Sort.Order.asc("scheduledStartAt"), Sort.Order.asc("id"))
+                Sort.by(
+                        Sort.Order.asc("appointmentDate"),
+                        Sort.Order.asc("session"),
+                        Sort.Order.asc("queueNumber"),
+                        Sort.Order.asc("id")
+                )
         );
     }
 
@@ -217,10 +220,7 @@ public class AppointmentQueryService {
     ) {
         String resolvedSortBy = normalizeStaffSortField(sortBy);
         Sort.Direction resolvedDirection = direction == null ? Sort.Direction.ASC : direction;
-        Sort sort = Sort.by(
-                new Sort.Order(resolvedDirection, resolvedSortBy),
-                Sort.Order.asc("id")
-        );
+        Sort sort = staffSort(resolvedSortBy, resolvedDirection);
         return queryAppointments(
                 search,
                 status,
@@ -291,7 +291,7 @@ public class AppointmentQueryService {
             String pattern = "%" + escapeLikePattern(normalizedSearch) + "%";
             specification = specification.and((root, query, criteriaBuilder) -> {
                 Expression<String> patientName = criteriaBuilder.lower(
-                        root.get("patient").get("user").get("fullName")
+                        root.get("patient").get("fullName")
                 );
                 Expression<String> patientPhone = criteriaBuilder.lower(
                         root.get("patient").get("phone")
@@ -353,17 +353,15 @@ public class AppointmentQueryService {
                     ));
         }
         if (fromDate != null) {
-            Instant rangeStart = clinicTimeProvider.toInstant(fromDate, LocalTime.MIDNIGHT);
             specification = specification.and((root, query, criteriaBuilder) ->
                     criteriaBuilder.greaterThanOrEqualTo(
-                            root.get("scheduledStartAt"),
-                            rangeStart
+                            root.get("appointmentDate"),
+                            fromDate
                     ));
         }
         if (toDate != null) {
-            Instant rangeEnd = startOfNextDay(toDate);
             specification = specification.and((root, query, criteriaBuilder) ->
-                    criteriaBuilder.lessThan(root.get("scheduledStartAt"), rangeEnd));
+                    criteriaBuilder.lessThanOrEqualTo(root.get("appointmentDate"), toDate));
         }
         return specification;
     }
@@ -380,11 +378,11 @@ public class AppointmentQueryService {
         Patient patient = appointment.getPatient();
         DoctorService doctorService = appointment.getDoctorService();
         Doctor doctor = doctorService.getDoctor();
-        OffsetDateTime scheduledStart = toClinicOffset(appointment.getScheduledStartAt());
+        OffsetDateTime estimatedStartAt = toClinicOffset(appointment.getScheduledStartAt());
         return new AppointmentResponse(
                 appointment.getId(),
                 patient.getId(),
-                patient.getUser().getFullName(),
+                patient.getFullName(),
                 patient.getPhone(),
                 doctor.getId(),
                 doctor.getUser().getFullName(),
@@ -394,8 +392,16 @@ public class AppointmentQueryService {
                 appointment.getPreviousAppointment() == null
                         ? null
                         : appointment.getPreviousAppointment().getId(),
-                scheduledStart,
-                scheduledStart.plus(slotDuration),
+                appointment.getAppointmentDate(),
+                appointment.getSession(),
+                appointment.getQueueNumber().intValue(),
+                schedulingPolicy.sessionStart(appointment.getSession()),
+                schedulingPolicy.sessionEnd(appointment.getSession()),
+                schedulingPolicy.estimatedStartTime(
+                        appointment.getSession(),
+                        appointment.getQueueNumber()
+                ),
+                estimatedStartAt,
                 appointment.getStatus(),
                 toClinicOffset(appointment.getCheckedInAt()),
                 toClinicOffset(appointment.getActualStartAt()),
@@ -453,21 +459,18 @@ public class AppointmentQueryService {
         }
     }
 
-    private Instant startOfNextDay(LocalDate date) {
-        try {
-            return clinicTimeProvider.toInstant(date.plusDays(1), LocalTime.MIDNIGHT);
-        } catch (DateTimeException exception) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Đến ngày không hợp lệ");
-        }
-    }
-
     private Sort defaultSort() {
-        return Sort.by(Sort.Order.desc("scheduledStartAt"), Sort.Order.asc("id"));
+        return Sort.by(
+                Sort.Order.desc("appointmentDate"),
+                Sort.Order.asc("session"),
+                Sort.Order.asc("queueNumber"),
+                Sort.Order.asc("id")
+        );
     }
 
     private String normalizeStaffSortField(String sortBy) {
         String resolved = sortBy == null || sortBy.isBlank()
-                ? "scheduledStartAt"
+                ? "appointmentDate"
                 : sortBy.trim();
         if (!STAFF_SORT_FIELDS.contains(resolved)) {
             throw new BusinessException(
@@ -476,6 +479,18 @@ public class AppointmentQueryService {
             );
         }
         return resolved;
+    }
+
+    private Sort staffSort(String sortBy, Sort.Direction direction) {
+        if ("appointmentDate".equals(sortBy)) {
+            return Sort.by(
+                    new Sort.Order(direction, "appointmentDate"),
+                    Sort.Order.asc("session"),
+                    Sort.Order.asc("queueNumber"),
+                    Sort.Order.asc("id")
+            );
+        }
+        return Sort.by(new Sort.Order(direction, sortBy), Sort.Order.asc("id"));
     }
 
     private String normalizeSearch(String search) {

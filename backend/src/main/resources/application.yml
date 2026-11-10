@@ -43,10 +43,6 @@ server:
 clinic:
   timezone: ${CLINIC_TIMEZONE:Asia/Ho_Chi_Minh}
   appointment:
-    slot-duration-minutes: ${SLOT_DURATION_MINUTES:60}
-    booking-min-advance-minutes: ${BOOKING_MIN_ADVANCE_MINUTES:120}
-    cancellation-cutoff-minutes: ${CANCELLATION_CUTOFF_MINUTES:90}
-    reschedule-cutoff-minutes: ${RESCHEDULE_CUTOFF_MINUTES:90}
     no-show-grace-minutes: ${NO_SHOW_GRACE_MINUTES:15}
     delay-warning-minutes: ${DELAY_WARNING_MINUTES:30}
 
@@ -104,6 +100,8 @@ app:
       max-file-size-bytes: ${KNOWLEDGE_BASE_MAX_FILE_SIZE_BYTES:5242880}
       sync-cron: '${AI_RAG_SYNC_CRON:0 */15 * * * *}'
       sync-lock-timeout: ${AI_RAG_SYNC_LOCK_TIMEOUT:30m}
+      sync-batch-size: ${AI_RAG_SYNC_BATCH_SIZE:30}
+      sync-batch-delay: ${AI_RAG_SYNC_BATCH_DELAY:21s}
     retrieval:
       default-top-k: ${AI_RAG_DEFAULT_TOP_K:3}
       max-top-k: ${AI_RAG_MAX_TOP_K:20}

@@ -2,6 +2,7 @@ package com.dentalclinic.dashboard;
 
 import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.AppointmentQueueFixtureSupport;
 import com.dentalclinic.appointment.repository.AppointmentDailySummary;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.doctor.entity.Doctor;
@@ -188,7 +189,7 @@ class AdminDashboardPostgreSqlIntegrationTest {
         saveAppointment(
                 patient,
                 mapping,
-                Instant.parse("2026-10-11T19:00:00Z"),
+                Instant.parse("2026-10-12T07:00:00Z"),
                 AppointmentStatus.CHECKED_IN
         );
         saveAppointment(
@@ -200,7 +201,7 @@ class AdminDashboardPostgreSqlIntegrationTest {
         saveAppointment(
                 secondPatient,
                 mapping,
-                Instant.parse("2026-10-11T23:00:00Z"),
+                Instant.parse("2026-10-12T02:30:00Z"),
                 AppointmentStatus.IN_PROGRESS
         );
         saveAppointment(
@@ -259,6 +260,7 @@ class AdminDashboardPostgreSqlIntegrationTest {
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
@@ -301,6 +303,7 @@ class AdminDashboardPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(mapping);
         appointment.setScheduledStartAt(scheduledStartAt);
+        AppointmentQueueFixtureSupport.applyRequiredQueueModel(appointment, scheduledStartAt);
         appointment.setStatus(status);
         return appointmentRepository.saveAndFlush(appointment);
     }

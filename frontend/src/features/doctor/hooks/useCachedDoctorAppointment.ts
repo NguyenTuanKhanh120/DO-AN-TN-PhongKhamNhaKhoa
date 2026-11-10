@@ -5,7 +5,7 @@ import type { PageResponse } from "@/types/api";
 import type { Appointment } from "@/types/domain";
 
 function isAppointment(value: unknown): value is Appointment {
-  return typeof value === "object" && value !== null && "id" in value && "status" in value && "scheduledStartAt" in value;
+  return typeof value === "object" && value !== null && "id" in value && "status" in value && "estimatedStartAt" in value;
 }
 
 export function useCachedDoctorAppointment(id?: string): Appointment | undefined {

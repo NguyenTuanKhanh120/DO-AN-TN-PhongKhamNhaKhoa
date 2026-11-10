@@ -1,8 +1,12 @@
 package com.dentalclinic.appointment.dto;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
-import java.time.OffsetDateTime;
+import com.dentalclinic.schedule.entity.ScheduleSession;
+
+import java.time.LocalDate;
 import java.util.UUID;
 
 public record BookAppointmentRequest(
@@ -12,16 +16,17 @@ public record BookAppointmentRequest(
         @NotNull(message = "Dịch vụ không được để trống")
         UUID serviceId,
 
-        @NotNull(message = "Thời gian bắt đầu không được để trống")
-        OffsetDateTime scheduledStartAt,
+        @NotNull(message = "Ngày khám không được để trống")
+        LocalDate appointmentDate,
+
+        @NotNull(message = "Buổi khám không được để trống")
+        ScheduleSession session,
+
+        @NotNull(message = "Số ca không được để trống")
+        @Min(value = 1, message = "Số ca chỉ được là 1 hoặc 2")
+        @Max(value = 2, message = "Số ca chỉ được là 1 hoặc 2")
+        Integer queueNumber,
 
         UUID previousAppointmentId
 ) {
-    public BookAppointmentRequest(
-            UUID doctorId,
-            UUID serviceId,
-            OffsetDateTime scheduledStartAt
-    ) {
-        this(doctorId, serviceId, scheduledStartAt, null);
-    }
 }

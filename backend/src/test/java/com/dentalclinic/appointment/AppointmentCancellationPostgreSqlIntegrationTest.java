@@ -12,6 +12,7 @@ import com.dentalclinic.doctor.repository.DoctorServiceRepository;
 import com.dentalclinic.patient.entity.Gender;
 import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.service.entity.DentalService;
 import com.dentalclinic.service.repository.DentalServiceRepository;
 import com.dentalclinic.user.entity.Role;
@@ -47,6 +48,8 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.UUID;
@@ -67,7 +70,9 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
     private static final String TEST_JWT_SECRET = generateSecret();
     private static final String PASSWORD = "StrongPassword123!";
     private static final ZoneId CLINIC_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
-    private static final Instant FIXED_NOW = Instant.parse("2026-10-12T03:00:00Z");
+    private static final LocalDate CURRENT_MONDAY = LocalDate.of(2026, 10, 12);
+    private static final LocalDate FUTURE_MONDAY = LocalDate.of(2026, 10, 19);
+    private static final Instant FIXED_NOW = Instant.parse("2026-10-11T22:00:00Z");
 
     @Autowired
     private MockMvc mockMvc;
@@ -106,7 +111,6 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "appointment-cancellation-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.cancellation-cutoff-minutes", () -> 90);
     }
 
     @BeforeEach
@@ -115,7 +119,7 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
     }
 
     @Test
-    void shouldCancelAtExactlyNinetyMinutesWriteAuditAndReleaseSlot() throws Exception {
+    void shouldCancelFutureAppointmentWriteAuditAndReleaseDoctorQueue() throws Exception {
         String token = login(fixture.firstPatientEmail());
 
         mockMvc.perform(patch(
@@ -130,10 +134,13 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
                         .value(fixture.cancellableAppointmentId().toString()))
                 .andExpect(jsonPath("$.data.status").value("CANCELLED"))
                 .andExpect(jsonPath("$.data.reason").value("Bận việc gia đình"))
-                .andExpect(jsonPath("$.data.scheduledStartAt")
-                        .value("2026-10-12T11:30:00+07:00"))
+                .andExpect(jsonPath("$.data.appointmentDate").value("2026-10-19"))
+                .andExpect(jsonPath("$.data.session").value("AFTERNOON"))
+                .andExpect(jsonPath("$.data.queueNumber").value(1))
+                .andExpect(jsonPath("$.data.estimatedStartAt")
+                        .value("2026-10-19T14:00:00+07:00"))
                 .andExpect(jsonPath("$.data.cancelledAt")
-                        .value("2026-10-12T10:00:00+07:00"));
+                        .value("2026-10-12T05:00:00+07:00"));
 
         Map<String, Object> appointmentRow = jdbcTemplate.queryForMap("""
                 select status::text as status
@@ -148,6 +155,10 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
                        reason,
                        details ->> 'old_status' as old_status,
                        details ->> 'new_status' as new_status,
+                       details ->> 'appointment_date' as appointment_date,
+                       details ->> 'session' as session,
+                       details ->> 'queue_number' as queue_number,
+                       details ->> 'estimated_start_at' as estimated_start_at,
                        details ->> 'cancelled_at' as cancelled_at
                 from appointment_histories
                 where appointment_id = ?
@@ -157,12 +168,20 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
         assertThat(historyRow.get("reason")).isEqualTo("Bận việc gia đình");
         assertThat(historyRow.get("old_status")).isEqualTo("BOOKED");
         assertThat(historyRow.get("new_status")).isEqualTo("CANCELLED");
-        assertThat(historyRow.get("cancelled_at")).isEqualTo("2026-10-12T10:00+07:00");
+        assertThat(historyRow.get("appointment_date")).isEqualTo("2026-10-19");
+        assertThat(historyRow.get("session")).isEqualTo("AFTERNOON");
+        assertThat(historyRow.get("queue_number")).isEqualTo("1");
+        assertThat(historyRow.get("estimated_start_at"))
+                .isEqualTo("2026-10-19T14:00+07:00");
+        assertThat(historyRow.get("cancelled_at")).isEqualTo("2026-10-12T05:00+07:00");
 
         Appointment replacement = new Appointment();
         replacement.setPatient(fixture.secondPatient());
         replacement.setDoctorService(fixture.doctorService());
         replacement.setScheduledStartAt(fixture.cancellableStartAt());
+        replacement.setAppointmentDate(FUTURE_MONDAY);
+        replacement.setSession(ScheduleSession.AFTERNOON);
+        replacement.setQueueNumber((short) 1);
         replacement.setStatus(AppointmentStatus.BOOKED);
         appointmentRepository.saveAndFlush(replacement);
 
@@ -179,7 +198,7 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
     }
 
     @Test
-    void shouldRejectCancellationBelowNinetyMinutesWithoutAudit() throws Exception {
+    void shouldRejectCurrentDayCancellationAtFiveOClockWithoutAudit() throws Exception {
         String token = login(fixture.firstPatientEmail());
 
         mockMvc.perform(patch(
@@ -191,7 +210,7 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("RESOURCE_CONFLICT"))
                 .andExpect(jsonPath("$.message").value(
-                        "Không thể hủy lịch vì lịch hẹn còn dưới 1 giờ 30 phút. "
+                        "Không thể tự hủy lịch từ 05:00 ngày khám. "
                                 + "Vui lòng liên hệ phòng khám nếu có trường hợp đặc biệt."
                 ));
 
@@ -258,29 +277,41 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
         DentalService service = saveService("Dịch vụ Phase 14 " + marker);
         DoctorService doctorService = saveMapping(doctor, service);
 
-        Instant cancellableStartAt = FIXED_NOW.plusSeconds(90 * 60L);
+        Instant cancellableStartAt = toInstant(FUTURE_MONDAY, LocalTime.of(14, 0));
         Appointment cancellable = saveAppointment(
                 firstPatient,
                 doctorService,
                 cancellableStartAt,
+                FUTURE_MONDAY,
+                ScheduleSession.AFTERNOON,
+                (short) 1,
                 AppointmentStatus.BOOKED
         );
         Appointment tooLate = saveAppointment(
                 firstPatient,
                 doctorService,
-                FIXED_NOW.plusSeconds(90 * 60L - 1),
+                toInstant(CURRENT_MONDAY, LocalTime.of(15, 30)),
+                CURRENT_MONDAY,
+                ScheduleSession.AFTERNOON,
+                (short) 2,
                 AppointmentStatus.BOOKED
         );
         Appointment otherPatient = saveAppointment(
                 secondPatient,
                 doctorService,
-                FIXED_NOW.plusSeconds(3 * 60 * 60L),
+                toInstant(CURRENT_MONDAY, LocalTime.of(8, 0)),
+                CURRENT_MONDAY,
+                ScheduleSession.MORNING,
+                (short) 1,
                 AppointmentStatus.BOOKED
         );
         Appointment completed = saveAppointment(
                 firstPatient,
                 doctorService,
-                FIXED_NOW.plusSeconds(4 * 60 * 60L),
+                toInstant(FUTURE_MONDAY, LocalTime.of(8, 0)),
+                FUTURE_MONDAY,
+                ScheduleSession.MORNING,
+                (short) 1,
                 AppointmentStatus.COMPLETED
         );
 
@@ -322,6 +353,7 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
     private Patient savePatient(User user) {
         Patient patient = new Patient();
         patient.setUser(user);
+        patient.setFullName(user.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
@@ -347,14 +379,24 @@ class AppointmentCancellationPostgreSqlIntegrationTest {
             Patient patient,
             DoctorService doctorService,
             Instant scheduledStartAt,
+            LocalDate appointmentDate,
+            ScheduleSession session,
+            short queueNumber,
             AppointmentStatus status
     ) {
         Appointment appointment = new Appointment();
         appointment.setPatient(patient);
         appointment.setDoctorService(doctorService);
         appointment.setScheduledStartAt(scheduledStartAt);
+        appointment.setAppointmentDate(appointmentDate);
+        appointment.setSession(session);
+        appointment.setQueueNumber(queueNumber);
         appointment.setStatus(status);
         return appointmentRepository.saveAndFlush(appointment);
+    }
+
+    private Instant toInstant(LocalDate date, LocalTime time) {
+        return date.atTime(time).atZone(CLINIC_ZONE).toInstant();
     }
 
     private String login(String email) throws Exception {

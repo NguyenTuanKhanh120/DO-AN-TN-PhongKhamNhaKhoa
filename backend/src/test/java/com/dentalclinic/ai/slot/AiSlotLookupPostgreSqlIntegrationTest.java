@@ -92,8 +92,6 @@ class AiSlotLookupPostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "ai-slot-lookup-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 15);
-        registry.add("clinic.appointment.slot-duration-minutes", () -> 60);
-        registry.add("clinic.appointment.booking-min-advance-minutes", () -> 120);
         registry.add("app.ai.enabled", () -> false);
     }
 
@@ -107,7 +105,7 @@ class AiSlotLookupPostgreSqlIntegrationTest {
         saveMapping(secondDoctor, service);
 
         saveSchedule(firstDoctor, (short) 1, ScheduleSession.MORNING, "08:00", "11:00");
-        saveSchedule(firstDoctor, (short) 1, ScheduleSession.AFTERNOON, "13:00", "17:00");
+        saveSchedule(firstDoctor, (short) 1, ScheduleSession.AFTERNOON, "14:00", "17:00");
         saveSchedule(firstDoctor, (short) 2, ScheduleSession.MORNING, "08:00", "11:00");
         saveSchedule(secondDoctor, (short) 1, ScheduleSession.MORNING, "08:00", "11:00");
 
@@ -130,21 +128,25 @@ class AiSlotLookupPostgreSqlIntegrationTest {
         assertThat(multiDoctorResult.availability()).satisfiesExactly(
                 first -> {
                     assertThat(first.doctorId()).isEqualTo(firstDoctor.getId());
-                    assertThat(first.slots()).hasSize(5);
+                    assertThat(first.slots()).hasSize(3);
                     assertThat(first.slots()).allSatisfy(slot ->
                             assertThat(slot.session()).isEqualTo(ChatSessionPreference.MORNING)
                     );
                     assertThat(first.slots())
                             .filteredOn(slot -> slot.date().equals(MONDAY))
-                            .extracting(slot -> slot.startAt().toLocalTime())
-                            .containsExactly(LocalTime.of(8, 0), LocalTime.of(10, 0));
+                            .extracting(slot -> slot.estimatedStartTime())
+                            .containsExactly(LocalTime.of(9, 30));
+                    assertThat(first.slots())
+                            .filteredOn(slot -> slot.date().equals(MONDAY))
+                            .extracting(slot -> slot.queueNumber())
+                            .containsExactly(2);
                     assertThat(first.slots())
                             .filteredOn(slot -> slot.date().equals(MONDAY.plusDays(1)))
-                            .hasSize(3);
+                            .hasSize(2);
                 },
                 second -> {
                     assertThat(second.doctorId()).isEqualTo(secondDoctor.getId());
-                    assertThat(second.slots()).hasSize(3);
+                    assertThat(second.slots()).hasSize(2);
                     assertThat(second.slots()).allSatisfy(slot ->
                             assertThat(slot.date()).isEqualTo(MONDAY)
                     );
@@ -161,10 +163,13 @@ class AiSlotLookupPostgreSqlIntegrationTest {
         );
         assertThat(doctorOnlyResult.availability()).singleElement().satisfies(availability -> {
             assertThat(availability.serviceId()).isNull();
-            assertThat(availability.slots()).hasSize(4);
+            assertThat(availability.slots()).hasSize(2);
             assertThat(availability.slots()).allSatisfy(slot ->
                     assertThat(slot.session()).isEqualTo(ChatSessionPreference.AFTERNOON)
             );
+            assertThat(availability.slots())
+                    .extracting(slot -> slot.estimatedStartTime())
+                    .containsExactly(LocalTime.of(14, 0), LocalTime.of(15, 30));
         });
         assertThat(appointmentRepository.count()).isEqualTo(appointmentCountBeforeLookup);
     }
@@ -233,6 +238,7 @@ class AiSlotLookupPostgreSqlIntegrationTest {
 
         Patient patient = new Patient();
         patient.setUser(savedUser);
+        patient.setFullName(savedUser.getFullName());
         patient.setGender(Gender.UNSPECIFIED);
         return patientRepository.saveAndFlush(patient);
     }
@@ -247,6 +253,9 @@ class AiSlotLookupPostgreSqlIntegrationTest {
         appointment.setPatient(patient);
         appointment.setDoctorService(mapping);
         appointment.setScheduledStartAt(date.atTime(startTime).atZone(CLINIC_ZONE).toInstant());
+        appointment.setAppointmentDate(date);
+        appointment.setSession(ScheduleSession.MORNING);
+        appointment.setQueueNumber((short) 1);
         appointment.setStatus(AppointmentStatus.BOOKED);
         appointmentRepository.saveAndFlush(appointment);
     }

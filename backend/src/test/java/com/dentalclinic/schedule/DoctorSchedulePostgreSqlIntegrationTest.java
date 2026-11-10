@@ -170,7 +170,7 @@ class DoctorSchedulePostgreSqlIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
-        Map<String, Object> afternoonBody = scheduleBody(1, "AFTERNOON", "13:00", "17:00");
+        Map<String, Object> afternoonBody = scheduleBody(1, "AFTERNOON", "14:00", "17:00");
         MvcResult afternoonCreated = mockMvc.perform(post(
                         "/api/admin/doctors/{doctorId}/schedules",
                         doctor.getId()

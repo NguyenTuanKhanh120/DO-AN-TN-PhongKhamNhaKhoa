@@ -59,6 +59,8 @@ class AdminKnowledgeServiceTest {
         successful.setSyncToken(java.util.UUID.randomUUID());
         KnowledgeSource failed = source("failed-source", KnowledgeSourceStatus.FAILED, 0);
         failed.setLastError("Dataset không hợp lệ");
+        failed.setProcessedChunkCount(30);
+        failed.setTotalChunkCount(639);
         when(sourceRepository.findAllByOrderBySourceKeyAsc())
                 .thenReturn(List.of(failed, successful));
 
@@ -74,6 +76,8 @@ class AdminKnowledgeServiceTest {
         assertThat(response.sources()).extracting(source -> source.sourceKey())
                 .containsExactly("failed-source", "nidcr-dental-knowledge-vi");
         assertThat(response.sources().getFirst().lastError()).isEqualTo("Dataset không hợp lệ");
+        assertThat(response.sources().getFirst().processedChunkCount()).isEqualTo(30);
+        assertThat(response.sources().getFirst().totalChunkCount()).isEqualTo(639);
     }
 
     @Test
@@ -91,13 +95,13 @@ class AdminKnowledgeServiceTest {
 
     @Test
     void shouldSynchronizePrimaryDatasetWithoutWrappingProviderCallInTransaction() {
-        when(syncService.synchronizePrimaryDataset()).thenReturn(KnowledgeSyncOutcome.SYNCED);
+        when(syncService.synchronizeAllDatasets()).thenReturn(KnowledgeSyncOutcome.SYNCED);
 
         var response = service(true).synchronize();
 
         assertThat(response.outcome()).isEqualTo(KnowledgeSyncOutcome.SYNCED);
         assertThat(response.processedAt()).isEqualTo(NOW);
-        verify(syncService).synchronizePrimaryDataset();
+        verify(syncService).synchronizeAllDatasets();
     }
 
     @Test
@@ -112,7 +116,7 @@ class AdminKnowledgeServiceTest {
 
         assertUnavailable(service::synchronize);
         assertUnavailable(() -> service.searchTest(request));
-        verify(syncService, never()).synchronizePrimaryDataset();
+        verify(syncService, never()).synchronizeAllDatasets();
         verify(retrievalService, never()).retrieve(org.mockito.ArgumentMatchers.any());
     }
 

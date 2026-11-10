@@ -12,6 +12,7 @@ export type AppointmentStatus =
 export type PaymentStatus = "DRAFT" | "UNPAID" | "PAID";
 export type PaymentMethod = "CASH" | "BANK_TRANSFER";
 export type ScheduleSession = "MORNING" | "AFTERNOON";
+export type BookingSource = "ONLINE" | "WALK_IN";
 export type CalendarAvailabilityStatus = "AVAILABLE" | "FULL" | "NOT_WORKING" | "UNAVAILABLE";
 export type AuthSessionStatus = "ACTIVE" | "LOCKED" | "REVOKED";
 export type AppointmentAction =
@@ -89,13 +90,16 @@ export interface DoctorSchedule {
 export interface AvailableSlot {
   date: string;
   session: ScheduleSession;
-  startTime: string;
-  endTime: string;
-  startAt: string;
-  endAt: string;
+  queueNumber: number;
+  sessionStartTime: string;
+  sessionEndTime: string;
+  estimatedStartTime: string;
+  estimatedStartAt: string;
 }
 
 export interface CalendarSlot {
+  queueNumber: number;
+  estimatedStartTime: string;
   startAt: string;
   endAt: string;
 }
@@ -133,8 +137,13 @@ export interface Appointment {
   serviceId: string;
   serviceName: string;
   previousAppointmentId: string | null;
-  scheduledStartAt: string;
-  scheduledEndAt: string;
+  appointmentDate: string;
+  session: ScheduleSession | null;
+  queueNumber: number | null;
+  sessionStartTime: string | null;
+  sessionEndTime: string | null;
+  estimatedStartTime: string;
+  estimatedStartAt: string;
   status: AppointmentStatus;
   checkedInAt: string | null;
   actualStartAt: string | null;
@@ -152,9 +161,67 @@ export interface BookAppointmentResult {
   doctorId: string;
   serviceId: string;
   previousAppointmentId: string | null;
-  scheduledStartAt: string;
-  scheduledEndAt: string;
+  appointmentDate: string;
+  session: ScheduleSession;
+  queueNumber: number;
+  sessionStartTime: string;
+  sessionEndTime: string;
+  estimatedStartTime: string;
+  estimatedStartAt: string;
   status: AppointmentStatus;
+  createdAt: string;
+}
+
+export interface StaffPatient {
+  id: string;
+  fullName: string;
+  phone: string;
+  dateOfBirth: string | null;
+  gender: Gender;
+  address: string | null;
+  medicalHistory: string | null;
+  allergies: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WalkInCaseAvailability {
+  queueNumber: number;
+  estimatedStartTime: string;
+  estimatedStartAt: string;
+  available: boolean;
+}
+
+export interface WalkInSessionAvailability {
+  session: ScheduleSession;
+  status: CalendarAvailabilityStatus;
+  sessionStartTime: string;
+  sessionEndTime: string;
+  availableCaseCount: number;
+  cases: WalkInCaseAvailability[];
+}
+
+export interface WalkInAvailability {
+  doctorId: string;
+  serviceId: string;
+  date: string;
+  sessions: WalkInSessionAvailability[];
+}
+
+export interface CreateWalkInAppointmentResult {
+  id: string;
+  patientId: string;
+  doctorId: string;
+  serviceId: string;
+  appointmentDate: string;
+  session: ScheduleSession;
+  queueNumber: number;
+  sessionStartTime: string;
+  sessionEndTime: string;
+  estimatedStartTime: string;
+  estimatedStartAt: string;
+  status: AppointmentStatus;
+  bookingSource: BookingSource;
   createdAt: string;
 }
 

@@ -109,10 +109,19 @@ class KnowledgeSourcePostgreSqlIntegrationTest {
                 Instant.now()
         );
 
-        var firstClaim = knowledgeSyncStateService.tryBeginSync(sourceKey, sourceFile);
+        String contentHash = "b".repeat(64);
+        var firstClaim = knowledgeSyncStateService.tryBeginSync(
+                sourceKey,
+                sourceFile,
+                contentHash
+        );
         KnowledgeSource source = knowledgeSourceRepository.findBySourceKey(sourceKey).orElseThrow();
         createdSourceIds.add(source.getId());
-        var secondClaim = knowledgeSyncStateService.tryBeginSync(sourceKey, sourceFile);
+        var secondClaim = knowledgeSyncStateService.tryBeginSync(
+                sourceKey,
+                sourceFile,
+                contentHash
+        );
 
         assertThat(firstClaim).isPresent();
         assertThat(secondClaim).isEmpty();

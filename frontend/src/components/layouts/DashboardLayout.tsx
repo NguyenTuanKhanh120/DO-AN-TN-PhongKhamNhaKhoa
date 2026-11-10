@@ -6,6 +6,7 @@ import {
   LogOut,
   Menu,
   Stethoscope,
+  UserRoundPlus,
   UserRound,
   Users,
   X,
@@ -38,6 +39,7 @@ const navByRole: Record<Role, NavItem[]> = {
   ],
   STAFF: [
     { to: "/staff/dashboard", label: "Tổng quan", icon: LayoutDashboard },
+    { to: "/staff/walk-in", label: "Tiếp nhận trực tiếp", icon: UserRoundPlus },
     { to: "/staff/appointments", label: "Lịch toàn phòng khám", icon: CalendarDays },
     { to: "/staff/payments", label: "Thu tiền", icon: CircleDollarSign },
   ],

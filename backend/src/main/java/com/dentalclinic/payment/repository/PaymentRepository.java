@@ -23,7 +23,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>,
 
     @Override
     @EntityGraph(attributePaths = {
-            "appointment.patient.user",
+            "appointment.patient",
             "appointment.doctorService.doctor.user",
             "appointment.doctorService.service",
             "confirmedBy"
@@ -41,7 +41,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>,
     );
 
     @EntityGraph(attributePaths = {
-            "appointment.patient.user",
+            "appointment.patient",
             "appointment.doctorService.doctor.user",
             "appointment.doctorService.service",
             "confirmedBy"
@@ -58,7 +58,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>,
     );
 
     @EntityGraph(attributePaths = {
-            "appointment.patient.user",
+            "appointment.patient",
             "appointment.doctorService.doctor.user",
             "appointment.doctorService.service",
             "confirmedBy"
@@ -71,7 +71,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>,
     Optional<Payment> findForUpdateDetailedById(@Param("paymentId") UUID paymentId);
 
     @EntityGraph(attributePaths = {
-            "appointment.patient.user",
+            "appointment.patient",
             "appointment.doctorService.doctor.user",
             "appointment.doctorService.service",
             "confirmedBy"
@@ -97,7 +97,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>,
     );
 
     @EntityGraph(attributePaths = {
-            "appointment.patient.user",
+            "appointment.patient",
             "appointment.doctorService.doctor.user",
             "appointment.doctorService.service",
             "confirmedBy"

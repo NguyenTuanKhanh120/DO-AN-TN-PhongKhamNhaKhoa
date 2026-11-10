@@ -103,6 +103,7 @@ class PatientProfilePostgreSqlIntegrationTest {
         assertThat(firstPatient.getUser().getEmail()).isEqualTo(first.email());
         assertThat(firstPatient.getUser().getRole()).isEqualTo(Role.PATIENT);
         assertThat(firstPatient.getUser().getFullName()).isEqualTo("Nguyễn Thị Lan");
+        assertThat(firstPatient.getFullName()).isEqualTo("Nguyễn Thị Lan");
         assertThat(firstPatient.getDateOfBirth()).isEqualTo(LocalDate.of(1999, 4, 15));
         assertThat(firstPatient.getGender()).isEqualTo(Gender.FEMALE);
         assertThat(firstPatient.getPhone()).isEqualTo("0901234567");

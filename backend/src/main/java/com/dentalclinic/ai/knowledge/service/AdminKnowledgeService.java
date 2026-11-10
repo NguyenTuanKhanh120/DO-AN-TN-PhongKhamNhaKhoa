@@ -87,7 +87,7 @@ public class AdminKnowledgeService {
 
     public KnowledgeSyncResponse synchronize() {
         requireAiEnabled();
-        KnowledgeSyncOutcome outcome = syncService.synchronizePrimaryDataset();
+        KnowledgeSyncOutcome outcome = syncService.synchronizeAllDatasets();
         return new KnowledgeSyncResponse(outcome, clock.instant());
     }
 
@@ -147,6 +147,8 @@ public class AdminKnowledgeService {
                 source.getSourceVersion(),
                 source.getStatus(),
                 source.getChunkCount(),
+                source.getProcessedChunkCount(),
+                source.getTotalChunkCount(),
                 source.getEmbeddingModel(),
                 source.getEmbeddingDimension(),
                 source.getClinicalReviewStatus(),

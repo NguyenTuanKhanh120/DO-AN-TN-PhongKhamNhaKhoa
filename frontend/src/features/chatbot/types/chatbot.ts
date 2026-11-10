@@ -32,8 +32,11 @@ export interface ChatSlotSuggestion {
   serviceId: string | null;
   date: string;
   session: ScheduleSession;
-  startAt: string;
-  endAt: string;
+  queueNumber: number;
+  sessionStartTime: string;
+  sessionEndTime: string;
+  estimatedStartTime: string;
+  estimatedStartAt: string;
 }
 
 export interface ChatMessageMetadata {
