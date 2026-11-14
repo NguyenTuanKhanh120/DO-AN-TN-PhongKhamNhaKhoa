@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { useLocation } from "react-router-dom";
 import { AsyncStateView } from "@/components/common/AsyncStateView";
 import { PageHeader } from "@/components/common/PageHeader";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -22,7 +23,8 @@ import { useAdminStaff, useCreateStaff, useUpdateStaffStatus } from "../hooks/us
 import { staffSchema, type StaffFormValues } from "../utils/validation";
 
 export default function AdminStaffPage() {
-  const [search, setSearch] = useState(""); const [page, setPage] = useState(0); const [createOpen, setCreateOpen] = useState(false); const [target, setTarget] = useState<AdminUser | null>(null); const { showToast } = useToast();
+  const location = useLocation();
+  const [search, setSearch] = useState(""); const [page, setPage] = useState(0); const [createOpen, setCreateOpen] = useState(() => Boolean((location.state as { openCreate?: boolean } | null)?.openCreate)); const [target, setTarget] = useState<AdminUser | null>(null); const { showToast } = useToast();
   const query = useAdminStaff({ search: useDebouncedValue(search), page, size: 20 }); const create = useCreateStaff(); const status = useUpdateStaffStatus();
   const form = useForm<StaffFormValues>({ resolver: zodResolver(staffSchema), defaultValues: { fullName: "", email: "", password: "" } });
   const submit = form.handleSubmit(async (values) => { try { await create.mutateAsync(values); showToast("Tạo tài khoản nhân viên thành công", "success"); setCreateOpen(false); form.reset(); } catch (error) { form.setError("root", { message: getApiErrorMessage(error) }); } });

@@ -4,17 +4,21 @@ import * as service from "../services/doctor-service";
 
 export const doctorKeys = {
   appointments: (params: service.DoctorAppointmentParams = {}) => ["doctor", "appointments", params] as const,
+  weeklyAppointments: (fromDate: string, toDate: string) => ["doctor", "appointments", "week", fromDate, toDate] as const,
   today: (params: service.DoctorAppointmentParams = {}) => ["doctor", "appointments", "today", params] as const,
   schedules: ["doctor", "schedules"] as const,
+  services: ["doctor", "services"] as const,
   medicalRecord: (id: string) => ["doctor", "appointment", id, "medical-record"] as const,
   payment: (id: string) => ["doctor", "appointment", id, "payment"] as const,
 };
 
 export const useDoctorAppointments = (params: service.DoctorAppointmentParams = {}) => useQuery({ queryKey: doctorKeys.appointments(params), queryFn: () => service.getAppointments(params) });
+export const useDoctorWeeklyAppointments = (fromDate: string, toDate: string) => useQuery({ queryKey: doctorKeys.weeklyAppointments(fromDate, toDate), queryFn: () => service.getWeeklyAppointments(fromDate, toDate) });
 export const useTodayAppointments = (params: service.DoctorAppointmentParams = {}) => useQuery({ queryKey: doctorKeys.today(params), queryFn: () => service.getTodayAppointments(params) });
 export const useDoctorSchedules = () => useQuery({ queryKey: doctorKeys.schedules, queryFn: service.getSchedules });
+export const useDoctorAssignedServices = () => useQuery({ queryKey: doctorKeys.services, queryFn: service.getAssignedServices });
 export const useMedicalRecord = (id?: string, enabled = true) => useQuery({ queryKey: doctorKeys.medicalRecord(id ?? ""), queryFn: () => service.getMedicalRecord(id ?? ""), enabled: Boolean(id) && enabled, retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 1 });
-export const useDoctorPayment = (id?: string, enabled = true) => useQuery({ queryKey: doctorKeys.payment(id ?? ""), queryFn: () => service.getPayment(id ?? ""), enabled: Boolean(id) && enabled });
+export const useDoctorPayment = (id?: string, enabled = true) => useQuery({ queryKey: doctorKeys.payment(id ?? ""), queryFn: () => service.getPayment(id ?? ""), enabled: Boolean(id) && enabled, retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 1 });
 
 function useAppointmentMutation<TVariables, TResult>(mutationFn: (variables: TVariables) => Promise<TResult>) {
   const client = useQueryClient();

@@ -12,6 +12,7 @@ import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.repository.DoctorRepository;
+import com.dentalclinic.payment.service.PaymentService;
 import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -35,6 +36,7 @@ public class AppointmentStartExaminationService {
     private final DoctorRepository doctorRepository;
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
+    private final PaymentService paymentService;
     private final SchedulingPolicy schedulingPolicy;
     private final ClinicTimeProvider clinicTimeProvider;
 
@@ -42,12 +44,14 @@ public class AppointmentStartExaminationService {
             DoctorRepository doctorRepository,
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
+            PaymentService paymentService,
             SchedulingPolicy schedulingPolicy,
             ClinicTimeProvider clinicTimeProvider
     ) {
         this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
+        this.paymentService = paymentService;
         this.schedulingPolicy = schedulingPolicy;
         this.clinicTimeProvider = clinicTimeProvider;
     }
@@ -85,6 +89,7 @@ public class AppointmentStartExaminationService {
         appointment.setStatus(AppointmentStatus.IN_PROGRESS);
         appointment.setActualStartAt(actualStartAt);
         appointmentRepository.saveAndFlush(appointment);
+        paymentService.initializeDraftForExamination(appointment);
 
         AppointmentHistory history = new AppointmentHistory();
         history.setAppointment(appointment);

@@ -127,7 +127,6 @@ export default function AdminServicesPage() {
     <div>
       <PageHeader
         title="Quản lý dịch vụ"
-        description="Quản lý nội dung, giá và ảnh minh họa cho từng dịch vụ."
         action={<Button onClick={openCreate}><Plus className="h-4 w-4" /> Thêm dịch vụ</Button>}
       />
       <div className="mb-4 flex gap-2 rounded-xl bg-slate-100 p-1 sm:w-fit">

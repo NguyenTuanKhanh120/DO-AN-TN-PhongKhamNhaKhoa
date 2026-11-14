@@ -24,9 +24,30 @@ export interface MedicalRecordPayload {
 
 export interface PaymentItemPayload { serviceId: string; quantity: number }
 
+export interface DoctorAssignedService {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  imageUrl: string | null;
+  active: boolean;
+}
+
 export const getAppointments = async (params: DoctorAppointmentParams = {}): Promise<PageResponse<Appointment>> => {
   const { data } = await apiClient.get<ApiResponse<PageResponse<Appointment>>>("/api/doctor/appointments", { params: compactParams(params) });
   return unwrap(data);
+};
+
+export const getWeeklyAppointments = async (fromDate: string, toDate: string): Promise<Appointment[]> => {
+  const firstPage = await getAppointments({ fromDate, toDate, page: 0, size: 100 });
+  const appointments = [...firstPage.content];
+
+  for (let page = 1; page < firstPage.totalPages; page += 1) {
+    const nextPage = await getAppointments({ fromDate, toDate, page, size: 100 });
+    appointments.push(...nextPage.content);
+  }
+
+  return appointments;
 };
 
 export const getTodayAppointments = async (params: DoctorAppointmentParams = {}): Promise<PageResponse<Appointment>> => {
@@ -47,6 +68,11 @@ export const completeExamination = async (id: string): Promise<{ id: string; sta
 
 export const getSchedules = async (): Promise<DoctorSchedule[]> => {
   const { data } = await apiClient.get<ApiResponse<DoctorSchedule[]>>("/api/doctor/schedules");
+  return unwrap(data);
+};
+
+export const getAssignedServices = async (): Promise<DoctorAssignedService[]> => {
+  const { data } = await apiClient.get<ApiResponse<DoctorAssignedService[]>>("/api/doctor/services");
   return unwrap(data);
 };
 

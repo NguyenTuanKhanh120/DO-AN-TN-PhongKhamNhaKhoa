@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CalendarPlus, Check, Plus, Search, Stethoscope, UserRound } from "lucide-react";
+import { CalendarPlus, Check, Eye, Plus, Search, Stethoscope, UserRound } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { FormField } from "@/components/ui/FormField";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { Pagination } from "@/components/ui/Pagination";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/contexts/ToastContext";
@@ -43,15 +44,16 @@ export default function StaffWalkInPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [search, setSearch] = useState("");
+  const [patientPage, setPatientPage] = useState(0);
   const [selectedPatient, setSelectedPatient] = useState<StaffPatient | null>(null);
+  const [patientDetail, setPatientDetail] = useState<StaffPatient | null>(null);
   const [createPatientOpen, setCreatePatientOpen] = useState(false);
   const [serviceId, setServiceId] = useState("");
   const [doctorId, setDoctorId] = useState("");
   const [selectedCase, setSelectedCase] = useState<WalkInCaseSelection | null>(null);
   const debouncedSearch = useDebouncedValue(search.trim());
-  const canSearch = debouncedSearch.length >= 2;
 
-  const patients = useStaffPatients({ search: debouncedSearch, page: 0, size: 20 }, canSearch && !selectedPatient);
+  const patients = useStaffPatients({ search: debouncedSearch || undefined, page: patientPage, size: 20 }, !selectedPatient);
   const services = useServices({ active: true, page: 0, size: 100 });
   const doctors = useServiceDoctors(serviceId || undefined);
   const availability = useWalkInAvailability(doctorId || undefined, serviceId || undefined);
@@ -111,7 +113,7 @@ export default function StaffWalkInPage() {
         session: selectedCase.session,
         queueNumber: selectedCase.queueNumber,
       });
-      showToast("Tạo lịch WALK_IN thành công", "success");
+      showToast("Tạo lịch thành công", "success");
       navigate("/staff/appointments");
     } catch (error) {
       const apiError = toApiError(error);
@@ -171,44 +173,69 @@ export default function StaffWalkInPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                icon={<Search className="h-4 w-4" />}
-                placeholder="Tìm theo họ tên, số điện thoại hoặc mã bệnh nhân"
-                aria-label="Tìm bệnh nhân"
-              />
-              {!canSearch ? (
-                <p className="rounded-xl bg-slate-50 p-4 text-sm text-muted">Nhập ít nhất 2 ký tự để kiểm tra hồ sơ bệnh nhân trước khi tạo mới.</p>
-              ) : (
+              <div data-testid="patient-search-actions" className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="min-w-0 flex-1">
+                  <Input
+                    value={search}
+                    onChange={(event) => {
+                      setSearch(event.target.value);
+                      setPatientPage(0);
+                    }}
+                    icon={<Search className="h-4 w-4" />}
+                    placeholder="Tìm theo họ tên, số điện thoại hoặc mã bệnh nhân"
+                    aria-label="Tìm bệnh nhân"
+                  />
+                </div>
+                <Button className="w-full shrink-0 sm:w-auto" variant="outline" onClick={openCreatePatient}>
+                  <Plus className="h-4 w-4" /> Tạo hồ sơ bệnh nhân mới
+                </Button>
+              </div>
+              <div>
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Danh sách hồ sơ bệnh nhân</h3>
                 <AsyncStateView
                   loading={patients.isLoading}
                   error={patients.error}
                   empty={!patients.data?.content.length}
                   onRetry={() => void patients.refetch()}
-                  emptyTitle="Không tìm thấy bệnh nhân"
-                  emptyDescription="Hãy kiểm tra lại từ khóa hoặc tạo hồ sơ bệnh nhân tại quầy."
+                  emptyTitle={debouncedSearch ? "Không tìm thấy hồ sơ bệnh nhân phù hợp" : "Chưa có hồ sơ bệnh nhân"}
+                  emptyDescription={debouncedSearch ? "Hãy kiểm tra lại từ khóa hoặc tạo hồ sơ bệnh nhân tại quầy." : "Hãy tạo hồ sơ bệnh nhân đầu tiên tại quầy."}
                 >
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-3">
                     {patients.data?.content.map((patient) => (
-                      <button
-                        key={patient.id}
-                        type="button"
-                        onClick={() => setSelectedPatient(patient)}
-                        className="rounded-xl border border-slate-200 p-4 text-left transition hover:border-primary-300 hover:bg-primary-50"
-                      >
-                        <span className="block font-semibold text-ink">{patient.fullName}</span>
-                        <span className="mt-1 block text-sm text-muted">{patient.phone}</span>
-                      </button>
+                      <div key={patient.id} className="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center">
+                        <button
+                          type="button"
+                          onClick={() => setPatientDetail(patient)}
+                          className="group flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-4"
+                          aria-label={`Xem chi tiết hồ sơ ${patient.fullName}`}
+                        >
+                          <span className="min-w-0">
+                            <span className="block font-semibold text-ink group-hover:text-primary-700">{patient.fullName}</span>
+                            <span className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-muted">
+                              <span>{patient.phone}</span>
+                              {patient.dateOfBirth && <><span aria-hidden="true">·</span><span>{formatDate(patient.dateOfBirth)}</span></>}
+                            </span>
+                          </span>
+                          <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary-700">
+                            <Eye className="h-4 w-4" /> Xem chi tiết
+                          </span>
+                        </button>
+                        <Button size="sm" variant="outline" aria-label={`Chọn ${patient.fullName}`} onClick={() => setSelectedPatient(patient)}>Chọn</Button>
+                      </div>
                     ))}
                   </div>
+                  {patients.data && (
+                    <div className="mt-4">
+                      <Pagination
+                        page={patients.data.page}
+                        totalPages={patients.data.totalPages}
+                        totalElements={patients.data.totalElements}
+                        onPageChange={setPatientPage}
+                      />
+                    </div>
+                  )}
                 </AsyncStateView>
-              )}
-              {canSearch && patients.isSuccess && (
-                <div className="flex justify-end">
-                  <Button variant="outline" onClick={openCreatePatient}><Plus className="h-4 w-4" /> Tạo hồ sơ bệnh nhân mới</Button>
-                </div>
-              )}
+              </div>
             </div>
           )}
         </Card>
@@ -275,7 +302,7 @@ export default function StaffWalkInPage() {
 
         {selectedPatient && selectedService && selectedDoctor && selectedCase && availability.data && (
           <Card className="border-primary-100 bg-primary-50/40 p-5">
-            <h2 className="font-bold text-ink">Xác nhận tiếp nhận WALK_IN</h2>
+            <h2 className="font-bold text-ink">Xác nhận tiếp nhận</h2>
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
               <div><dt className="text-muted">Bệnh nhân</dt><dd className="font-semibold">{selectedPatient.fullName}</dd></div>
               <div><dt className="text-muted">Dịch vụ</dt><dd className="font-semibold">{selectedService.name}</dd></div>
@@ -286,12 +313,40 @@ export default function StaffWalkInPage() {
             </dl>
             <div className="mt-5 flex justify-end">
               <Button size="lg" loading={createAppointment.isPending} onClick={() => void submitAppointment()}>
-                <CalendarPlus className="h-5 w-5" /> Xác nhận tạo lịch WALK_IN
+                <CalendarPlus className="h-5 w-5" /> Xác nhận tạo lịch
               </Button>
             </div>
           </Card>
         )}
       </div>
+
+      <Modal
+        open={Boolean(patientDetail)}
+        onClose={() => setPatientDetail(null)}
+        title="Chi tiết hồ sơ bệnh nhân"
+        description="Kiểm tra thông tin trước khi chọn bệnh nhân."
+      >
+        {patientDetail && (
+          <div>
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <PatientDetailItem label="Họ và tên" value={patientDetail.fullName} />
+              <PatientDetailItem label="Số điện thoại" value={patientDetail.phone} />
+              <PatientDetailItem label="Ngày sinh" value={patientDetail.dateOfBirth ? formatDate(patientDetail.dateOfBirth) : null} />
+              <PatientDetailItem label="Giới tính" value={genderLabels[patientDetail.gender]} />
+              <PatientDetailItem label="Địa chỉ" value={patientDetail.address} className="sm:col-span-2" />
+              <PatientDetailItem label="Tiền sử bệnh" value={patientDetail.medicalHistory} className="sm:col-span-2" />
+              <PatientDetailItem label="Dị ứng" value={patientDetail.allergies} className="sm:col-span-2" />
+            </dl>
+            <div className="mt-6 flex flex-col-reverse justify-end gap-3 sm:flex-row">
+              <Button variant="outline" onClick={() => setPatientDetail(null)}>Đóng</Button>
+              <Button onClick={() => {
+                setSelectedPatient(patientDetail);
+                setPatientDetail(null);
+              }}>Chọn bệnh nhân này</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={createPatientOpen}
@@ -326,6 +381,15 @@ export default function StaffWalkInPage() {
           </div>
         </form>
       </Modal>
+    </div>
+  );
+}
+
+function PatientDetailItem({ label, value, className = "" }: { label: string; value: string | null; className?: string }) {
+  return (
+    <div className={`rounded-xl bg-slate-50 p-4 ${className}`}>
+      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className="mt-1 whitespace-pre-wrap font-semibold text-ink">{value?.trim() || "Chưa cập nhật"}</dd>
     </div>
   );
 }

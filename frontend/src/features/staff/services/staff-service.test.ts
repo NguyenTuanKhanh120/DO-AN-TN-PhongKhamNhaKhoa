@@ -24,6 +24,16 @@ describe("staff walk-in API service", () => {
     apiMocks.post.mockReset();
   });
 
+  it("lấy page Patient mặc định mà không gửi search rỗng", async () => {
+    apiMocks.get.mockResolvedValueOnce(success({ content: [] }));
+
+    await searchPatients({ search: undefined, page: 0, size: 20 });
+
+    expect(apiMocks.get).toHaveBeenCalledWith("/api/staff/patients", {
+      params: { page: 0, size: 20 },
+    });
+  });
+
   it("gọi đúng các endpoint tìm/tạo Patient và availability/create WALK_IN", async () => {
     const patient = { id: "patient-1" };
     const page = { content: [patient] };

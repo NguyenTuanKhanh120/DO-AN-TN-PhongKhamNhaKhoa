@@ -172,6 +172,37 @@ public class PaymentService {
     }
 
     @Transactional
+    public void initializeDraftForExamination(Appointment appointment) {
+        if (appointment == null
+                || appointment.getId() == null
+                || appointment.getStatus() != AppointmentStatus.IN_PROGRESS) {
+            throw new ConflictException(
+                    "Chỉ có thể khởi tạo phiếu thanh toán khi ca khám đang diễn ra"
+            );
+        }
+
+        Payment existingPayment = paymentRepository
+                .findForUpdateByAppointmentId(appointment.getId())
+                .orElse(null);
+        if (existingPayment != null) {
+            if (existingPayment.getStatus() != PaymentStatus.DRAFT) {
+                throw new ConflictException(
+                        "Phiếu thanh toán của ca khám không ở trạng thái DRAFT"
+                );
+            }
+            return;
+        }
+
+        try {
+            paymentRepository.saveAndFlush(newDraftPayment(appointment));
+        } catch (DataIntegrityViolationException exception) {
+            throw new ConflictException(
+                    "Không thể khởi tạo phiếu thanh toán do dữ liệu bị xung đột"
+            );
+        }
+    }
+
+    @Transactional
     public Payment finalizeDraftForCompletion(Appointment appointment) {
         Payment payment = paymentRepository.findForUpdateByAppointmentId(appointment.getId())
                 .orElseThrow(() -> new ConflictException(

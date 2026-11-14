@@ -43,7 +43,6 @@ server:
 clinic:
   timezone: ${CLINIC_TIMEZONE:Asia/Ho_Chi_Minh}
   appointment:
-    no-show-grace-minutes: ${NO_SHOW_GRACE_MINUTES:15}
     delay-warning-minutes: ${DELAY_WARNING_MINUTES:30}
 
 security:

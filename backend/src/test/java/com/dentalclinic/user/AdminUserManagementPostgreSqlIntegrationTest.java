@@ -1,9 +1,15 @@
 package com.dentalclinic.user;
 
+import com.dentalclinic.patient.entity.Patient;
+import com.dentalclinic.patient.repository.PatientRepository;
+import com.dentalclinic.common.exception.BusinessException;
+import com.dentalclinic.common.exception.NotFoundException;
+import com.dentalclinic.user.dto.UpdateAdminUserRequest;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
 import com.dentalclinic.user.repository.UserRepository;
+import com.dentalclinic.user.service.AdminUserService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Jwts;
@@ -21,15 +27,21 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+
+import jakarta.persistence.EntityManager;
 
 import javax.crypto.SecretKey;
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -53,6 +65,15 @@ class AdminUserManagementPostgreSqlIntegrationTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private PatientRepository patientRepository;
+
+    @Autowired
+    private EntityManager entityManager;
+
+    @Autowired
+    private AdminUserService adminUserService;
 
     @DynamicPropertySource
     static void jwtProperties(DynamicPropertyRegistry registry) {
@@ -134,6 +155,87 @@ class AdminUserManagementPostgreSqlIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    void shouldUpdatePatientAccountAndLinkedProfileWithoutChangingRole() throws Exception {
+        String marker = "admin-user-update-" + UUID.randomUUID();
+        User admin = saveUser(marker + "-admin@example.com", "Quản trị viên",
+                Role.ADMIN, UserStatus.ACTIVE);
+        User patientUser = saveUser(marker + "-patient@example.com", "Tên cũ",
+                Role.PATIENT, UserStatus.ACTIVE);
+        Patient patient = new Patient();
+        patient.setUser(patientUser);
+        patient.setFullName("Tên cũ");
+        patientRepository.saveAndFlush(patient);
+        String adminToken = login(admin.getEmail(), PASSWORD);
+
+        mockMvc.perform(put("/api/admin/users/{id}", patientUser.getId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "  Nguyễn   Văn A  ",
+                                  "email": " PATIENT.UPDATED@Example.com ",
+                                  "role": "ADMIN",
+                                  "status": "INACTIVE"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.fullName").value("Nguyễn Văn A"))
+                .andExpect(jsonPath("$.data.email").value("patient.updated@example.com"))
+                .andExpect(jsonPath("$.data.role").value("PATIENT"))
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.passwordHash").doesNotExist());
+
+        entityManager.clear();
+        User updatedUser = userRepository.findById(patientUser.getId()).orElseThrow();
+        Patient updatedPatient = patientRepository.findByUserId(patientUser.getId()).orElseThrow();
+        assertThat(updatedUser.getFullName()).isEqualTo("Nguyễn Văn A");
+        assertThat(updatedUser.getRole()).isEqualTo(Role.PATIENT);
+        assertThat(updatedUser.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(updatedPatient.getFullName()).isEqualTo("Nguyễn Văn A");
+        assertThat(updatedPatient.getUser().getId()).isEqualTo(patientUser.getId());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void shouldRejectDuplicateEmailAndRollbackWhenPatientProfileIsMissing() throws Exception {
+        String marker = "admin-user-rollback-" + UUID.randomUUID();
+        User admin = saveUser(marker + "-admin@example.com", "Quản trị viên",
+                Role.ADMIN, UserStatus.ACTIVE);
+        User existing = saveUser(marker + "-existing@example.com", "Đã tồn tại",
+                Role.STAFF, UserStatus.ACTIVE);
+        User patientWithoutProfile = saveUser(marker + "-patient@example.com", "Tên ban đầu",
+                Role.PATIENT, UserStatus.ACTIVE);
+        String originalEmail = patientWithoutProfile.getEmail();
+        try {
+            assertThatThrownBy(() -> adminUserService.updateUser(
+                    admin.getId(),
+                    patientWithoutProfile.getId(),
+                    new UpdateAdminUserRequest("Tên mới", existing.getEmail())
+            )).isInstanceOf(BusinessException.class);
+
+            assertThatThrownBy(() -> adminUserService.updateUser(
+                    admin.getId(),
+                    patientWithoutProfile.getId(),
+                    new UpdateAdminUserRequest(
+                            "Tên phải rollback",
+                            marker + "-new@example.com"
+                    )
+            )).isInstanceOf(NotFoundException.class)
+                    .hasMessage("Không tìm thấy hồ sơ bệnh nhân");
+
+            User unchanged = userRepository.findById(patientWithoutProfile.getId()).orElseThrow();
+            assertThat(unchanged.getFullName()).isEqualTo("Tên ban đầu");
+            assertThat(unchanged.getEmail()).isEqualTo(originalEmail);
+        } finally {
+            userRepository.deleteAllById(List.of(
+                    patientWithoutProfile.getId(),
+                    existing.getId(),
+                    admin.getId()
+            ));
+        }
     }
 
     private User saveUser(String email, String fullName, Role role, UserStatus status) {

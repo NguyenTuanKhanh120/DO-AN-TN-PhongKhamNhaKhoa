@@ -5,8 +5,10 @@ import com.dentalclinic.common.exception.ConflictException;
 import com.dentalclinic.common.exception.ForbiddenException;
 import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.common.response.PageResponse;
+import com.dentalclinic.patient.service.PatientService;
 import com.dentalclinic.user.dto.AdminUserResponse;
 import com.dentalclinic.user.dto.CreateStaffRequest;
+import com.dentalclinic.user.dto.UpdateAdminUserRequest;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
@@ -53,6 +55,9 @@ class AdminUserServiceTest {
     @Mock
     private AuthSessionService authSessionService;
 
+    @Mock
+    private PatientService patientService;
+
     private AdminUserService adminUserService;
 
     @BeforeEach
@@ -61,7 +66,8 @@ class AdminUserServiceTest {
                 userRepository,
                 adminAccountLockRepository,
                 passwordEncoder,
-                authSessionService
+                authSessionService,
+                patientService
         );
     }
 
@@ -150,6 +156,85 @@ class AdminUserServiceTest {
         assertThat(response.id()).isEqualTo(user.getId());
         assertThat(response.email()).isEqualTo(user.getEmail());
         assertThat(response.role()).isEqualTo(Role.DOCTOR);
+    }
+
+    @Test
+    void shouldUpdateStaffEmailAndFullNameWithoutChangingRole() {
+        User actor = user(Role.ADMIN, UserStatus.ACTIVE);
+        User staff = user(Role.STAFF, UserStatus.ACTIVE);
+        when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        when(userRepository.findById(staff.getId())).thenReturn(Optional.of(staff));
+        when(userRepository.existsByEmailAndIdNot("staff.updated@example.com", staff.getId()))
+                .thenReturn(false);
+
+        AdminUserResponse response = adminUserService.updateUser(
+                actor.getId(),
+                staff.getId(),
+                new UpdateAdminUserRequest(
+                        "  Nhân viên   cập nhật  ",
+                        " STAFF.UPDATED@Example.com "
+                )
+        );
+
+        assertThat(response.email()).isEqualTo("staff.updated@example.com");
+        assertThat(response.fullName()).isEqualTo("Nhân viên cập nhật");
+        assertThat(response.role()).isEqualTo(Role.STAFF);
+        assertThat(staff.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        verify(userRepository).saveAndFlush(staff);
+        verify(patientService, never()).syncLinkedPatientFullName(any(), any());
+    }
+
+    @Test
+    void shouldUpdateDoctorAccountWithoutChangingRole() {
+        User actor = user(Role.ADMIN, UserStatus.ACTIVE);
+        User doctor = user(Role.DOCTOR, UserStatus.ACTIVE);
+        when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        when(userRepository.findById(doctor.getId())).thenReturn(Optional.of(doctor));
+
+        AdminUserResponse response = adminUserService.updateUser(
+                actor.getId(),
+                doctor.getId(),
+                new UpdateAdminUserRequest("Bác sĩ mới", "doctor.new@example.com")
+        );
+
+        assertThat(response.role()).isEqualTo(Role.DOCTOR);
+        assertThat(response.status()).isEqualTo(UserStatus.ACTIVE);
+        verify(userRepository).saveAndFlush(doctor);
+    }
+
+    @Test
+    void shouldSynchronizePatientFullNameInSameUpdateFlow() {
+        User actor = user(Role.ADMIN, UserStatus.ACTIVE);
+        User patient = user(Role.PATIENT, UserStatus.ACTIVE);
+        when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        when(userRepository.findById(patient.getId())).thenReturn(Optional.of(patient));
+
+        AdminUserResponse response = adminUserService.updateUser(
+                actor.getId(),
+                patient.getId(),
+                new UpdateAdminUserRequest("  Bệnh nhân   mới ", "patient.new@example.com")
+        );
+
+        assertThat(response.fullName()).isEqualTo("Bệnh nhân mới");
+        verify(patientService).syncLinkedPatientFullName(patient.getId(), "Bệnh nhân mới");
+    }
+
+    @Test
+    void shouldRejectDuplicateEmailWhenUpdatingUser() {
+        User actor = user(Role.ADMIN, UserStatus.ACTIVE);
+        User staff = user(Role.STAFF, UserStatus.ACTIVE);
+        when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        when(userRepository.findById(staff.getId())).thenReturn(Optional.of(staff));
+        when(userRepository.existsByEmailAndIdNot("used@example.com", staff.getId()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> adminUserService.updateUser(
+                actor.getId(),
+                staff.getId(),
+                new UpdateAdminUserRequest("Nhân viên", "used@example.com")
+        )).isInstanceOf(com.dentalclinic.common.exception.BusinessException.class);
+
+        verify(userRepository, never()).saveAndFlush(staff);
     }
 
     @Test

@@ -559,11 +559,12 @@ class PostgreSql18SchemaContractIntegrationTest {
                         """,
                 Integer.class
         );
-        Integer appointmentsWithoutOnlineSource = jdbcTemplate.queryForObject(
+        Integer appointmentsWithInvalidBookingSource = jdbcTemplate.queryForObject(
                 """
                         select count(*)
                         from appointments
-                        where booking_source <> 'ONLINE'
+                        where booking_source is null
+                           or booking_source::text not in ('ONLINE', 'WALK_IN')
                         """,
                 Integer.class
         );
@@ -581,7 +582,7 @@ class PostgreSql18SchemaContractIntegrationTest {
         assertThat(bookingSourceColumn.get("is_nullable")).isEqualTo("NO");
         assertThat(bookingSourceColumn.get("column_default").toString()).contains("ONLINE");
         assertThat(patientsWithMissingBackfilledName).isZero();
-        assertThat(appointmentsWithoutOnlineSource).isZero();
+        assertThat(appointmentsWithInvalidBookingSource).isZero();
     }
 
     @Test

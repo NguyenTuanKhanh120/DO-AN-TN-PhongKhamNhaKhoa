@@ -5,6 +5,7 @@ import com.dentalclinic.auth.security.UserPrincipal;
 import com.dentalclinic.common.response.ApiResponse;
 import com.dentalclinic.common.response.PageResponse;
 import com.dentalclinic.user.dto.AdminUserResponse;
+import com.dentalclinic.user.dto.UpdateAdminUserRequest;
 import com.dentalclinic.user.dto.UpdateUserStatusRequest;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.UserStatus;
@@ -17,6 +18,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -56,6 +58,18 @@ public class AdminUserController {
     @GetMapping("/{id}")
     public ApiResponse<AdminUserResponse> getUser(@PathVariable UUID id) {
         return ApiResponse.success(adminUserService.getUser(id));
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<AdminUserResponse> updateUser(
+            @CurrentUser UserPrincipal currentUser,
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateAdminUserRequest request
+    ) {
+        return ApiResponse.success(
+                "Cập nhật thông tin tài khoản thành công",
+                adminUserService.updateUser(currentUser.getId(), id, request)
+        );
     }
 
     @PatchMapping("/{id}/status")

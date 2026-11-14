@@ -13,6 +13,7 @@ import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.repository.DoctorRepository;
+import com.dentalclinic.payment.service.PaymentService;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.service.SchedulingPolicy;
 import com.dentalclinic.user.entity.User;
@@ -53,6 +54,9 @@ class AppointmentStartExaminationServiceTest {
     @Mock
     private AppointmentHistoryRepository appointmentHistoryRepository;
 
+    @Mock
+    private PaymentService paymentService;
+
     private AppointmentStartExaminationService startExaminationService;
 
     @BeforeEach
@@ -68,6 +72,7 @@ class AppointmentStartExaminationServiceTest {
                 doctorRepository,
                 appointmentRepository,
                 appointmentHistoryRepository,
+                paymentService,
                 new SchedulingPolicy(clinicTimeProvider),
                 clinicTimeProvider
         );
@@ -106,6 +111,7 @@ class AppointmentStartExaminationServiceTest {
                 .isEqualTo("2026-10-12T09:15+07:00");
 
         verify(appointmentRepository).saveAndFlush(appointment);
+        verify(paymentService).initializeDraftForExamination(appointment);
         ArgumentCaptor<AppointmentHistory> historyCaptor = ArgumentCaptor.forClass(
                 AppointmentHistory.class
         );
