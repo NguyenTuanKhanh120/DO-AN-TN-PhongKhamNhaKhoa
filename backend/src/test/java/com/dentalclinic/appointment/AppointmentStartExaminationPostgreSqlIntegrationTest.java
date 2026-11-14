@@ -2,6 +2,7 @@ package com.dentalclinic.appointment;
 
 import com.dentalclinic.appointment.entity.Appointment;
 import com.dentalclinic.appointment.entity.AppointmentStatus;
+import com.dentalclinic.appointment.entity.BookingSource;
 import com.dentalclinic.appointment.repository.AppointmentRepository;
 import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.entity.DoctorService;
@@ -156,6 +157,18 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
         assertThat(((Timestamp) appointmentRow.get("actual_start_at")).toInstant())
                 .isEqualTo(FIXED_NOW);
 
+        Map<String, Object> paymentRow = jdbcTemplate.queryForMap("""
+                select status::text as status,
+                       jsonb_array_length(items) as item_count,
+                       total_amount
+                from payments
+                where appointment_id = ?
+                """, fixture.checkedInAppointmentId());
+        assertThat(paymentRow.get("status")).isEqualTo("DRAFT");
+        assertThat(((Number) paymentRow.get("item_count")).intValue()).isZero();
+        assertThat((BigDecimal) paymentRow.get("total_amount"))
+                .isEqualByComparingTo("0.00");
+
         Map<String, Object> historyRow = jdbcTemplate.queryForMap("""
                 select action::text as action,
                        changed_by,
@@ -188,6 +201,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                         "Chỉ có thể bắt đầu khám cho lịch hẹn đang ở trạng thái BOOKED"
                 ));
         assertThat(startHistoryCount(fixture.checkedInAppointmentId())).isEqualTo(1);
+        assertThat(paymentCount(fixture.checkedInAppointmentId())).isEqualTo(1);
     }
 
     @Test
@@ -312,6 +326,8 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
 
         assertThat(statusOf(fixture.checkedInContinuationAppointmentId()))
                 .isEqualTo("IN_PROGRESS");
+        assertThat(paymentCount(fixture.checkedInContinuationAppointmentId()))
+                .isEqualTo(1);
     }
 
     private Fixture createFixture() {
@@ -361,6 +377,8 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 null,
                 null
         );
+        checkedIn.setBookingSource(BookingSource.WALK_IN);
+        appointmentRepository.saveAndFlush(checkedIn);
         Appointment queueTwo = saveQueueAppointment(
                 secondPatient,
                 firstMapping,
@@ -561,6 +579,15 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
                 from appointment_histories
                 where appointment_id = ? and action = 'START_EXAM'
                 """, Integer.class, appointmentId);
+        return count == null ? 0 : count;
+    }
+
+    private int paymentCount(UUID appointmentId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "select count(*) from payments where appointment_id = ?",
+                Integer.class,
+                appointmentId
+        );
         return count == null ? 0 : count;
     }
 

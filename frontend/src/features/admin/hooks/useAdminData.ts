@@ -26,7 +26,7 @@ export const useAppointmentHistory = (id?: string) => useQuery({ queryKey: admin
 export const useAdminPayments = (params: service.PaymentParams = {}) => useQuery({ queryKey: adminKeys.payments(params), queryFn: () => service.getPayments(params) });
 export const useAdminPayment = (id?: string) => useQuery({ queryKey: adminKeys.payment(id ?? ""), queryFn: () => service.getPayment(id ?? ""), enabled: Boolean(id) });
 export const useDashboardSummary = () => useQuery({ queryKey: adminKeys.summary, queryFn: service.getDashboardSummary });
-export const useRevenue = (params: { fromDate?: string; toDate?: string; month?: string }) => useQuery({ queryKey: adminKeys.revenue(params), queryFn: () => service.getRevenue(params) });
+export const useRevenue = (params: { fromDate?: string; toDate?: string; month?: string }, enabled = true) => useQuery({ queryKey: adminKeys.revenue(params), queryFn: () => service.getRevenue(params), enabled });
 
 function useInvalidateMutation<TVariables, TResult>(mutationFn: (variables: TVariables) => Promise<TResult>, queryKey: readonly unknown[]) {
   const client = useQueryClient();
@@ -34,6 +34,19 @@ function useInvalidateMutation<TVariables, TResult>(mutationFn: (variables: TVar
 }
 
 export const useUpdateUserStatus = () => useInvalidateMutation(({ id, status }: { id: string; status: "ACTIVE" | "INACTIVE" }) => service.updateUserStatus(id, status), ["admin", "users"]);
+export function useUpdateAdminUser() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: service.UpdateAdminUserPayload }) => service.updateUser(id, payload),
+    onSuccess: async (data) => {
+      client.setQueryData(adminKeys.user(data.id), data);
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["admin", "users"] }),
+        client.invalidateQueries({ queryKey: ["public", "doctors"] }),
+      ]);
+    },
+  });
+}
 export const useCreateStaff = () => useInvalidateMutation(service.createStaff, ["admin", "staff"]);
 export const useUpdateStaffStatus = () => useInvalidateMutation(({ id, status }: { id: string; status: "ACTIVE" | "INACTIVE" }) => service.updateStaffStatus(id, status), ["admin", "staff"]);
 

@@ -11,6 +11,7 @@ const accountBase = z.object({
 });
 
 export const staffSchema = accountBase;
+export const adminUserUpdateSchema = accountBase.omit({ password: true });
 export const doctorCreateSchema = accountBase.extend({ specialization: z.string().trim().min(1).max(150), licenseNumber: z.string().trim().min(1).max(100), bio: z.string().max(5000), experienceYears: z.coerce.number().int().min(0) });
 export const doctorUpdateSchema = z.object({ fullName: z.string().trim().min(2).max(150), specialization: z.string().trim().min(1).max(150), licenseNumber: z.string().trim().min(1).max(100), bio: z.string().max(5000), rating: z.coerce.number().min(0).max(5), experienceYears: z.coerce.number().int().min(0) });
 export const serviceSchema = z.object({
@@ -38,6 +39,7 @@ export const scheduleSchema = z.object({ dayOfWeek: z.coerce.number().int().min(
 });
 
 export type StaffFormValues = z.infer<typeof staffSchema>;
+export type AdminUserUpdateFormValues = z.infer<typeof adminUserUpdateSchema>;
 export type DoctorCreateFormValues = z.infer<typeof doctorCreateSchema>;
 export type DoctorUpdateFormValues = z.infer<typeof doctorUpdateSchema>;
 export type ServiceFormValues = z.infer<typeof serviceSchema>;

@@ -107,7 +107,6 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
         registry.add("security.jwt.secret", () -> TEST_JWT_SECRET);
         registry.add("security.jwt.issuer", () -> "appointment-no-show-integration-test");
         registry.add("security.jwt.access-token-expiration-minutes", () -> 60);
-        registry.add("clinic.appointment.no-show-grace-minutes", () -> 15);
     }
 
     @BeforeEach
@@ -116,7 +115,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
     }
 
     @Test
-    void shouldMarkNoShowAtExactGracePersistStatusAndWriteAudit() throws Exception {
+    void shouldMarkNoShowAtScheduledTimeWithoutWaitingPersistStatusAndWriteAudit() throws Exception {
         String token = login(fixture.firstDoctorEmail());
 
         mockMvc.perform(patch(
@@ -130,7 +129,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
                         .value(fixture.eligibleAppointmentId().toString()))
                 .andExpect(jsonPath("$.data.status").value("NO_SHOW"))
                 .andExpect(jsonPath("$.data.estimatedStartAt")
-                        .value("2026-10-12T09:00:00+07:00"))
+                        .value("2026-10-12T09:15:00+07:00"))
                 .andExpect(jsonPath("$.data.noShowAt")
                         .value("2026-10-12T09:15:00+07:00"));
 
@@ -161,7 +160,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
         assertThat(historyRow.get("old_status")).isEqualTo("BOOKED");
         assertThat(historyRow.get("new_status")).isEqualTo("NO_SHOW");
         assertThat(historyRow.get("estimated_start_at"))
-                .isEqualTo("2026-10-12T09:00+07:00");
+                .isEqualTo("2026-10-12T09:15+07:00");
         assertThat(historyRow.get("no_show_at"))
                 .isEqualTo("2026-10-12T09:15+07:00");
 
@@ -177,7 +176,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
     }
 
     @Test
-    void shouldRejectNoShowBeforeGraceExpiresWithoutAudit() throws Exception {
+    void shouldRejectNoShowBeforeScheduledTimeWithoutAudit() throws Exception {
         String token = login(fixture.firstDoctorEmail());
 
         mockMvc.perform(patch(
@@ -186,7 +185,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
                 ).header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message")
-                        .value("Chỉ có thể xác nhận NO_SHOW sau giờ hẹn ít nhất 15 phút"));
+                        .value("Chỉ có thể xác nhận NO_SHOW từ giờ hẹn"));
 
         assertThat(statusOf(fixture.tooEarlyAppointmentId())).isEqualTo("BOOKED");
         assertThat(noShowHistoryCount(fixture.tooEarlyAppointmentId())).isZero();
@@ -262,7 +261,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
         DoctorService firstMapping = saveMapping(firstDoctor, service);
         DoctorService secondMapping = saveMapping(secondDoctor, service);
 
-        Instant eligibleStart = FIXED_NOW.minusSeconds(15 * 60L);
+        Instant eligibleStart = FIXED_NOW;
         Appointment eligible = saveAppointment(
                 patient,
                 firstMapping,
@@ -275,7 +274,7 @@ class AppointmentNoShowPostgreSqlIntegrationTest {
         Appointment tooEarly = saveAppointment(
                 tooEarlyPatient,
                 firstMapping,
-                FIXED_NOW.minusSeconds(15 * 60L - 1),
+                FIXED_NOW.plusSeconds(1),
                 ScheduleSession.AFTERNOON,
                 (short) 1,
                 AppointmentStatus.BOOKED,

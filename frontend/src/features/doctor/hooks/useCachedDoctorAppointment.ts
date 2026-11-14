@@ -14,9 +14,9 @@ export function useCachedDoctorAppointment(id?: string): Appointment | undefined
   return useMemo(() => {
     const state: unknown = location.state;
     if (typeof state === "object" && state !== null && "appointment" in state && isAppointment(state.appointment) && state.appointment.id === id) return state.appointment;
-    const pages = client.getQueriesData<PageResponse<Appointment>>({ queryKey: ["doctor", "appointments"] });
+    const pages = client.getQueriesData<PageResponse<Appointment> | Appointment[]>({ queryKey: ["doctor", "appointments"] });
     for (const [, page] of pages) {
-      const appointment = page?.content.find((item) => item.id === id);
+      const appointment = (Array.isArray(page) ? page : page?.content)?.find((item) => item.id === id);
       if (appointment) return appointment;
     }
     return undefined;

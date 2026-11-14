@@ -76,6 +76,13 @@ public class PatientService {
         return toResponse(patient);
     }
 
+    @Transactional
+    public void syncLinkedPatientFullName(UUID userId, String fullName) {
+        Patient patient = findByUserId(userId);
+        patient.setFullName(normalizeFullName(fullName));
+        patientRepository.saveAndFlush(patient);
+    }
+
     @Transactional(readOnly = true)
     public PageResponse<StaffPatientResponse> searchForStaff(
             String search,

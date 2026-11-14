@@ -24,6 +24,7 @@ export interface UserParams extends SearchPageParams { role?: Role; status?: Use
 export interface AppointmentParams extends SearchPageParams { status?: AppointmentStatus; patientId?: string; doctorId?: string; serviceId?: string; fromDate?: string; toDate?: string }
 export interface PaymentParams extends SearchPageParams { status?: PaymentStatus; fromDate?: string; toDate?: string; sortBy?: string; direction?: "ASC" | "DESC" }
 export interface CreateStaffPayload { email: string; password: string; fullName: string }
+export interface UpdateAdminUserPayload { email: string; fullName: string }
 export interface CreateDoctorPayload extends CreateStaffPayload { specialization: string; licenseNumber: string; bio: string | null; experienceYears: number }
 export interface UpdateDoctorPayload { fullName: string; specialization: string; licenseNumber: string; bio: string | null; rating: number; experienceYears: number }
 export interface ServicePayload { name: string; description: string | null; price: number; imageUrl: string | null }
@@ -32,6 +33,7 @@ export interface SchedulePayload { dayOfWeek: number; session: ScheduleSession; 
 
 export const getUsers = async (params: UserParams = {}): Promise<PageResponse<AdminUser>> => unwrap((await apiClient.get<ApiResponse<PageResponse<AdminUser>>>("/api/admin/users", { params: compactParams(params) })).data);
 export const getUser = async (id: string): Promise<AdminUser> => unwrap((await apiClient.get<ApiResponse<AdminUser>>(`/api/admin/users/${id}`)).data);
+export const updateUser = async (id: string, payload: UpdateAdminUserPayload): Promise<AdminUser> => unwrap((await apiClient.put<ApiResponse<AdminUser>>(`/api/admin/users/${id}`, payload)).data);
 export const updateUserStatus = async (id: string, status: UserStatus): Promise<AdminUser> => unwrap((await apiClient.patch<ApiResponse<AdminUser>>(`/api/admin/users/${id}/status`, { status })).data);
 
 export const getStaff = async (params: Omit<UserParams, "role"> = {}): Promise<PageResponse<AdminUser>> => unwrap((await apiClient.get<ApiResponse<PageResponse<AdminUser>>>("/api/admin/staff", { params: compactParams(params) })).data);

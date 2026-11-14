@@ -32,6 +32,7 @@ import com.dentalclinic.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -90,6 +91,37 @@ class PaymentServiceTest {
                 new PaymentMapper(timeProvider),
                 timeProvider
         );
+    }
+
+    @Test
+    void shouldInitializeEmptyDraftWhenExaminationStarts() {
+        Fixture fixture = fixture();
+        when(paymentRepository.findForUpdateByAppointmentId(fixture.appointment().getId()))
+                .thenReturn(Optional.empty());
+        when(paymentRepository.saveAndFlush(any(Payment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        paymentService.initializeDraftForExamination(fixture.appointment());
+
+        ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepository).saveAndFlush(paymentCaptor.capture());
+        Payment created = paymentCaptor.getValue();
+        assertThat(created.getAppointment()).isSameAs(fixture.appointment());
+        assertThat(created.getStatus()).isEqualTo(PaymentStatus.DRAFT);
+        assertThat(created.getItems()).isEmpty();
+        assertThat(created.getTotalAmount()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void shouldKeepExistingDraftWhenExaminationStarts() {
+        Fixture fixture = fixture();
+        Payment existing = draftPayment(fixture.appointment(), List.of());
+        when(paymentRepository.findForUpdateByAppointmentId(fixture.appointment().getId()))
+                .thenReturn(Optional.of(existing));
+
+        paymentService.initializeDraftForExamination(fixture.appointment());
+
+        verify(paymentRepository, never()).saveAndFlush(any());
     }
 
     @Test

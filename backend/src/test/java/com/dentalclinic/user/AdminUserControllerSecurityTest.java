@@ -37,6 +37,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -137,6 +138,61 @@ class AdminUserControllerSecurityTest {
                 .andExpect(jsonPath("$.data.status").value("INACTIVE"));
 
         verify(adminUserService).updateStatus(actor.getId(), item.id(), UserStatus.INACTIVE);
+    }
+
+    @Test
+    void shouldUpdateBasicUserInformationForAdmin() throws Exception {
+        UserPrincipal actor = principal(Role.ADMIN, UserStatus.ACTIVE);
+        AdminUserResponse item = response(Role.STAFF, UserStatus.ACTIVE);
+        when(adminUserService.updateUser(
+                org.mockito.ArgumentMatchers.eq(actor.getId()),
+                org.mockito.ArgumentMatchers.eq(item.id()),
+                org.mockito.ArgumentMatchers.any()
+        )).thenReturn(item);
+
+        mockMvc.perform(put("/api/admin/users/{id}", item.id())
+                        .with(user(actor))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fullName":"Nhân viên cập nhật","email":"staff.updated@example.com"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(item.id().toString()))
+                .andExpect(jsonPath("$.data.passwordHash").doesNotExist());
+
+        verify(adminUserService).updateUser(
+                org.mockito.ArgumentMatchers.eq(actor.getId()),
+                org.mockito.ArgumentMatchers.eq(item.id()),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
+    void shouldRejectInvalidEmailWhenUpdatingUser() throws Exception {
+        mockMvc.perform(put("/api/admin/users/{id}", UUID.randomUUID())
+                        .with(user("admin@example.com").roles("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"fullName\":\"Người dùng\",\"email\":\"email-sai\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void shouldRejectPatientUpdatingUser() throws Exception {
+        mockMvc.perform(put("/api/admin/users/{id}", UUID.randomUUID())
+                        .with(user("patient@example.com").roles("PATIENT"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"fullName\":\"Người dùng\",\"email\":\"user@example.com\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    void shouldNotExposeDeleteUserEndpoint() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/admin/users/{id}", UUID.randomUUID())
+                        .with(user("admin@example.com").roles("ADMIN")))
+                .andExpect(status().isMethodNotAllowed());
     }
 
     @Test

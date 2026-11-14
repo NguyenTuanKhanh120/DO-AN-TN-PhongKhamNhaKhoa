@@ -57,17 +57,16 @@ class AppointmentNoShowServiceTest {
                 doctorRepository,
                 appointmentRepository,
                 appointmentHistoryRepository,
-                new ClinicTimeProvider(Clock.fixed(FIXED_NOW, CLINIC_ZONE)),
-                15
+                new ClinicTimeProvider(Clock.fixed(FIXED_NOW, CLINIC_ZONE))
         );
     }
 
     @Test
-    void shouldAllowNoShowAtExactlyFifteenMinutesAndWriteAudit() {
+    void shouldAllowNoShowAtScheduledTimeWithoutWaitingAndWriteAudit() {
         UUID authenticatedUserId = UUID.randomUUID();
         Doctor doctor = doctor(authenticatedUserId);
         Appointment appointment = appointment(
-                FIXED_NOW.minusSeconds(15 * 60L),
+                FIXED_NOW,
                 AppointmentStatus.BOOKED
         );
         stubOwnedAppointment(authenticatedUserId, doctor, appointment);
@@ -81,7 +80,7 @@ class AppointmentNoShowServiceTest {
         assertThat(response.id()).isEqualTo(appointment.getId());
         assertThat(response.status()).isEqualTo(AppointmentStatus.NO_SHOW);
         assertThat(response.estimatedStartAt().toString())
-                .isEqualTo("2026-10-12T09:00+07:00");
+                .isEqualTo("2026-10-12T09:15+07:00");
         assertThat(response.noShowAt().toString())
                 .isEqualTo("2026-10-12T09:15+07:00");
 
@@ -98,17 +97,17 @@ class AppointmentNoShowServiceTest {
         assertThat(history.getDetails().path("old_status").asText()).isEqualTo("BOOKED");
         assertThat(history.getDetails().path("new_status").asText()).isEqualTo("NO_SHOW");
         assertThat(history.getDetails().path("estimated_start_at").asText())
-                .isEqualTo("2026-10-12T09:00+07:00");
+                .isEqualTo("2026-10-12T09:15+07:00");
         assertThat(history.getDetails().path("no_show_at").asText())
                 .isEqualTo("2026-10-12T09:15+07:00");
     }
 
     @Test
-    void shouldRejectNoShowOneSecondBeforeGraceExpires() {
+    void shouldRejectNoShowBeforeScheduledTime() {
         UUID authenticatedUserId = UUID.randomUUID();
         Doctor doctor = doctor(authenticatedUserId);
         Appointment appointment = appointment(
-                FIXED_NOW.minusSeconds(15 * 60L - 1),
+                FIXED_NOW.plusSeconds(1),
                 AppointmentStatus.BOOKED
         );
         stubOwnedAppointment(authenticatedUserId, doctor, appointment);
@@ -117,7 +116,7 @@ class AppointmentNoShowServiceTest {
                 authenticatedUserId,
                 appointment.getId()
         )).isInstanceOf(ConflictException.class)
-                .hasMessage("Chỉ có thể xác nhận NO_SHOW sau giờ hẹn ít nhất 15 phút");
+                .hasMessage("Chỉ có thể xác nhận NO_SHOW từ giờ hẹn");
 
         assertThat(appointment.getStatus()).isEqualTo(AppointmentStatus.BOOKED);
         verify(appointmentRepository, never()).saveAndFlush(any(Appointment.class));
@@ -178,18 +177,6 @@ class AppointmentNoShowServiceTest {
                 appointmentId
         )).isInstanceOf(NotFoundException.class)
                 .hasMessage("Không tìm thấy lịch hẹn");
-    }
-
-    @Test
-    void shouldRejectNegativeGraceConfiguration() {
-        assertThatThrownBy(() -> new AppointmentNoShowService(
-                doctorRepository,
-                appointmentRepository,
-                appointmentHistoryRepository,
-                new ClinicTimeProvider(Clock.fixed(FIXED_NOW, CLINIC_ZONE)),
-                -1
-        )).isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Cấu hình thời gian chờ NO_SHOW không hợp lệ");
     }
 
     private void stubOwnedAppointment(

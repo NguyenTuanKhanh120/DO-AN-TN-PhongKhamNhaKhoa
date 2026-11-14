@@ -14,11 +14,9 @@ import com.dentalclinic.doctor.entity.Doctor;
 import com.dentalclinic.doctor.repository.DoctorRepository;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -30,24 +28,17 @@ public class AppointmentNoShowService {
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final ClinicTimeProvider clinicTimeProvider;
-    private final Duration noShowGrace;
 
     public AppointmentNoShowService(
             DoctorRepository doctorRepository,
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
-            ClinicTimeProvider clinicTimeProvider,
-            @Value("${clinic.appointment.no-show-grace-minutes:15}")
-            long noShowGraceMinutes
+            ClinicTimeProvider clinicTimeProvider
     ) {
-        if (noShowGraceMinutes < 0) {
-            throw new IllegalArgumentException("Cấu hình thời gian chờ NO_SHOW không hợp lệ");
-        }
         this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.clinicTimeProvider = clinicTimeProvider;
-        this.noShowGrace = Duration.ofMinutes(noShowGraceMinutes);
     }
 
     @Transactional
@@ -63,11 +54,9 @@ public class AppointmentNoShowService {
 
         requireEligibleStatus(appointment);
         Instant noShowAt = clinicTimeProvider.now();
-        Instant earliestNoShowAt = appointment.getScheduledStartAt().plus(noShowGrace);
-        if (noShowAt.isBefore(earliestNoShowAt)) {
+        if (noShowAt.isBefore(appointment.getScheduledStartAt())) {
             throw new ConflictException(
-                    "Chỉ có thể xác nhận NO_SHOW sau giờ hẹn ít nhất "
-                            + noShowGrace.toMinutes() + " phút"
+                    "Chỉ có thể xác nhận NO_SHOW từ giờ hẹn"
             );
         }
 

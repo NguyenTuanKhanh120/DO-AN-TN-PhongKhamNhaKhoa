@@ -8,8 +8,10 @@ import com.dentalclinic.common.exception.ConflictException;
 import com.dentalclinic.common.exception.ForbiddenException;
 import com.dentalclinic.common.exception.NotFoundException;
 import com.dentalclinic.common.response.PageResponse;
+import com.dentalclinic.patient.service.PatientService;
 import com.dentalclinic.user.dto.AdminUserResponse;
 import com.dentalclinic.user.dto.CreateStaffRequest;
+import com.dentalclinic.user.dto.UpdateAdminUserRequest;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
@@ -38,17 +40,20 @@ public class AdminUserService {
     private final AdminAccountLockRepository adminAccountLockRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthSessionService authSessionService;
+    private final PatientService patientService;
 
     public AdminUserService(
             UserRepository userRepository,
             AdminAccountLockRepository adminAccountLockRepository,
             PasswordEncoder passwordEncoder,
-            AuthSessionService authSessionService
+            AuthSessionService authSessionService,
+            PatientService patientService
     ) {
         this.userRepository = userRepository;
         this.adminAccountLockRepository = adminAccountLockRepository;
         this.passwordEncoder = passwordEncoder;
         this.authSessionService = authSessionService;
+        this.patientService = patientService;
     }
 
     @Transactional
@@ -111,6 +116,34 @@ public class AdminUserService {
     @Transactional(readOnly = true)
     public AdminUserResponse getUser(UUID userId) {
         return toResponse(findUser(userId));
+    }
+
+    @Transactional
+    public AdminUserResponse updateUser(
+            UUID actorUserId,
+            UUID targetUserId,
+            UpdateAdminUserRequest request
+    ) {
+        requireActiveAdmin(actorUserId);
+        User target = findUser(targetUserId);
+        String normalizedEmail = normalizeEmail(request.email());
+        String normalizedFullName = normalizeFullName(request.fullName());
+
+        if (userRepository.existsByEmailAndIdNot(normalizedEmail, targetUserId)) {
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+        }
+
+        target.setEmail(normalizedEmail);
+        target.setFullName(normalizedFullName);
+        try {
+            userRepository.saveAndFlush(target);
+        } catch (DataIntegrityViolationException exception) {
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+        }
+        if (target.getRole() == Role.PATIENT) {
+            patientService.syncLinkedPatientFullName(target.getId(), normalizedFullName);
+        }
+        return toResponse(target);
     }
 
     @Transactional
