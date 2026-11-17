@@ -25,6 +25,8 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.io.Encoders;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -41,6 +43,7 @@ import java.util.UUID;
 import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -99,6 +102,7 @@ class AuthControllerSecurityTest {
                                   "email": "patient@example.com",
                                   "password": "StrongPassword123!",
                                   "fullName": "Nguyễn Văn An",
+                                  "phone": "0912345678",
                                   "role": "ADMIN"
                                 }
                                 """))
@@ -107,6 +111,10 @@ class AuthControllerSecurityTest {
                 .andExpect(jsonPath("$.data.userId").value(userId.toString()))
                 .andExpect(jsonPath("$.data.role").value("PATIENT"))
                 .andExpect(jsonPath("$.data.accessToken").value("access-token"));
+
+        verify(authService).registerPatient(argThat(request ->
+                "0912345678".equals(request.phone())
+        ));
     }
 
     @Test
@@ -200,6 +208,31 @@ class AuthControllerSecurityTest {
                         .content("{\"email\":\"invalid\",\"password\":\"short\",\"fullName\":\"\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "",
+            "09123abc",
+            "0912 345 678",
+            "+84912345678",
+            "0912-345-678",
+            "09123456789"
+    })
+    void shouldRejectInvalidRegistrationPhone(String phone) throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "patient@example.com",
+                                  "password": "StrongPassword123!",
+                                  "fullName": "Nguyễn Văn An",
+                                  "phone": "%s"
+                                }
+                                """.formatted(phone)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[?(@.field == 'phone')]").exists());
     }
 
     @Test

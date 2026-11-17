@@ -2,6 +2,7 @@ package com.dentalclinic.auth.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record RegisterRequest(
@@ -16,6 +17,11 @@ public record RegisterRequest(
 
         @NotBlank(message = "Họ tên không được để trống")
         @Size(min = 2, max = 150, message = "Họ tên phải có từ 2 đến 150 ký tự")
-        String fullName
+        String fullName,
+
+        @NotBlank(message = "Số điện thoại không được để trống")
+        @Pattern(regexp = "^\\d+$", message = "Số điện thoại chỉ được chứa chữ số")
+        @Size(max = 10, message = "Số điện thoại không được vượt quá 10 số")
+        String phone
 ) {
 }

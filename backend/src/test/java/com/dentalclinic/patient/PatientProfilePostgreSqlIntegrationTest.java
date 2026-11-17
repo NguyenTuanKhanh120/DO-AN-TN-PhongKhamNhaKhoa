@@ -139,7 +139,8 @@ class PatientProfilePostgreSqlIntegrationTest {
                         .content(objectMapper.writeValueAsBytes(Map.of(
                                 "email", email,
                                 "password", PASSWORD,
-                                "fullName", fullName
+                                "fullName", fullName,
+                                "phone", "0912345678"
                         ))))
                 .andExpect(status().isCreated())
                 .andReturn();
