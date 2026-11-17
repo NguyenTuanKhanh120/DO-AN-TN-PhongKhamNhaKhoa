@@ -74,6 +74,7 @@ public class AuthService {
         Patient patient = new Patient();
         patient.setUser(user);
         patient.setFullName(normalizedFullName);
+        patient.setPhone(normalizePhone(request.phone()));
         patient.setGender(Gender.UNSPECIFIED);
         patientRepository.save(patient);
 
@@ -107,6 +108,10 @@ public class AuthService {
 
     private String normalizeFullName(String fullName) {
         return fullName.trim().replaceAll("\\s+", " ");
+    }
+
+    private String normalizePhone(String phone) {
+        return phone.trim();
     }
 
 }

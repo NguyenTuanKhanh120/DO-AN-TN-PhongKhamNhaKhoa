@@ -84,7 +84,8 @@ class AuthServiceTest {
         AuthResponse response = authService.registerPatient(new RegisterRequest(
                 " Patient@Example.com ",
                 "StrongPassword123!",
-                "  Nguyễn   Văn   An  "
+                "  Nguyễn   Văn   An  ",
+                "0912345678"
         )).response();
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
@@ -101,6 +102,7 @@ class AuthServiceTest {
         verify(patientRepository).save(patientCaptor.capture());
         assertThat(patientCaptor.getValue().getUser()).isSameAs(savedUser);
         assertThat(patientCaptor.getValue().getFullName()).isEqualTo("Nguyễn Văn An");
+        assertThat(patientCaptor.getValue().getPhone()).isEqualTo("0912345678");
         assertThat(patientCaptor.getValue().getGender()).isEqualTo(Gender.UNSPECIFIED);
 
         assertThat(response.accessToken()).isEqualTo("access-token");
@@ -117,7 +119,8 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.registerPatient(new RegisterRequest(
                 "patient@example.com",
                 "StrongPassword123!",
-                "Nguyễn Văn An"
+                "Nguyễn Văn An",
+                "0912345678"
         )))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
@@ -134,7 +137,8 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.registerPatient(new RegisterRequest(
                 "patient@example.com",
                 multibytePassword,
-                "Nguyễn Văn An"
+                "Nguyễn Văn An",
+                "0912345678"
         )))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
@@ -152,7 +156,8 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.registerPatient(new RegisterRequest(
                 "patient@example.com",
                 "StrongPassword123!",
-                "Nguyễn Văn An"
+                "Nguyễn Văn An",
+                "0912345678"
         )))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())

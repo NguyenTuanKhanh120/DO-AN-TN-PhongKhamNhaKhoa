@@ -3,6 +3,7 @@ package com.dentalclinic.auth;
 import com.dentalclinic.DentalClinicApplication;
 import com.dentalclinic.auth.security.CurrentUser;
 import com.dentalclinic.auth.security.UserPrincipal;
+import com.dentalclinic.patient.entity.Patient;
 import com.dentalclinic.patient.repository.PatientRepository;
 import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
@@ -83,6 +84,7 @@ class AuthenticationPostgreSqlIntegrationTest {
                                 "email", email.toUpperCase(),
                                 "password", password,
                                 "fullName", "  Nguyễn   Văn   An  ",
+                                "phone", "0912345678",
                                 "role", "ADMIN"
                         ))))
                 .andExpect(status().isCreated())
@@ -102,15 +104,17 @@ class AuthenticationPostgreSqlIntegrationTest {
         assertThat(persistedUser.getPasswordHash()).isNotEqualTo(password);
         assertThat(passwordEncoder.matches(password, persistedUser.getPasswordHash())).isTrue();
         assertThat(patientRepository.existsByUserId(userId)).isTrue();
-        assertThat(patientRepository.findByUserId(userId).orElseThrow().getFullName())
-                .isEqualTo("Nguyễn Văn An");
+        Patient persistedPatient = patientRepository.findByUserId(userId).orElseThrow();
+        assertThat(persistedPatient.getFullName()).isEqualTo("Nguyễn Văn An");
+        assertThat(persistedPatient.getPhone()).isEqualTo("0912345678");
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "email", email,
                                 "password", password,
-                                "fullName", "Nguyễn Văn An"
+                                "fullName", "Nguyễn Văn An",
+                                "phone", "0912345678"
                         ))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"));

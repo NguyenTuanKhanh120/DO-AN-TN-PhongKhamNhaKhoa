@@ -20,7 +20,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   isLocked: boolean;
   signIn: (email: string, password: string) => Promise<AuthUser>;
-  signUp: (fullName: string, email: string, password: string) => Promise<AuthUser>;
+  signUp: (fullName: string, phone: string, email: string, password: string) => Promise<AuthUser>;
   signOut: () => Promise<void>;
   unlockSession: (password: string) => Promise<void>;
 }
@@ -83,8 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return acceptAuth(auth);
   }, [acceptAuth, queryClient]);
 
-  const signUp = useCallback(async (fullName: string, email: string, password: string) => {
-    const auth = await authService.registerPatient({ fullName, email, password });
+  const signUp = useCallback(async (fullName: string, phone: string, email: string, password: string) => {
+    const auth = await authService.registerPatient({ fullName, phone, email, password });
     queryClient.clear();
     return acceptAuth(auth);
   }, [acceptAuth, queryClient]);

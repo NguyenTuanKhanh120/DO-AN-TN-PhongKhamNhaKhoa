@@ -8,6 +8,11 @@ export const loginSchema = z.object({
 export const registerSchema = z
   .object({
     fullName: z.string().trim().min(2, "Họ tên phải có ít nhất 2 ký tự").max(150),
+    phone: z
+      .string()
+      .min(1, "Số điện thoại không được để trống")
+      .regex(/^\d+$/, "Số điện thoại chỉ được chứa chữ số")
+      .max(10, "Số điện thoại không được vượt quá 10 số"),
     email: z.string().trim().min(1, "Email không được để trống").email("Email không đúng định dạng").max(255),
     password: z.string().min(8, "Mật khẩu phải có ít nhất 8 ký tự").max(72),
     confirmPassword: z.string().min(1, "Vui lòng xác nhận mật khẩu"),
