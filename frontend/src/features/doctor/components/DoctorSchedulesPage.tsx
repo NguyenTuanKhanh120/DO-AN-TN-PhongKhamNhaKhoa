@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronLeft, ChevronRight, Info, Sun, Sunset } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Sun, Sunset } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AsyncStateView } from "@/components/common/AsyncStateView";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -40,10 +40,7 @@ export default function DoctorSchedulesPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Lịch làm việc tuần"
-        description="Lịch do quản trị viên cấu hình. Bác sĩ chỉ có quyền xem."
-      />
+      <PageHeader title="Lịch làm việc tuần" />
 
       <div className="mb-6 flex items-center justify-center gap-3">
         <Button variant="ghost" size="sm" aria-label="Tuần trước" onClick={() => moveWeek(-7)}>
@@ -107,11 +104,6 @@ export default function DoctorSchedulesPage() {
             );
           })}
         </div>
-
-        <p className="mt-4 flex items-start gap-2 text-sm text-muted">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary-700" />
-          <span>Thẻ màu đỏ là ngày có lịch khám. Nhấn vào một ngày để xem chi tiết các ca.</span>
-        </p>
 
         {selectedDay && <SelectedDayAppointments day={selectedDay} />}
       </AsyncStateView>

@@ -11,7 +11,11 @@ import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalRequest;
 import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalResult;
 import com.dentalclinic.ai.knowledge.model.KnowledgeSourceTrace;
 import com.dentalclinic.ai.knowledge.service.KnowledgeRetrievalService;
+import com.dentalclinic.ai.gateway.AiCallExecutor;
 import com.dentalclinic.ai.orchestration.service.ChatGroundingService;
+import com.dentalclinic.ai.orchestration.service.ChatQueryPlanner;
+import com.dentalclinic.ai.orchestration.service.DatabaseQueryExecutor;
+import com.dentalclinic.ai.orchestration.service.RagQueryExecutor;
 import com.dentalclinic.ai.recommendation.model.ServiceDoctorRecommendation;
 import com.dentalclinic.ai.recommendation.model.ServiceDoctorRecommendationResult;
 import com.dentalclinic.ai.recommendation.service.ServiceDoctorRecommendationService;
@@ -33,6 +37,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
@@ -59,13 +64,28 @@ class ChatGroundingServiceTest {
     private final DoctorManagementService doctorService = mock(DoctorManagementService.class);
     private final DoctorServiceMappingService mappingService = mock(DoctorServiceMappingService.class);
     private final AiSlotLookupService slotLookupService = mock(AiSlotLookupService.class);
-    private final ChatGroundingService service = new ChatGroundingService(
-            retrievalService,
+    private final AiCallExecutor aiCallExecutor = new AiCallExecutor(
+            Duration.ofSeconds(1),
+            Duration.ofSeconds(1),
+            Duration.ofSeconds(1),
+            100,
+            Duration.ofSeconds(1)
+    );
+    private final DatabaseQueryExecutor databaseQueryExecutor = new DatabaseQueryExecutor(
             recommendationService,
             dentalServiceService,
             doctorService,
             mappingService,
             slotLookupService
+    );
+    private final RagQueryExecutor ragQueryExecutor = new RagQueryExecutor(
+            retrievalService,
+            aiCallExecutor
+    );
+    private final ChatGroundingService service = new ChatGroundingService(
+            databaseQueryExecutor,
+            ragQueryExecutor,
+            new ChatQueryPlanner()
     );
 
     @Test
@@ -211,6 +231,36 @@ class ChatGroundingServiceTest {
         assertThat(result.slots()).isEmpty();
         verify(retrievalService, never()).retrieve(any());
         verify(mappingService, never()).getActiveDoctorMappingsByServiceIds(any());
+    }
+
+    @Test
+    void shouldLoadOnlySelectedServiceForPriceQuestion() {
+        DentalServiceResponse generalExamination = dentalService("Khám răng tổng quát");
+        ChatSemanticContext context = new ChatSemanticContext(
+                List.of(ChatIntent.SERVICE_CATALOG),
+                List.of(),
+                null,
+                new ChatEntityReference(
+                        generalExamination.id(),
+                        generalExamination.name()
+                ),
+                null,
+                null,
+                null
+        );
+        when(dentalServiceService.getService(generalExamination.id()))
+                .thenReturn(generalExamination);
+
+        var result = service.resolve(
+                "Dịch vụ khám răng tổng quát giá bao nhiêu?",
+                resolution(context)
+        );
+
+        assertThat(result.services()).containsExactly(generalExamination);
+        assertThat(result.context().selectedService().id())
+                .isEqualTo(generalExamination.id());
+        verify(dentalServiceService, never()).getActiveServices();
+        verify(retrievalService, never()).retrieve(any());
     }
 
     private ChatContextResolution resolution(ChatSemanticContext context) {

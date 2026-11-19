@@ -127,13 +127,16 @@ class AppointmentQueryControllerSecurityTest {
                 any(),
                 any(),
                 eq(0),
-                eq(20)
+                eq(20),
+                eq(true),
+                eq(false)
         )).thenReturn(page(appointment));
 
         mockMvc.perform(get("/api/doctor/appointments")
                         .with(user(principal))
                         .param("search", "bệnh nhân")
-                        .param("status", "BOOKED"))
+                        .param("status", "BOOKED")
+                        .param("excludeCancelled", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalElements").value(1))
                 .andExpect(jsonPath("$.data.content[0].id")

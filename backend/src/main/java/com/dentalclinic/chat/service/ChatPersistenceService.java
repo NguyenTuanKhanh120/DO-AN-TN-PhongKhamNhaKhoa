@@ -84,6 +84,24 @@ public class ChatPersistenceService {
     }
 
     @Transactional
+    public JsonNode readContext(UUID userId) {
+        ChatSession session = getOrCreateSession(userId);
+        return session.getContextData() == null
+                ? JsonNodeFactory.instance.objectNode()
+                : session.getContextData().deepCopy();
+    }
+
+    @Transactional
+    public void discardUserMessage(UUID userId, UUID messageId) {
+        ChatSession session = getOrCreateSession(userId);
+        chatMessageRepository.deleteByIdAndSessionIdAndSender(
+                messageId,
+                session.getId(),
+                ChatSender.USER
+        );
+    }
+
+    @Transactional
     public ChatMessageResponse completeTurn(
             UUID userId,
             String answer,

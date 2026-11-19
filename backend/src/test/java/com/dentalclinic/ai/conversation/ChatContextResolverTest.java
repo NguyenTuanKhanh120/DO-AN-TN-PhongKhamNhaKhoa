@@ -168,6 +168,71 @@ class ChatContextResolverTest {
         assertThat(result.missingFields()).containsExactly(ClarificationField.SYMPTOMS);
     }
 
+    @Test
+    void shouldNotCarryPreviousServiceIntoStandaloneSymptomQuestion() {
+        ChatSemanticContext previous = previousSlotContext();
+        ChatUnderstanding understanding = new ChatUnderstanding(
+                List.of(ChatIntent.SYMPTOM_CONSULTATION),
+                entities(
+                        List.of("ê buốt răng"),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ),
+                ChatFollowUpType.NONE
+        );
+
+        var result = resolver.resolve(previous, understanding);
+
+        assertThat(result.context().selectedService()).isNull();
+        assertThat(result.context().lastIntents())
+                .containsExactly(ChatIntent.SYMPTOM_CONSULTATION);
+    }
+
+    @Test
+    void shouldNotLimitStandaloneCatalogQuestionToPreviousService() {
+        ChatUnderstanding understanding = new ChatUnderstanding(
+                List.of(ChatIntent.SERVICE_CATALOG),
+                ChatEntities.empty(),
+                ChatFollowUpType.NONE
+        );
+
+        var result = resolver.resolve(previousSlotContext(), understanding);
+
+        assertThat(result.context().selectedService()).isNull();
+        assertThat(result.context().lastIntents())
+                .containsExactly(ChatIntent.SERVICE_CATALOG);
+    }
+
+    @Test
+    void shouldNotCarryPreviousServiceOrSessionIntoStandaloneDoctorAvailability() {
+        LocalDate tomorrow = LocalDate.of(2026, 11, 19);
+        ChatUnderstanding understanding = new ChatUnderstanding(
+                List.of(ChatIntent.DOCTOR_AVAILABLE_SLOTS),
+                entities(
+                        List.of(),
+                        "Bác sĩ Demo",
+                        null,
+                        tomorrow,
+                        null,
+                        null,
+                        null
+                ),
+                ChatFollowUpType.NONE
+        );
+
+        var result = resolver.resolve(previousSlotContext(), understanding);
+
+        assertThat(result.context().selectedDoctor().name()).isEqualTo("Bác sĩ Demo");
+        assertThat(result.context().selectedService()).isNull();
+        assertThat(result.context().sessionPreference()).isNull();
+        assertThat(result.context().dateRange()).isEqualTo(ChatDateRange.single(tomorrow));
+        assertThat(result.needsClarification()).isFalse();
+    }
+
     private ChatSemanticContext previousSlotContext() {
         return new ChatSemanticContext(
                 List.of(ChatIntent.DOCTOR_AVAILABLE_SLOTS),

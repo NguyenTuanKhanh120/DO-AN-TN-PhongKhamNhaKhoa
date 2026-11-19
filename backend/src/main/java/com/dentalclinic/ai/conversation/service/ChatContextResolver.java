@@ -31,6 +31,21 @@ public class ChatContextResolver {
                 : previous;
         ChatEntities entities = understanding.entities();
         List<ChatIntent> effectiveIntents = effectiveIntents(safePrevious, understanding);
+        boolean standaloneDoctorAvailability = isStandaloneDoctorAvailability(
+                understanding,
+                effectiveIntents
+        );
+        ChatEntityReference selectedService = shouldResetSelectedService(
+                understanding,
+                effectiveIntents,
+                standaloneDoctorAvailability
+        )
+                ? null
+                : mergeReference(
+                        safePrevious.selectedService(),
+                        entities.serviceId(),
+                        entities.serviceName()
+                );
         ChatSemanticContext merged = new ChatSemanticContext(
                 effectiveIntents,
                 mergeSymptoms(safePrevious.symptoms(), entities.symptoms()),
@@ -39,17 +54,13 @@ public class ChatContextResolver {
                         entities.doctorId(),
                         entities.doctorName()
                 ),
-                mergeReference(
-                        safePrevious.selectedService(),
-                        entities.serviceId(),
-                        entities.serviceName()
-                ),
+                selectedService,
                 entities.completeDateRange().orElse(safePrevious.dateRange()),
                 entities.sessionPreference() == null
-                        ? safePrevious.sessionPreference()
+                        ? (standaloneDoctorAvailability ? null : safePrevious.sessionPreference())
                         : entities.sessionPreference(),
                 entities.timePreference() == null
-                        ? safePrevious.timePreference()
+                        ? (standaloneDoctorAvailability ? null : safePrevious.timePreference())
                         : entities.timePreference()
         );
 
@@ -65,6 +76,33 @@ public class ChatContextResolver {
                 clarificationQuestion(missingFields),
                 understanding.followUpType()
         );
+    }
+
+    private boolean shouldResetSelectedService(
+            ChatUnderstanding understanding,
+            List<ChatIntent> effectiveIntents,
+            boolean standaloneDoctorAvailability
+    ) {
+        ChatEntities entities = understanding.entities();
+        if (understanding.followUpType() != ChatFollowUpType.NONE
+                || entities.serviceId() != null
+                || entities.serviceName() != null) {
+            return false;
+        }
+        return standaloneDoctorAvailability
+                || effectiveIntents.equals(List.of(ChatIntent.SERVICE_CATALOG))
+                || effectiveIntents.equals(List.of(ChatIntent.SYMPTOM_CONSULTATION));
+    }
+
+    private boolean isStandaloneDoctorAvailability(
+            ChatUnderstanding understanding,
+            List<ChatIntent> effectiveIntents
+    ) {
+        ChatEntities entities = understanding.entities();
+        return understanding.followUpType() == ChatFollowUpType.NONE
+                && effectiveIntents.equals(List.of(ChatIntent.DOCTOR_AVAILABLE_SLOTS))
+                && (entities.doctorId() != null || entities.doctorName() != null)
+                && entities.completeDateRange().isPresent();
     }
 
     private List<ChatIntent> effectiveIntents(

@@ -138,6 +138,36 @@ class ChatPersistenceServiceTest {
         verify(sessionRepository).saveAndFlush(session);
     }
 
+    @Test
+    void shouldReadContextWithoutExposingMutableSessionValue() {
+        UUID userId = UUID.randomUUID();
+        ChatSession session = session(userId);
+        session.setContextData(JsonNodeFactory.instance.objectNode().put("symptom", "đau răng"));
+        when(sessionRepository.findByUserId(userId)).thenReturn(Optional.of(session));
+
+        var context = service.readContext(userId);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) context)
+                .put("symptom", "đã thay đổi");
+
+        assertThat(session.getContextData().path("symptom").asText()).isEqualTo("đau răng");
+    }
+
+    @Test
+    void shouldDiscardOnlyUserMessageFromOwnedSession() {
+        UUID userId = UUID.randomUUID();
+        UUID messageId = UUID.randomUUID();
+        ChatSession session = session(userId);
+        when(sessionRepository.findByUserId(userId)).thenReturn(Optional.of(session));
+
+        service.discardUserMessage(userId, messageId);
+
+        verify(messageRepository).deleteByIdAndSessionIdAndSender(
+                messageId,
+                session.getId(),
+                ChatSender.USER
+        );
+    }
+
     private ChatSession session(UUID userId) {
         ChatSession session = new ChatSession();
         session.setId(UUID.randomUUID());

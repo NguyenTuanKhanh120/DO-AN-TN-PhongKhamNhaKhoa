@@ -46,7 +46,7 @@ describe("ChatInput", () => {
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
   });
 
-  it("khôi phục nội dung để thử lại khi gửi thất bại", async () => {
+  it("không khôi phục nội dung khi gửi thất bại", async () => {
     const onSend = vi.fn().mockResolvedValue(false);
     const user = userEvent.setup();
     render(<ChatInput onSend={onSend} />);
@@ -55,6 +55,6 @@ describe("ChatInput", () => {
     await user.type(input, "Bác sĩ Demo còn lịch không?");
     await user.click(screen.getByRole("button", { name: "Gửi tin nhắn" }));
 
-    await waitFor(() => expect(input).toHaveValue("Bác sĩ Demo còn lịch không?"));
+    await waitFor(() => expect(input).toHaveValue(""));
   });
 });

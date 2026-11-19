@@ -21,10 +21,8 @@ export function ChatInput({ onSend, disabled = false }: {
   });
   const message = watch("message");
   const submit = handleSubmit(async (values) => {
-    const submittedMessage = values.message;
     reset();
-    const sent = await onSend(submittedMessage);
-    if (!sent) reset({ message: submittedMessage });
+    await onSend(values.message);
   });
   const messageField = register("message");
 

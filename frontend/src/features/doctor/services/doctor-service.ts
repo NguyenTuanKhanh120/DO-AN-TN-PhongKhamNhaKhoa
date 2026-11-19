@@ -5,6 +5,8 @@ import { compactParams } from "@/utils/query";
 
 export interface DoctorAppointmentParams extends SearchPageParams {
   status?: AppointmentStatus;
+  excludeCancelled?: boolean;
+  historyOnly?: boolean;
   patientId?: string;
   serviceId?: string;
   fromDate?: string;

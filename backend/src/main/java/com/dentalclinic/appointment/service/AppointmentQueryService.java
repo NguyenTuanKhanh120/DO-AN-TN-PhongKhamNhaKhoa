@@ -104,7 +104,7 @@ public class AppointmentQueryService {
                 toDate,
                 page,
                 size,
-                defaultSort()
+                defaultSort(), false, false
         );
     }
 
@@ -131,7 +131,9 @@ public class AppointmentQueryService {
             LocalDate fromDate,
             LocalDate toDate,
             int page,
-            int size
+            int size,
+            boolean excludeCancelled,
+            boolean historyOnly
     ) {
         Doctor doctor = findDoctorByUser(authenticatedUserId);
         return queryAppointments(
@@ -144,7 +146,7 @@ public class AppointmentQueryService {
                 toDate,
                 page,
                 size,
-                defaultSort()
+                defaultSort(), excludeCancelled, historyOnly
         );
     }
 
@@ -175,7 +177,7 @@ public class AppointmentQueryService {
                         Sort.Order.asc("session"),
                         Sort.Order.asc("queueNumber"),
                         Sort.Order.asc("id")
-                )
+                ), false, false
         );
     }
 
@@ -201,7 +203,7 @@ public class AppointmentQueryService {
                 toDate,
                 page,
                 size,
-                defaultSort()
+                defaultSort(), false, false
         );
     }
 
@@ -231,7 +233,7 @@ public class AppointmentQueryService {
                 toDate,
                 page,
                 size,
-                sort
+                sort, false, false
         );
     }
 
@@ -254,7 +256,9 @@ public class AppointmentQueryService {
             LocalDate toDate,
             int page,
             int size,
-            Sort sort
+            Sort sort,
+            boolean excludeCancelled,
+            boolean historyOnly
     ) {
         validateDateRange(fromDate, toDate);
         Specification<Appointment> specification = buildSpecification(
@@ -266,6 +270,13 @@ public class AppointmentQueryService {
                 fromDate,
                 toDate
         );
+        if (historyOnly) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    root.get("status").in(AppointmentStatus.COMPLETED, AppointmentStatus.NO_SHOW));
+        } else if (excludeCancelled) {
+            specification = specification.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.notEqual(root.get("status"), AppointmentStatus.CANCELLED));
+        }
         PageRequest pageRequest = PageRequest.of(page, size, sort);
         Page<Appointment> appointmentPage = appointmentRepository.findAll(specification, pageRequest);
         Map<UUID, CancellationInfo> cancellationInfo = cancellationInfo(appointmentPage.getContent());
