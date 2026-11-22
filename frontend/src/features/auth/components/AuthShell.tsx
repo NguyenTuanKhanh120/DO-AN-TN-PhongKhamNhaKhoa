@@ -1,4 +1,4 @@
-import { HeartHandshake, Minus, ShieldCheck } from "lucide-react";
+import { HeartHandshake, Minus } from "lucide-react";
 import type { ReactNode } from "react";
 import heroImage from "@/assets/images/dental-consultation-hero.png";
 import { BrandLogo } from "@/components/common/BrandLogo";
@@ -24,7 +24,6 @@ export function AuthShell({ children }: { children: ReactNode }) {
         <div className="w-full max-w-[360px]">
           <div className="mb-9 lg:hidden"><BrandLogo /></div>
           {children}
-          <div className="mt-12 flex items-center justify-center gap-2 text-xs text-slate-500"><ShieldCheck className="h-4 w-4 text-primary-700" /> Thông tin của bạn luôn được bảo mật</div>
         </div>
         <p className="absolute bottom-7 hidden text-[10px] text-slate-400 sm:block">An tâm kết nối, trọn vẹn chăm sóc.</p>
       </section>

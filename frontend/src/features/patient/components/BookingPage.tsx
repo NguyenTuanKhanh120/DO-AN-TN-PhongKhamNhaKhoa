@@ -62,7 +62,7 @@ export default function BookingPage() {
   const services = useServices({ active: true, page: 0, size: 100 });
   const doctors = useServiceDoctors(serviceId || undefined);
   const fromDate = clinicToday();
-  const toDate = addCalendarDays(fromDate, 29);
+  const toDate = addCalendarDays(fromDate, 13);
   const calendar = useDoctorCalendar(doctorId || undefined, serviceId || undefined, fromDate, toDate);
   const slots = useAvailableSlots(doctorId || undefined, serviceId || undefined, date || undefined);
   const patientAppointments = usePatientAppointments(

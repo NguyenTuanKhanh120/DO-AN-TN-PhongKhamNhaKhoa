@@ -8,11 +8,13 @@ import com.dentalclinic.ai.conversation.model.ChatFollowUpType;
 import com.dentalclinic.ai.conversation.model.ChatIntent;
 import com.dentalclinic.ai.conversation.model.ChatSemanticContext;
 import com.dentalclinic.ai.conversation.model.ChatSessionPreference;
+import com.dentalclinic.ai.conversation.model.ChatUnderstanding;
 import com.dentalclinic.ai.conversation.service.ConversationUnderstandingService;
+import com.dentalclinic.ai.conversation.service.DeterministicConversationUnderstandingService;
+import com.dentalclinic.ai.conversation.service.FallbackConversationUnderstandingService;
 import com.dentalclinic.ai.conversation.service.VietnameseRelativeDateResolver;
 import com.dentalclinic.ai.gateway.AiChatGateway;
-import com.dentalclinic.common.constant.ErrorCode;
-import com.dentalclinic.common.exception.BusinessException;
+import com.dentalclinic.ai.gateway.AiCallExecutor;
 import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.genai.errors.ClientException;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -28,7 +31,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -48,6 +50,8 @@ class ConversationUnderstandingServiceTest {
             timeProvider
     );
     private final AiChatGateway gateway = mock(AiChatGateway.class);
+    private final DeterministicConversationUnderstandingService deterministicUnderstandingService =
+            mock(DeterministicConversationUnderstandingService.class);
 
     @Test
     void shouldExtractMultipleIntentsEntitiesAndResolveTomorrowInClinicTimezone() {
@@ -113,6 +117,39 @@ class ConversationUnderstandingServiceTest {
 
         assertThat(result.intents()).containsExactly(ChatIntent.SERVICE_CATALOG);
         assertThat(result.entities()).isEqualTo(ChatEntities.empty());
+    }
+
+    @Test
+    void shouldUseDeterministicServicePriceUnderstandingWithoutCallingGemini() {
+        String message = "Dịch vụ khám răng tổng quát giá bao nhiêu?";
+        UUID serviceId = UUID.randomUUID();
+        ChatUnderstanding deterministic = new ChatUnderstanding(
+                List.of(ChatIntent.SERVICE_CATALOG),
+                new ChatEntities(
+                        List.of(),
+                        null,
+                        null,
+                        "Khám răng tổng quát",
+                        serviceId,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ),
+                ChatFollowUpType.NONE
+        );
+        when(deterministicUnderstandingService.analyze(message))
+                .thenReturn(Optional.of(deterministic));
+
+        var result = service(Optional.empty()).analyze(
+                message,
+                ChatSemanticContext.empty()
+        );
+
+        assertThat(result).isEqualTo(deterministic);
+        assertThat(result.entities().serviceId()).isEqualTo(serviceId);
+        verifyNoInteractions(gateway);
     }
 
     @Test
@@ -200,7 +237,7 @@ class ConversationUnderstandingServiceTest {
     }
 
     @Test
-    void shouldRejectHallucinatedUuidNotPresentInMessage() {
+    void shouldDiscardHallucinatedUuidAndUseFallback() {
         when(gateway.generate(anyString(), anyString())).thenReturn("""
                 {
                   "intents": ["DOCTOR_RECOMMENDATION"],
@@ -210,14 +247,20 @@ class ConversationUnderstandingServiceTest {
                 }
                 """);
 
-        assertUnavailable(() -> service(Optional.of(gateway)).analyze(
+        var result = service(Optional.of(gateway)).analyze(
                 "Tôi đau răng, hãy gợi ý bác sĩ",
                 ChatSemanticContext.empty()
-        ));
+        );
+
+        assertThat(result.intents()).containsExactly(
+                ChatIntent.SYMPTOM_CONSULTATION,
+                ChatIntent.DOCTOR_RECOMMENDATION
+        );
+        assertThat(result.entities().doctorId()).isNull();
     }
 
     @Test
-    void shouldRejectUnknownOrContradictoryIntentOutput() {
+    void shouldUseOutOfScopeFallbackForContradictoryIntentOutput() {
         when(gateway.generate(anyString(), anyString())).thenReturn("""
                 {
                   "intents": ["OUT_OF_SCOPE", "AVAILABLE_SLOTS"],
@@ -226,14 +269,16 @@ class ConversationUnderstandingServiceTest {
                 }
                 """);
 
-        assertUnavailable(() -> service(Optional.of(gateway)).analyze(
+        var result = service(Optional.of(gateway)).analyze(
                 "Nội dung",
                 ChatSemanticContext.empty()
-        ));
+        );
+
+        assertThat(result.intents()).containsExactly(ChatIntent.OUT_OF_SCOPE);
     }
 
     @Test
-    void shouldRejectModelInventedDoctorName() {
+    void shouldDiscardModelInventedDoctorNameAndUseFallback() {
         when(gateway.generate(anyString(), anyString())).thenReturn("""
                 {
                   "intents": ["DOCTOR_RECOMMENDATION"],
@@ -243,41 +288,51 @@ class ConversationUnderstandingServiceTest {
                 }
                 """);
 
-        assertUnavailable(() -> service(Optional.of(gateway)).analyze(
+        var result = service(Optional.of(gateway)).analyze(
                 "Tôi đau răng, hãy gợi ý bác sĩ",
                 ChatSemanticContext.empty()
-        ));
+        );
+
+        assertThat(result.intents()).contains(
+                ChatIntent.SYMPTOM_CONSULTATION,
+                ChatIntent.DOCTOR_RECOMMENDATION
+        );
+        assertThat(result.entities().doctorName()).isNull();
     }
 
     @Test
-    void shouldFailWithoutCallingAnythingWhenAiIsDisabled() {
+    void shouldUseFallbackWhenAiIsDisabled() {
         ConversationUnderstandingService service = service(Optional.empty());
 
-        assertUnavailable(() -> service.analyze("Tôi đau răng", ChatSemanticContext.empty()));
+        var result = service.analyze("Tôi đau răng", ChatSemanticContext.empty());
 
+        assertThat(result.intents()).containsExactly(ChatIntent.SYMPTOM_CONSULTATION);
+        assertThat(result.entities().symptoms()).containsExactly("đau răng");
         verifyNoInteractions(gateway);
     }
 
     @Test
-    void shouldReturnSpecificMessageWhenGeminiQuotaIsExceeded() {
+    void shouldUseFallbackWhenGeminiQuotaIsExceeded() {
         when(gateway.generate(anyString(), anyString())).thenThrow(new RuntimeException(
                 "provider failed",
                 new ClientException(429, "RESOURCE_EXHAUSTED", "quota exceeded")
         ));
 
-        assertThatThrownBy(() -> service(Optional.of(gateway)).analyze(
+        var result = service(Optional.of(gateway)).analyze(
                 "Tôi bị đau răng vùng cằm",
                 ChatSemanticContext.empty()
-        )).isInstanceOfSatisfying(BusinessException.class, exception -> {
-            assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.AI_SERVICE_UNAVAILABLE);
-            assertThat(exception.getMessage())
-                    .isEqualTo("Trợ lý AI đã đạt giới hạn sử dụng Gemini. Vui lòng thử lại sau.");
-        });
+        );
+
+        assertThat(result.intents()).containsExactly(ChatIntent.SYMPTOM_CONSULTATION);
+        assertThat(result.entities().symptoms()).contains("đau răng");
     }
 
     private ConversationUnderstandingService service(Optional<AiChatGateway> optionalGateway) {
         return new ConversationUnderstandingService(
+                deterministicUnderstandingService,
+                new FallbackConversationUnderstandingService(dateResolver),
                 optionalGateway,
+                aiCallExecutor(),
                 new ObjectMapper(),
                 contextMapper,
                 dateResolver,
@@ -285,9 +340,14 @@ class ConversationUnderstandingServiceTest {
         );
     }
 
-    private void assertUnavailable(org.assertj.core.api.ThrowableAssert.ThrowingCallable callable) {
-        assertThatThrownBy(callable)
-                .isInstanceOfSatisfying(BusinessException.class, exception ->
-                        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.AI_SERVICE_UNAVAILABLE));
+    private AiCallExecutor aiCallExecutor() {
+        return new AiCallExecutor(
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(1),
+                100,
+                Duration.ofSeconds(1)
+        );
     }
+
 }

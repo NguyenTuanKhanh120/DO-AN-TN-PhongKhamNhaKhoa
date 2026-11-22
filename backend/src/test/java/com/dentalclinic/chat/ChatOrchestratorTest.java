@@ -3,19 +3,26 @@ package com.dentalclinic.chat;
 import com.dentalclinic.ai.conversation.mapper.ChatSemanticContextMapper;
 import com.dentalclinic.ai.conversation.model.ChatContextResolution;
 import com.dentalclinic.ai.conversation.model.ChatEntities;
+import com.dentalclinic.ai.conversation.model.ChatEntityReference;
 import com.dentalclinic.ai.conversation.model.ChatFollowUpType;
 import com.dentalclinic.ai.conversation.model.ChatIntent;
 import com.dentalclinic.ai.conversation.model.ChatSemanticContext;
+import com.dentalclinic.ai.conversation.model.ChatSessionPreference;
 import com.dentalclinic.ai.conversation.model.ChatUnderstanding;
 import com.dentalclinic.ai.conversation.model.ClarificationField;
 import com.dentalclinic.ai.conversation.service.ChatContextResolver;
 import com.dentalclinic.ai.conversation.service.ConversationUnderstandingService;
 import com.dentalclinic.ai.gateway.AiChatGateway;
+import com.dentalclinic.ai.gateway.AiCallExecutor;
+import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalResult;
 import com.dentalclinic.ai.orchestration.model.ChatGroundingResult;
 import com.dentalclinic.ai.orchestration.model.ChatPrompt;
 import com.dentalclinic.ai.orchestration.service.ChatGroundingService;
 import com.dentalclinic.ai.orchestration.service.ChatPromptBuilder;
+import com.dentalclinic.ai.orchestration.service.ChatQueryPlanner;
 import com.dentalclinic.ai.orchestration.service.ChatResponseValidator;
+import com.dentalclinic.ai.orchestration.service.DatabaseChatResponseService;
+import com.dentalclinic.ai.slot.model.ChatSlotSuggestion;
 import com.dentalclinic.chat.dto.ChatMessageResponse;
 import com.dentalclinic.chat.dto.SendChatMessageRequest;
 import com.dentalclinic.chat.entity.ChatSender;
@@ -33,6 +40,11 @@ import org.junit.jupiter.api.Test;
 import java.io.InterruptedIOException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,6 +71,89 @@ class ChatOrchestratorTest {
     private final AiChatGateway gateway = mock(AiChatGateway.class);
     private final ChatSemanticContextMapper contextMapper = new ChatSemanticContextMapper();
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+
+    @Test
+    void shouldReturnVerifiedDoctorAvailabilityWithoutCallingAnswerModel() {
+        UUID userId = UUID.randomUUID();
+        UUID doctorId = UUID.randomUUID();
+        LocalDate date = LocalDate.of(2026, 11, 19);
+        String message = "Bác sĩ Demo ngày mai có trống ca không?";
+        ChatSemanticContext previous = ChatSemanticContext.empty();
+        ChatSemanticContext context = new ChatSemanticContext(
+                List.of(ChatIntent.DOCTOR_AVAILABLE_SLOTS),
+                List.of(),
+                new ChatEntityReference(doctorId, "Bác sĩ Demo"),
+                null,
+                com.dentalclinic.ai.conversation.model.ChatDateRange.single(date),
+                null,
+                null
+        );
+        ChatUnderstanding understanding = new ChatUnderstanding(
+                context.lastIntents(),
+                ChatEntities.empty(),
+                ChatFollowUpType.NONE
+        );
+        ChatContextResolution resolution = new ChatContextResolution(
+                context,
+                false,
+                List.of(),
+                null,
+                ChatFollowUpType.NONE
+        );
+        ChatSlotSuggestion morning = slot(
+                doctorId,
+                date,
+                ChatSessionPreference.MORNING,
+                1,
+                LocalTime.of(8, 0),
+                LocalTime.of(8, 0)
+        );
+        ChatSlotSuggestion afternoon = slot(
+                doctorId,
+                date,
+                ChatSessionPreference.AFTERNOON,
+                2,
+                LocalTime.of(14, 0),
+                LocalTime.of(15, 30)
+        );
+        ChatGroundingResult grounding = new ChatGroundingResult(
+                context,
+                false,
+                true,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(afternoon, morning)
+        );
+        String answer = """
+                Bác sĩ Demo còn các ca trống ngày 19/11/2026:
+                - Buổi sáng, Ca 1 — dự kiến 08:00
+                - Buổi chiều, Ca 2 — dự kiến 15:30""";
+
+        when(persistenceService.startTurn(userId, message)).thenReturn(new ChatTurnStart(
+                message(ChatSender.USER, message),
+                contextMapper.toJson(previous)
+        ));
+        when(understandingService.analyze(message, previous)).thenReturn(understanding);
+        when(contextResolver.resolve(previous, understanding)).thenReturn(resolution);
+        when(groundingService.resolve(message, resolution)).thenReturn(grounding);
+        when(persistenceService.completeTurn(
+                eq(userId),
+                eq(answer),
+                any(JsonNode.class),
+                any(JsonNode.class)
+        )).thenReturn(message(ChatSender.ASSISTANT, answer));
+
+        var response = orchestrator(Optional.of(gateway)).sendMessage(
+                userId,
+                new SendChatMessageRequest(message)
+        );
+
+        assertThat(response.answer()).isEqualTo(answer);
+        assertThat(response.suggestedSlots()).containsExactly(afternoon, morning);
+        verify(promptBuilder, never()).build(any(), any());
+        verify(gateway, never()).generate(any(), any());
+    }
 
     @Test
     void shouldOrchestrateUnderstandingGroundingGeminiValidationAndPersistence() {
@@ -258,6 +353,72 @@ class ChatOrchestratorTest {
     }
 
     @Test
+    void shouldKeepVerifiedPriceWhenMixedQuestionCannotReachKnowledgeBase() {
+        UUID userId = UUID.randomUUID();
+        String message = "Tôi bị đau răng, khám răng tổng quát giá bao nhiêu?";
+        DentalServiceResponse examination = dentalService("Khám răng tổng quát");
+        ChatSemanticContext context = new ChatSemanticContext(
+                List.of(ChatIntent.SERVICE_CATALOG, ChatIntent.SYMPTOM_CONSULTATION),
+                List.of("đau răng"),
+                null,
+                new ChatEntityReference(examination.id(), examination.name()),
+                null,
+                null,
+                null
+        );
+        ChatUnderstanding understanding = new ChatUnderstanding(
+                context.lastIntents(),
+                ChatEntities.empty(),
+                ChatFollowUpType.NONE
+        );
+        ChatContextResolution resolution = new ChatContextResolution(
+                context,
+                false,
+                List.of(),
+                null,
+                ChatFollowUpType.NONE
+        );
+        ChatGroundingResult noKnowledge = new ChatGroundingResult(
+                context,
+                true,
+                false,
+                List.of(),
+                List.of(examination),
+                List.of(),
+                List.of()
+        );
+        String answer = "Dịch vụ Khám răng tổng quát hiện có giá 200.000 đ. "
+                + "Kho kiến thức hiện chưa có đủ dữ liệu đáng tin cậy để trả lời nội dung này. "
+                + "Bạn nên đến phòng khám để được bác sĩ đánh giá trực tiếp.";
+
+        when(persistenceService.startTurn(userId, message)).thenReturn(new ChatTurnStart(
+                message(ChatSender.USER, message),
+                contextMapper.toJson(ChatSemanticContext.empty())
+        ));
+        when(understandingService.analyze(message, ChatSemanticContext.empty()))
+                .thenReturn(understanding);
+        when(contextResolver.resolve(ChatSemanticContext.empty(), understanding))
+                .thenReturn(resolution);
+        when(groundingService.resolve(message, resolution)).thenReturn(noKnowledge);
+        when(persistenceService.completeTurn(
+                eq(userId),
+                eq(answer),
+                any(JsonNode.class),
+                any(JsonNode.class)
+        )).thenReturn(message(ChatSender.ASSISTANT, answer));
+
+        var response = orchestrator(Optional.of(gateway)).sendMessage(
+                userId,
+                new SendChatMessageRequest(message)
+        );
+
+        assertThat(response.answer()).isEqualTo(answer);
+        assertThat(response.suggestedServices()).containsExactly(examination);
+        verify(promptBuilder, never()).build(any(), any());
+        verify(gateway, never()).generate(any(), any());
+    }
+
+    @Test
     void shouldReturnVerifiedServiceCatalogWithoutCallingAnswerModel() {
         UUID userId = UUID.randomUUID();
         String message = "Hiện tại nha khoa có những dịch vụ nào?";
@@ -327,26 +488,173 @@ class ChatOrchestratorTest {
     }
 
     @Test
-    void shouldRejectBeforePersistenceWhenAiIsDisabled() {
-        ChatOrchestrator orchestrator = orchestrator(Optional.empty());
+    void shouldReturnVerifiedServicePriceWhenAiIsDisabled() {
+        UUID userId = UUID.randomUUID();
+        String message = "Dịch vụ khám răng tổng quát giá bao nhiêu?";
+        DentalServiceResponse dentalService = dentalService("Khám răng tổng quát");
+        ChatSemanticContext previous = ChatSemanticContext.empty();
+        ChatSemanticContext context = new ChatSemanticContext(
+                List.of(ChatIntent.SERVICE_CATALOG),
+                List.of(),
+                null,
+                new ChatEntityReference(
+                        dentalService.id(),
+                        dentalService.name()
+                ),
+                null,
+                null,
+                null
+        );
+        ChatUnderstanding understanding = new ChatUnderstanding(
+                context.lastIntents(),
+                ChatEntities.empty(),
+                ChatFollowUpType.NONE
+        );
+        ChatContextResolution resolution = new ChatContextResolution(
+                context,
+                false,
+                List.of(),
+                null,
+                ChatFollowUpType.NONE
+        );
+        ChatGroundingResult grounding = new ChatGroundingResult(
+                context,
+                false,
+                true,
+                List.of(),
+                List.of(dentalService),
+                List.of(),
+                List.of()
+        );
+        String answer = "Dịch vụ Khám răng tổng quát hiện có giá 200.000 đ.";
+        ChatMessageResponse assistantMessage = message(ChatSender.ASSISTANT, answer);
+        when(understandingService.analyze(message, previous)).thenReturn(understanding);
+        when(contextResolver.resolve(previous, understanding)).thenReturn(resolution);
+        when(groundingService.resolve(message, resolution)).thenReturn(grounding);
+        when(persistenceService.startTurn(userId, message)).thenReturn(new ChatTurnStart(
+                message(ChatSender.USER, message),
+                contextMapper.toJson(previous)
+        ));
+        when(persistenceService.completeTurn(
+                eq(userId),
+                eq(answer),
+                any(JsonNode.class),
+                any(JsonNode.class)
+        )).thenReturn(assistantMessage);
 
-        assertThatThrownBy(() -> orchestrator.sendMessage(
-                UUID.randomUUID(),
-                new SendChatMessageRequest("Xin chào")
-        )).isInstanceOfSatisfying(BusinessException.class, exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.AI_SERVICE_UNAVAILABLE)
+        var response = orchestrator(Optional.empty()).sendMessage(
+                userId,
+                new SendChatMessageRequest(message)
         );
 
-        verify(persistenceService, never()).startTurn(any(), any());
+        assertThat(response.answer()).isEqualTo(answer);
+        assertThat(response.suggestedServices()).containsExactly(dentalService);
+        verify(promptBuilder, never()).build(any(), any());
+        verify(gateway, never()).generate(any(), any());
     }
 
     @Test
-    void shouldKeepUserMessageAndNotCompleteTurnWhenAnswerModelFails() {
+    void shouldKeepVerifiedPriceWhenMixedQuestionGenerationFails() {
         UUID userId = UUID.randomUUID();
-        String message = "Phòng khám hỗ trợ gì?";
+        String message = "Tôi bị đau răng, khám răng tổng quát giá bao nhiêu?";
+        DentalServiceResponse dentalService = dentalService("Khám răng tổng quát");
+        ChatSemanticContext previous = ChatSemanticContext.empty();
+        ChatSemanticContext context = new ChatSemanticContext(
+                List.of(ChatIntent.SERVICE_CATALOG, ChatIntent.SYMPTOM_CONSULTATION),
+                List.of("đau răng"),
+                null,
+                new ChatEntityReference(dentalService.id(), dentalService.name()),
+                null,
+                null,
+                null
+        );
+        ChatUnderstanding understanding = new ChatUnderstanding(
+                context.lastIntents(),
+                new ChatEntities(
+                        List.of("đau răng"),
+                        null,
+                        null,
+                        dentalService.name(),
+                        dentalService.id(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                ),
+                ChatFollowUpType.NONE
+        );
+        ChatContextResolution resolution = new ChatContextResolution(
+                context,
+                false,
+                List.of(),
+                null,
+                ChatFollowUpType.NONE
+        );
+        KnowledgeRetrievalResult evidence = mock(KnowledgeRetrievalResult.class);
+        when(evidence.content()).thenReturn(
+                "Đau răng có thể liên quan đến nhiều nguyên nhân và cần được nha sĩ kiểm tra."
+        );
+        ChatGroundingResult grounding = new ChatGroundingResult(
+                context,
+                true,
+                true,
+                List.of(evidence),
+                List.of(dentalService),
+                List.of(),
+                List.of()
+        );
+        String fallback = """
+                Dịch vụ Khám răng tổng quát hiện có giá 200.000 đ.
+
+                Thông tin tham khảo từ kho kiến thức nha khoa:
+                Đau răng có thể liên quan đến nhiều nguyên nhân và cần được nha sĩ kiểm tra.
+                Bạn nên đến phòng khám để được bác sĩ kiểm tra trực tiếp.""";
+        ChatMessageResponse assistantMessage = message(ChatSender.ASSISTANT, fallback);
+        when(understandingService.analyze(message, previous)).thenReturn(understanding);
+        when(contextResolver.resolve(previous, understanding)).thenReturn(resolution);
+        when(groundingService.resolve(message, resolution)).thenReturn(grounding);
+        when(promptBuilder.build(message, grounding)).thenReturn(new ChatPrompt(
+                "system",
+                "grounded user prompt"
+        ));
+        when(gateway.generate("system", "grounded user prompt"))
+                .thenThrow(new IllegalStateException("provider failed"));
+        when(persistenceService.startTurn(userId, message)).thenReturn(new ChatTurnStart(
+                message(ChatSender.USER, message),
+                contextMapper.toJson(previous)
+        ));
+        when(persistenceService.completeTurn(
+                eq(userId),
+                eq(fallback),
+                any(JsonNode.class),
+                any(JsonNode.class)
+        )).thenReturn(assistantMessage);
+
+        var response = orchestrator(Optional.of(gateway)).sendMessage(
+                userId,
+                new SendChatMessageRequest(message)
+        );
+
+        assertThat(response.answer()).isEqualTo(fallback);
+        assertThat(response.suggestedServices()).containsExactly(dentalService);
+        verify(persistenceService).completeTurn(
+                eq(userId),
+                eq(fallback),
+                any(JsonNode.class),
+                any(JsonNode.class)
+        );
+        verify(persistenceService, never()).discardUserMessage(any(), any());
+    }
+
+    @Test
+    void shouldDiscardUserMessageAndNotCompleteTurnWhenAnswerModelFails() {
+        UUID userId = UUID.randomUUID();
+        String message = "Dịch vụ nào phù hợp với nhu cầu của tôi?";
+        ChatMessageResponse userMessage = message(ChatSender.USER, message);
         ChatSemanticContext previous = ChatSemanticContext.empty();
         ChatSemanticContext resolved = new ChatSemanticContext(
-                List.of(ChatIntent.CLINIC_INFORMATION),
+                List.of(ChatIntent.SERVICE_RECOMMENDATION),
                 List.of(),
                 null,
                 null,
@@ -366,9 +674,19 @@ class ChatOrchestratorTest {
                 null,
                 ChatFollowUpType.NONE
         );
-        ChatGroundingResult grounding = ChatGroundingResult.empty(resolved);
+        KnowledgeRetrievalResult evidence = mock(KnowledgeRetrievalResult.class);
+        when(evidence.content()).thenReturn("Thông tin nha khoa đã được truy xuất.");
+        ChatGroundingResult grounding = new ChatGroundingResult(
+                resolved,
+                true,
+                true,
+                List.of(evidence),
+                List.of(),
+                List.of(),
+                List.of()
+        );
         when(persistenceService.startTurn(userId, message)).thenReturn(new ChatTurnStart(
-                message(ChatSender.USER, message),
+                userMessage,
                 contextMapper.toJson(previous)
         ));
         when(understandingService.analyze(message, previous)).thenReturn(understanding);
@@ -388,6 +706,31 @@ class ChatOrchestratorTest {
         );
 
         verify(persistenceService, never()).completeTurn(any(), any(), any(), any());
+        verify(persistenceService).discardUserMessage(
+                eq(userId),
+                eq(userMessage.id())
+        );
+    }
+
+    @Test
+    void shouldNotPersistUserMessageWhenUnderstandingFails() {
+        UUID userId = UUID.randomUUID();
+        String message = "Ngày mai còn lịch không?";
+        when(understandingService.analyze(message, ChatSemanticContext.empty()))
+                .thenThrow(new BusinessException(
+                        ErrorCode.AI_SERVICE_UNAVAILABLE,
+                        "hệ thống lỗi vui lòng thử lại sau"
+                ));
+
+        assertThatThrownBy(() -> orchestrator(Optional.of(gateway)).prepareTurn(
+                userId,
+                new SendChatMessageRequest(message)
+        )).isInstanceOfSatisfying(BusinessException.class, exception ->
+                assertThat(exception.getMessage())
+                        .isEqualTo("hệ thống lỗi vui lòng thử lại sau")
+        );
+
+        verify(persistenceService, never()).startTurn(any(), any());
     }
 
     @Test
@@ -436,7 +779,7 @@ class ChatOrchestratorTest {
         )).isInstanceOfSatisfying(BusinessException.class, exception -> {
             assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.AI_SERVICE_UNAVAILABLE);
             assertThat(exception.getMessage())
-                    .isEqualTo("Trợ lý AI đang phản hồi chậm. Vui lòng thử lại sau.");
+                    .isEqualTo("hệ thống lỗi vui lòng thử lại sau");
         });
 
         verify(persistenceService, never()).completeTurn(any(), any(), any(), any());
@@ -449,10 +792,22 @@ class ChatOrchestratorTest {
                 understandingService,
                 contextResolver,
                 groundingService,
+                new DatabaseChatResponseService(new ChatQueryPlanner()),
                 promptBuilder,
                 new ChatResponseValidator(),
                 optionalGateway,
+                aiCallExecutor(),
                 objectMapper
+        );
+    }
+
+    private AiCallExecutor aiCallExecutor() {
+        return new AiCallExecutor(
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(1),
+                100,
+                Duration.ofSeconds(1)
         );
     }
 
@@ -476,6 +831,30 @@ class ChatOrchestratorTest {
                 true,
                 NOW,
                 NOW
+        );
+    }
+
+    private ChatSlotSuggestion slot(
+            UUID doctorId,
+            LocalDate date,
+            ChatSessionPreference session,
+            int queueNumber,
+            LocalTime sessionStart,
+            LocalTime estimatedStart
+    ) {
+        LocalTime sessionEnd = session == ChatSessionPreference.MORNING
+                ? LocalTime.of(11, 0)
+                : LocalTime.of(17, 0);
+        return new ChatSlotSuggestion(
+                doctorId,
+                null,
+                date,
+                session,
+                queueNumber,
+                sessionStart,
+                sessionEnd,
+                estimatedStart,
+                OffsetDateTime.of(date, estimatedStart, ZoneOffset.ofHours(7))
         );
     }
 }

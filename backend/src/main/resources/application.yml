@@ -88,10 +88,22 @@ app:
     temperature: ${GEMINI_CHAT_TEMPERATURE:0.2}
     max-output-tokens: ${GEMINI_MAX_OUTPUT_TOKENS:4096}
     thinking-budget: ${GEMINI_THINKING_BUDGET:256}
-    request-timeout: ${GEMINI_REQUEST_TIMEOUT:60s}
-    streaming-timeout: ${AI_STREAMING_TIMEOUT:75s}
+    # Keep one provider attempt shorter than the conversation preparation timeout.
+    # This allows deterministic/RAG fallbacks to answer instead of leaving the UI waiting.
+    request-timeout: ${GEMINI_REQUEST_TIMEOUT:12s}
+    # Total preparation budget for SSE: classification + DB/RAG grounding.
+    understanding-timeout: ${AI_UNDERSTANDING_TIMEOUT:6s}
+    # Maximum wait between streaming signals, including the first token.
+    streaming-timeout: ${AI_STREAMING_TIMEOUT:5s}
+    call-timeouts:
+      understanding: ${AI_CALL_UNDERSTANDING_TIMEOUT:2s}
+      rag-retrieval: ${AI_CALL_RAG_TIMEOUT:3s}
+      generation: ${AI_CALL_GENERATION_TIMEOUT:5s}
+    circuit-breaker:
+      failure-threshold: ${AI_CIRCUIT_FAILURE_THRESHOLD:2}
+      open-duration: ${AI_CIRCUIT_OPEN_DURATION:30s}
     retry:
-      max-attempts: ${GEMINI_RETRY_MAX_ATTEMPTS:2}
+      max-attempts: ${GEMINI_RETRY_MAX_ATTEMPTS:1}
       initial-delay: ${GEMINI_RETRY_INITIAL_DELAY:500ms}
       max-delay: ${GEMINI_RETRY_MAX_DELAY:4s}
     knowledge-base:

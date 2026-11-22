@@ -35,10 +35,10 @@ export default function LoginPage() {
       <div className="mb-7"><h1 className="text-[1.7rem] font-extrabold tracking-tight text-ink">Chào mừng trở lại</h1><p className="mt-2 text-sm text-muted">Đăng nhập để tiếp tục sử dụng hệ thống</p></div>
       <form className="space-y-4" onSubmit={submit} noValidate>
         {errors.root?.message && <div role="alert" className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{errors.root.message}</div>}
-        <FormField label="Email" required error={errors.email?.message} hint="Bắt buộc · Đúng định dạng · Tối đa 255 ký tự">
+        <FormField label="Email" required error={errors.email?.message}>
           <Input type="email" autoComplete="email" placeholder="Nhập địa chỉ email" icon={<Mail className="h-4 w-4" />} error={Boolean(errors.email)} {...register("email")} />
         </FormField>
-        <FormField label="Mật khẩu" required error={errors.password?.message} hint="Bắt buộc · Tối đa 72 ký tự">
+        <FormField label="Mật khẩu" required error={errors.password?.message}>
           <PasswordInput autoComplete="current-password" placeholder="Nhập mật khẩu" icon={<LockKeyhole className="h-4 w-4" />} error={Boolean(errors.password)} {...register("password")} />
         </FormField>
         <Button type="submit" size="lg" className="mt-2 w-full" loading={isSubmitting}>Đăng nhập <ArrowRight className="h-4 w-4" /></Button>

@@ -17,6 +17,7 @@ function streamResponse(payload: string): Response {
 describe("chatbot streaming service", () => {
   afterEach(() => {
     tokenStore.clear();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -50,5 +51,27 @@ describe("chatbot streaming service", () => {
     expect(onToken).toHaveBeenCalledWith({ content: "Xin chào" });
     expect(onMetadata).toHaveBeenCalledWith(expect.objectContaining({ needsClarification: false }));
     expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({ messageId: "assistant-message" }));
+  });
+
+  it("dừng chờ phản hồi ban đầu và trả thông báo hệ thống sau 30 giây", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn((_url: string, options?: RequestInit) => (
+      new Promise<Response>((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(options.signal?.reason));
+      })
+    )));
+
+    const request = streamChatMessage(
+      "Ngày mai còn lịch không?",
+      {},
+      new AbortController().signal,
+    );
+    const rejection = expect(request).rejects.toMatchObject({
+      message: "hệ thống lỗi vui lòng thử lại sau",
+      code: "NETWORK_ERROR",
+    });
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await rejection;
   });
 });

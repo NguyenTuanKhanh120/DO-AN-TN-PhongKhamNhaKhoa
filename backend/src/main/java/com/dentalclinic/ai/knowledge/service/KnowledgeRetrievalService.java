@@ -1,6 +1,7 @@
 package com.dentalclinic.ai.knowledge.service;
 
 import com.dentalclinic.ai.embedding.EmbeddingGateway;
+import com.dentalclinic.ai.gateway.AiProviderFailureClassifier;
 import com.dentalclinic.ai.knowledge.config.KnowledgeRetrievalProperties;
 import com.dentalclinic.ai.knowledge.constant.KnowledgeEmbeddingConstants;
 import com.dentalclinic.ai.knowledge.exception.KnowledgeBaseException;
@@ -9,6 +10,9 @@ import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalCriteria;
 import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalRequest;
 import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalResult;
 import com.dentalclinic.ai.knowledge.repository.KnowledgeRetrievalRepository;
+import com.dentalclinic.ai.telemetry.ChatTelemetry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -16,6 +20,8 @@ import java.util.Optional;
 
 @Service
 public class KnowledgeRetrievalService {
+
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeRetrievalService.class);
 
     private final Optional<EmbeddingGateway> embeddingGateway;
     private final KnowledgeRetrievalRepository repository;
@@ -48,7 +54,28 @@ public class KnowledgeRetrievalService {
         double minimumSimilarity = request.minimumSimilarity() == null
                 ? properties.similarityThreshold()
                 : request.minimumSimilarity();
-        float[] queryEmbedding = embedQuery(gateway, request.query());
+        String requestId = ChatTelemetry.currentRequestId();
+        long embeddingStartedNanos = System.nanoTime();
+        float[] queryEmbedding;
+        try {
+            queryEmbedding = embedQuery(gateway, request.query());
+            log.info(
+                    "chat_embedding_completed requestId={} durationMs={} model={} dimension={}",
+                    requestId,
+                    ChatTelemetry.elapsedMillis(embeddingStartedNanos),
+                    gateway.modelName(),
+                    gateway.dimension()
+            );
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "chat_embedding_failed requestId={} durationMs={} model={} providerStatus={}",
+                    requestId,
+                    ChatTelemetry.elapsedMillis(embeddingStartedNanos),
+                    gateway.modelName(),
+                    AiProviderFailureClassifier.classify(exception)
+            );
+            throw exception;
+        }
 
         KnowledgeRetrievalCriteria criteria = new KnowledgeRetrievalCriteria(
                 queryEmbedding,
@@ -58,9 +85,28 @@ public class KnowledgeRetrievalService {
                 minimumSimilarity,
                 request.filter()
         );
-        return repository.search(criteria).stream()
-                .map(mapper::toResult)
-                .toList();
+        long retrievalStartedNanos = System.nanoTime();
+        try {
+            List<KnowledgeRetrievalResult> results = repository.search(criteria).stream()
+                    .map(mapper::toResult)
+                    .toList();
+            log.info(
+                    "chat_vector_retrieval_completed requestId={} durationMs={} topK={} resultCount={}",
+                    requestId,
+                    ChatTelemetry.elapsedMillis(retrievalStartedNanos),
+                    topK,
+                    results.size()
+            );
+            return results;
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "chat_vector_retrieval_failed requestId={} durationMs={} providerStatus={}",
+                    requestId,
+                    ChatTelemetry.elapsedMillis(retrievalStartedNanos),
+                    AiProviderFailureClassifier.classify(exception)
+            );
+            throw exception;
+        }
     }
 
     private void requireCompatibleGateway(EmbeddingGateway gateway) {

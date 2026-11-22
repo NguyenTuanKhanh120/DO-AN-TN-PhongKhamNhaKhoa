@@ -6,6 +6,7 @@ import com.dentalclinic.ai.conversation.model.ChatIntent;
 import com.dentalclinic.ai.conversation.model.ChatSemanticContext;
 import com.dentalclinic.ai.conversation.model.ChatSessionPreference;
 import com.dentalclinic.ai.gateway.AiStreamingChatGateway;
+import com.dentalclinic.ai.gateway.AiCallExecutor;
 import com.dentalclinic.ai.orchestration.model.ChatGroundingResult;
 import com.dentalclinic.ai.orchestration.model.ChatPrompt;
 import com.dentalclinic.ai.orchestration.service.ChatResponseValidator;
@@ -13,6 +14,7 @@ import com.dentalclinic.ai.slot.model.ChatSlotSuggestion;
 import com.dentalclinic.chat.dto.ChatMessageResponse;
 import com.dentalclinic.chat.dto.ChatStreamErrorEvent;
 import com.dentalclinic.chat.dto.ChatStreamMetadataEvent;
+import com.dentalclinic.chat.dto.ChatStreamTokenEvent;
 import com.dentalclinic.chat.dto.SendChatMessageRequest;
 import com.dentalclinic.chat.dto.SendChatMessageResponse;
 import com.dentalclinic.chat.entity.ChatSender;
@@ -100,6 +102,36 @@ class ChatStreamingServiceTest {
     }
 
     @Test
+    void shouldStreamDeterministicAnswerWhenStreamingGatewayIsDisabled() {
+        PreparedChatTurn prepared = immediateTurn(
+                "Dịch vụ Khám răng tổng quát hiện có giá 200.000 đ."
+        );
+        SendChatMessageResponse completed = completedResponse(
+                prepared,
+                prepared.immediateAnswer()
+        );
+        when(orchestrator.prepareTurn(userId, request)).thenReturn(prepared);
+        when(orchestrator.completeTurn(prepared, prepared.immediateAnswer()))
+                .thenReturn(completed);
+        ChatStreamingService service = new ChatStreamingService(
+                orchestrator,
+                new ChatResponseValidator(),
+                Optional.empty(),
+                aiCallExecutor(),
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(1)
+        );
+
+        List<ServerSentEvent<Object>> events = service.streamMessage(userId, request)
+                .collectList()
+                .block(Duration.ofSeconds(2));
+
+        assertThat(eventNames(events))
+                .containsExactly("started", "token", "metadata", "completed");
+        verify(orchestrator).completeTurn(prepared, prepared.immediateAnswer());
+    }
+
+    @Test
     void shouldEndWithPartialErrorAndNotPersistIncompleteAnswer() {
         PreparedChatTurn prepared = generatedTurn();
         when(orchestrator.prepareTurn(userId, request)).thenReturn(prepared);
@@ -139,10 +171,35 @@ class ChatStreamingServiceTest {
         assertThat(events.get(1).data())
                 .isInstanceOfSatisfying(ChatStreamErrorEvent.class, error -> {
                     assertThat(error.message())
-                            .isEqualTo("Trợ lý AI đã đạt giới hạn sử dụng Gemini. Vui lòng thử lại sau.");
+                            .isEqualTo("hệ thống lỗi vui lòng thử lại sau");
                     assertThat(error.partial()).isFalse();
                 });
         verify(orchestrator, never()).completeTurn(any(), any());
+    }
+
+    @Test
+    void shouldReturnVerifiedPriceFallbackWhenMixedQuestionGenerationFails() {
+        String fallback = "Dịch vụ Khám răng tổng quát hiện có giá 200.000 đ. "
+                + "Phần tư vấn triệu chứng: hệ thống lỗi vui lòng thử lại sau.";
+        PreparedChatTurn prepared = generatedTurn(fallback);
+        SendChatMessageResponse completed = completedResponse(prepared, fallback);
+        when(orchestrator.prepareTurn(userId, request)).thenReturn(prepared);
+        when(gateway.stream("system", "user")).thenReturn(Flux.error(
+                new IllegalStateException("provider failed")
+        ));
+        when(orchestrator.completeTurn(prepared, fallback)).thenReturn(completed);
+
+        List<ServerSentEvent<Object>> events = service(Duration.ofSeconds(1))
+                .streamMessage(userId, request)
+                .collectList()
+                .block(Duration.ofSeconds(2));
+
+        assertThat(eventNames(events))
+                .containsExactly("started", "token", "metadata", "completed");
+        assertThat(events.get(1).data())
+                .isEqualTo(new ChatStreamTokenEvent(fallback));
+        verify(orchestrator).completeTurn(prepared, fallback);
+        verify(orchestrator, never()).discardTurn(prepared);
     }
 
     @Test
@@ -159,7 +216,35 @@ class ChatStreamingServiceTest {
         assertThat(eventNames(events)).containsExactly("started", "error");
         assertThat(events.get(1).data())
                 .isInstanceOfSatisfying(ChatStreamErrorEvent.class, error -> {
-                    assertThat(error.message()).contains("quá thời gian chờ");
+                    assertThat(error.message()).isEqualTo("hệ thống lỗi vui lòng thử lại sau");
+                    assertThat(error.partial()).isFalse();
+                });
+        verify(orchestrator, never()).completeTurn(any(), any());
+    }
+
+    @Test
+    void shouldTimeoutWhileProviderIsStillOpeningStream() {
+        PreparedChatTurn prepared = generatedTurn();
+        when(orchestrator.prepareTurn(userId, request)).thenReturn(prepared);
+        when(gateway.stream("system", "user")).thenAnswer(invocation -> {
+            try {
+                Thread.sleep(1_000);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return Flux.never();
+            }
+            return Flux.just("late token");
+        });
+
+        List<ServerSentEvent<Object>> events = service(Duration.ofMillis(25))
+                .streamMessage(userId, request)
+                .collectList()
+                .block(Duration.ofMillis(500));
+
+        assertThat(eventNames(events)).containsExactly("started", "error");
+        assertThat(events.get(1).data())
+                .isInstanceOfSatisfying(ChatStreamErrorEvent.class, error -> {
+                    assertThat(error.message()).isEqualTo("hệ thống lỗi vui lòng thử lại sau");
                     assertThat(error.partial()).isFalse();
                 });
         verify(orchestrator, never()).completeTurn(any(), any());
@@ -186,10 +271,14 @@ class ChatStreamingServiceTest {
 
     @Test
     void shouldReturnSafeErrorBeforePersistenceWhenStreamingIsDisabled() {
+        PreparedChatTurn prepared = generatedTurn();
+        when(orchestrator.prepareTurn(userId, request)).thenReturn(prepared);
         ChatStreamingService service = new ChatStreamingService(
                 orchestrator,
                 new ChatResponseValidator(),
                 Optional.empty(),
+                aiCallExecutor(),
+                Duration.ofSeconds(1),
                 Duration.ofSeconds(1)
         );
 
@@ -197,9 +286,10 @@ class ChatStreamingServiceTest {
                 .collectList()
                 .block(Duration.ofSeconds(1));
 
-        assertThat(eventNames(events)).containsExactly("error");
-        assertThat(events.getFirst().data()).isInstanceOf(ChatStreamErrorEvent.class);
-        verify(orchestrator, never()).prepareTurn(any(), any());
+        assertThat(eventNames(events)).containsExactly("started", "error");
+        assertThat(events.getLast().data()).isInstanceOf(ChatStreamErrorEvent.class);
+        verify(orchestrator).prepareTurn(userId, request);
+        verify(orchestrator).discardTurn(prepared);
     }
 
     private ChatStreamingService service(Duration timeout) {
@@ -207,11 +297,27 @@ class ChatStreamingServiceTest {
                 orchestrator,
                 new ChatResponseValidator(),
                 Optional.of(gateway),
+                aiCallExecutor(),
+                Duration.ofSeconds(1),
                 timeout
         );
     }
 
+    private AiCallExecutor aiCallExecutor() {
+        return new AiCallExecutor(
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(1),
+                100,
+                Duration.ofSeconds(1)
+        );
+    }
+
     private PreparedChatTurn generatedTurn() {
+        return generatedTurn(null);
+    }
+
+    private PreparedChatTurn generatedTurn(String generationFailureFallback) {
         ChatSemanticContext context = context();
         return new PreparedChatTurn(
                 userId,
@@ -219,7 +325,8 @@ class ChatStreamingServiceTest {
                 resolution(context),
                 ChatGroundingResult.empty(context),
                 new ChatPrompt("system", "user"),
-                null
+                null,
+                generationFailureFallback
         );
     }
 
@@ -231,7 +338,8 @@ class ChatStreamingServiceTest {
                 resolution(context),
                 ChatGroundingResult.empty(context),
                 null,
-                answer
+                answer,
+                null
         );
     }
 

@@ -73,7 +73,9 @@ public class DoctorAppointmentController {
             @RequestParam(defaultValue = "20")
             @Min(value = 1, message = "Size phải lớn hơn hoặc bằng 1")
             @Max(value = 100, message = "Size không được vượt quá 100")
-            int size
+            int size,
+            @RequestParam(defaultValue = "false") boolean excludeCancelled,
+            @RequestParam(defaultValue = "false") boolean historyOnly
     ) {
         return ApiResponse.success(appointmentQueryService.getDoctorAppointments(
                 currentUser.getId(),
@@ -84,7 +86,9 @@ public class DoctorAppointmentController {
                 fromDate,
                 toDate,
                 page,
-                size
+                size,
+                excludeCancelled,
+                historyOnly
         ));
     }
 

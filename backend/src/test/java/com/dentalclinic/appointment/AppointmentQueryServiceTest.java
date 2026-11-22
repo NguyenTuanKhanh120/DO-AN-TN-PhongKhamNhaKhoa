@@ -232,7 +232,9 @@ class AppointmentQueryServiceTest {
                 null,
                 null,
                 0,
-                20
+                20,
+                false,
+                false
         )).isInstanceOf(NotFoundException.class)
                 .hasMessage("Không tìm thấy hồ sơ bác sĩ");
     }

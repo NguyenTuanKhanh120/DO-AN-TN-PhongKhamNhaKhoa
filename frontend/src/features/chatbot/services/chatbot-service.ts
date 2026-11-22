@@ -25,6 +25,9 @@ interface ErrorPayload {
   message?: string;
 }
 
+const SYSTEM_ERROR_MESSAGE = "hệ thống lỗi vui lòng thử lại sau";
+const INITIAL_RESPONSE_TIMEOUT_MS = 30_000;
+
 export class ChatStreamError extends ApiError {
   readonly partial: boolean;
 
@@ -86,12 +89,19 @@ async function openStream(
   retried = false,
 ): Promise<ReadableStream<Uint8Array>> {
   const token = tokenStore.get();
+  const requestController = new AbortController();
+  const abortRequest = () => requestController.abort(signal.reason);
+  signal.addEventListener("abort", abortRequest, { once: true });
+  const timeout = window.setTimeout(
+    () => requestController.abort(new DOMException("Timeout", "TimeoutError")),
+    INITIAL_RESPONSE_TIMEOUT_MS,
+  );
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl.replace(/\/+$/, "")}/api/chat/messages/stream`, {
       method: "POST",
       credentials: "include",
-      signal,
+      signal: requestController.signal,
       headers: {
         Accept: "text/event-stream",
         "Content-Type": "application/json",
@@ -103,9 +113,12 @@ async function openStream(
   } catch (error) {
     if (signal.aborted) throw error;
     throw new ChatStreamError(
-      "Không thể kết nối đến trợ lý AI. Vui lòng kiểm tra kết nối và thử lại.",
+      SYSTEM_ERROR_MESSAGE,
       "NETWORK_ERROR",
     );
+  } finally {
+    window.clearTimeout(timeout);
+    signal.removeEventListener("abort", abortRequest);
   }
 
   if (response.status === 423) {
