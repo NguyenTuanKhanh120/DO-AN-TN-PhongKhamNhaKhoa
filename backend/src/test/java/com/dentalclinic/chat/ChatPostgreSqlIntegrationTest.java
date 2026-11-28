@@ -1,5 +1,15 @@
 package com.dentalclinic.chat;
 
+import com.dentalclinic.ai.conversation.mapper.ChatSemanticContextMapper;
+import com.dentalclinic.ai.conversation.model.ChatDateRange;
+import com.dentalclinic.ai.conversation.model.ChatEntities;
+import com.dentalclinic.ai.conversation.model.ChatEntityReference;
+import com.dentalclinic.ai.conversation.model.ChatFollowUpType;
+import com.dentalclinic.ai.conversation.model.ChatIntent;
+import com.dentalclinic.ai.conversation.model.ChatSemanticContext;
+import com.dentalclinic.ai.conversation.model.ChatSessionPreference;
+import com.dentalclinic.ai.conversation.model.ChatUnderstanding;
+import com.dentalclinic.ai.conversation.service.ChatContextResolver;
 import com.dentalclinic.chat.entity.ChatSender;
 import com.dentalclinic.chat.repository.ChatMessageRepository;
 import com.dentalclinic.chat.repository.ChatSessionRepository;
@@ -22,6 +32,8 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import javax.crypto.SecretKey;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,6 +59,12 @@ class ChatPostgreSqlIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ChatContextResolver contextResolver;
+
+    @Autowired
+    private ChatSemanticContextMapper contextMapper;
 
     private UUID createdUserId;
 
@@ -120,6 +138,65 @@ class ChatPostgreSqlIntegrationTest {
         var session = chatSessionRepository.findByUserId(patient.getId()).orElseThrow();
         assertThat(session.getContextData().path("sessionPreference").asText())
                 .isEqualTo("AFTERNOON");
+    }
+
+    @Test
+    void shouldReplaceOldSemanticContextForIndependentQuestionWithoutDeletingHistory() {
+        User patient = createPatient();
+        persistPreviousConversation(patient.getId());
+        var previous = contextMapper.fromJson(chatPersistenceService.readContext(patient.getId()));
+        var resolved = contextResolver.resolve(previous, new ChatUnderstanding(
+                List.of(ChatIntent.SYMPTOM_CONSULTATION),
+                new ChatEntities(List.of("ê buốt răng"), null, null, null, null, null, null, null, null, null),
+                ChatFollowUpType.NONE
+        ));
+        chatPersistenceService.startTurn(patient.getId(), "Tôi bị ê buốt răng");
+        chatPersistenceService.completeTurn(patient.getId(), "Thông tin về ê buốt răng",
+                JsonNodeFactory.instance.objectNode(), contextMapper.toJson(resolved.context()));
+
+        var stored = contextMapper.fromJson(chatPersistenceService.readContext(patient.getId()));
+        assertThat(stored).isEqualTo(new ChatSemanticContext(
+                List.of(ChatIntent.SYMPTOM_CONSULTATION), List.of("ê buốt răng"), null, null, null, null, null
+        ));
+        var messages = chatPersistenceService.getMessages(patient.getId(), 0, 20);
+        assertThat(messages.totalElements()).isEqualTo(4);
+        assertThat(messages.content()).extracting(message -> message.content())
+                .contains("Bác sĩ Demo sáng mai còn lịch không?", "Tôi bị ê buốt răng");
+    }
+
+    @Test
+    void shouldPersistRefinedDateAndSessionWhileKeepingDoctorForExplicitFollowUp() {
+        User patient = createPatient();
+        persistPreviousConversation(patient.getId());
+        var previous = contextMapper.fromJson(chatPersistenceService.readContext(patient.getId()));
+        var nextDate = LocalDate.of(2026, 11, 21);
+        var resolved = contextResolver.resolve(previous, new ChatUnderstanding(
+                List.of(ChatIntent.OUT_OF_SCOPE),
+                new ChatEntities(List.of(), null, null, null, null, nextDate, null, null,
+                        ChatSessionPreference.AFTERNOON, null),
+                ChatFollowUpType.TEMPORAL_REFINEMENT
+        ));
+        chatPersistenceService.startTurn(patient.getId(), "Chiều ngày 21/11 thì sao?");
+        chatPersistenceService.completeTurn(patient.getId(), "Thông tin lịch buổi chiều",
+                JsonNodeFactory.instance.objectNode(), contextMapper.toJson(resolved.context()));
+
+        var stored = contextMapper.fromJson(chatPersistenceService.readContext(patient.getId()));
+        assertThat(stored.selectedDoctor()).isEqualTo(previous.selectedDoctor());
+        assertThat(stored.dateRange()).isEqualTo(ChatDateRange.single(nextDate));
+        assertThat(stored.sessionPreference()).isEqualTo(ChatSessionPreference.AFTERNOON);
+        assertThat(chatPersistenceService.getMessages(patient.getId(), 0, 20).totalElements()).isEqualTo(4);
+    }
+
+    private void persistPreviousConversation(UUID userId) {
+        var previous = new ChatSemanticContext(
+                List.of(ChatIntent.DOCTOR_AVAILABLE_SLOTS), List.of("đau răng"),
+                new ChatEntityReference(UUID.randomUUID(), "Bác sĩ Demo"),
+                new ChatEntityReference(UUID.randomUUID(), "Cạo vôi răng"),
+                ChatDateRange.single(LocalDate.of(2026, 11, 20)), ChatSessionPreference.MORNING, "08:00"
+        );
+        chatPersistenceService.startTurn(userId, "Bác sĩ Demo sáng mai còn lịch không?");
+        chatPersistenceService.completeTurn(userId, "Thông tin lịch buổi sáng",
+                JsonNodeFactory.instance.objectNode(), contextMapper.toJson(previous));
     }
 
     @Test

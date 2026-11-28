@@ -38,7 +38,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 import javax.crypto.SecretKey;
 import java.time.Instant;
@@ -48,6 +48,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -228,11 +229,8 @@ class ChatControllerSecurityTest {
     void shouldStreamSseForCurrentPatient() throws Exception {
         UserPrincipal principal = patientPrincipal();
         SendChatMessageRequest requestBody = new SendChatMessageRequest("Tôi bị đau răng");
-        when(chatService.streamMessage(principal.getId(), requestBody)).thenReturn(Flux.just(
-                ServerSentEvent.builder((Object) new ChatStreamTokenEvent("Xin chào"))
-                        .event("token")
-                        .build()
-        ));
+        Sinks.One<ServerSentEvent<Object>> token = Sinks.one();
+        when(chatService.streamMessage(principal.getId(), requestBody)).thenReturn(token.asMono().flux());
 
         MvcResult asyncResult = mockMvc.perform(post("/api/chat/messages/stream")
                         .with(user(principal))
@@ -242,6 +240,9 @@ class ChatControllerSecurityTest {
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
+        // Emit after the initial security filter chain has finished writing response headers.
+        assertThat(token.tryEmitValue(ServerSentEvent.builder((Object) new ChatStreamTokenEvent("Xin chào"))
+                .event("token").build())).isEqualTo(Sinks.EmitResult.OK);
         mockMvc.perform(asyncDispatch(asyncResult))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
@@ -262,11 +263,8 @@ class ChatControllerSecurityTest {
 
         when(jwtTokenProvider.extractAccessTokenClaims("patient-access-token")).thenReturn(claims);
         when(authSessionService.authenticateAccessToken(claims)).thenReturn(principal);
-        when(chatService.streamMessage(principal.getId(), requestBody)).thenReturn(Flux.just(
-                ServerSentEvent.builder((Object) new ChatStreamTokenEvent("Xin chào"))
-                        .event("token")
-                        .build()
-        ));
+        Sinks.One<ServerSentEvent<Object>> token = Sinks.one();
+        when(chatService.streamMessage(principal.getId(), requestBody)).thenReturn(token.asMono().flux());
 
         MvcResult asyncResult = mockMvc.perform(post("/api/chat/messages/stream")
                         .header("Authorization", "Bearer patient-access-token")
@@ -276,6 +274,8 @@ class ChatControllerSecurityTest {
                 .andExpect(request().asyncStarted())
                 .andReturn();
 
+        assertThat(token.tryEmitValue(ServerSentEvent.builder((Object) new ChatStreamTokenEvent("Xin chào"))
+                .event("token").build())).isEqualTo(Sinks.EmitResult.OK);
         mockMvc.perform(asyncDispatch(asyncResult))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))

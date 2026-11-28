@@ -2,11 +2,14 @@ package com.dentalclinic.ai.orchestration;
 
 import com.dentalclinic.ai.conversation.model.ChatContextResolution;
 import com.dentalclinic.ai.conversation.model.ChatDateRange;
+import com.dentalclinic.ai.conversation.model.ChatEntities;
 import com.dentalclinic.ai.conversation.model.ChatEntityReference;
 import com.dentalclinic.ai.conversation.model.ChatFollowUpType;
 import com.dentalclinic.ai.conversation.model.ChatIntent;
 import com.dentalclinic.ai.conversation.model.ChatSemanticContext;
 import com.dentalclinic.ai.conversation.model.ChatSessionPreference;
+import com.dentalclinic.ai.conversation.model.ChatUnderstanding;
+import com.dentalclinic.ai.conversation.service.ChatContextResolver;
 import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalRequest;
 import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalResult;
 import com.dentalclinic.ai.knowledge.model.KnowledgeSourceTrace;
@@ -34,6 +37,7 @@ import com.dentalclinic.doctor.service.DoctorServiceMappingService;
 import com.dentalclinic.service.dto.DentalServiceResponse;
 import com.dentalclinic.service.service.DentalServiceManagementService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -49,6 +53,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class ChatGroundingServiceTest {
@@ -261,6 +266,76 @@ class ChatGroundingServiceTest {
                 .isEqualTo(generalExamination.id());
         verify(dentalServiceService, never()).getActiveServices();
         verify(retrievalService, never()).retrieve(any());
+    }
+
+    @Test
+    void shouldSendOnlyNewSymptomsToRagWithoutResolvingPreviousDoctorOrService() {
+        var resolution = new ChatContextResolver().resolve(previousContext(), new ChatUnderstanding(
+                List.of(ChatIntent.SYMPTOM_CONSULTATION),
+                new ChatEntities(List.of("ê buốt răng"), null, null, null, null, null, null, null, null, null),
+                ChatFollowUpType.NONE
+        ));
+        when(retrievalService.retrieve(any(KnowledgeRetrievalRequest.class))).thenReturn(List.of(knowledge()));
+
+        var result = service.resolve("Tôi bị ê buốt răng", resolution);
+
+        ArgumentCaptor<KnowledgeRetrievalRequest> query = ArgumentCaptor.forClass(KnowledgeRetrievalRequest.class);
+        verify(retrievalService).retrieve(query.capture());
+        assertThat(query.getValue().query()).contains("ê buốt răng").doesNotContain("đau răng");
+        assertThat(result.context().selectedDoctor()).isNull();
+        assertThat(result.context().selectedService()).isNull();
+        verifyNoInteractions(doctorService, dentalServiceService, slotLookupService);
+    }
+
+    @Test
+    void shouldLoadWholeCatalogAfterPreviousSpecificServiceConversation() {
+        var resolution = new ChatContextResolver().resolve(previousContext(), new ChatUnderstanding(
+                List.of(ChatIntent.SERVICE_CATALOG), ChatEntities.empty(), ChatFollowUpType.NONE
+        ));
+        var cleaning = dentalService("Cạo vôi răng");
+        var examination = dentalService("Khám răng tổng quát");
+        when(dentalServiceService.getActiveServices()).thenReturn(List.of(cleaning, examination));
+
+        var result = service.resolve("Phòng khám có những dịch vụ nào?", resolution);
+
+        assertThat(result.services()).containsExactly(cleaning, examination);
+        assertThat(result.context().symptoms()).isEmpty();
+        verify(dentalServiceService, never()).getService(any());
+        verifyNoInteractions(doctorService, retrievalService, slotLookupService);
+    }
+
+    @Test
+    void shouldLookupNewDoctorWithNoPreviousServiceOrMorningFilter() {
+        var doctor = doctor("Bác sĩ Demo");
+        var resolution = new ChatContextResolver().resolve(previousContext(), new ChatUnderstanding(
+                List.of(ChatIntent.DOCTOR_AVAILABLE_SLOTS),
+                new ChatEntities(List.of(), doctor.fullName(), null, null, null, TOMORROW, null, null, null, null),
+                ChatFollowUpType.NONE
+        ));
+        when(doctorService.getDoctors(doctor.fullName(), null, DoctorStatus.ACTIVE, 0, 50))
+                .thenReturn(page(List.of(doctor)));
+        when(mappingService.getActiveDoctorMappingsByServiceIds(List.of())).thenReturn(List.of());
+        var expectedRequest = new ChatSlotLookupRequest(
+                List.of(new SlotLookupTarget(doctor.id(), null)), TOMORROW, TOMORROW, null
+        );
+        when(slotLookupService.lookup(expectedRequest)).thenReturn(new ChatSlotLookupResult(
+                TOMORROW, TOMORROW, null, List.of(new DoctorSlotAvailability(doctor.id(), null, List.of()))
+        ));
+
+        var result = service.resolve("Bác sĩ Demo ngày mai còn ca không?", resolution);
+
+        verify(slotLookupService).lookup(expectedRequest);
+        assertThat(result.context().symptoms()).isEmpty();
+        verifyNoInteractions(dentalServiceService, retrievalService);
+    }
+
+    private ChatSemanticContext previousContext() {
+        return new ChatSemanticContext(
+                List.of(ChatIntent.DOCTOR_AVAILABLE_SLOTS), List.of("đau răng"),
+                new ChatEntityReference(UUID.randomUUID(), "Bác sĩ Nguyễn Văn An"),
+                new ChatEntityReference(UUID.randomUUID(), "Cạo vôi răng"),
+                ChatDateRange.single(TOMORROW.minusDays(1)), ChatSessionPreference.MORNING, "08:00"
+        );
     }
 
     private ChatContextResolution resolution(ChatSemanticContext context) {

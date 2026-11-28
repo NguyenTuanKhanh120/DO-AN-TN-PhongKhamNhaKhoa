@@ -5,6 +5,8 @@ import com.dentalclinic.common.util.ClinicTimeProvider;
 import com.dentalclinic.schedule.entity.ScheduleSession;
 import com.dentalclinic.schedule.service.SchedulingPolicy;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -117,6 +119,42 @@ class SchedulingPolicyTest {
         assertThatThrownBy(() -> policy.estimatedStartTime(ScheduleSession.AFTERNOON, 3))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("Số ca chỉ được là 1 hoặc 2");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 29})
+    void shouldAllowDatesInsideThirtyDayWindow(int daysAhead) {
+        SchedulingPolicy policy = policyAt("2026-11-09T17:30:00Z");
+
+        policy.requireWithinBookingWindow(APPOINTMENT_DATE.plusDays(daysAhead));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 30, 31, 365})
+    void shouldRejectDatesOutsideThirtyDayWindow(int daysAhead) {
+        SchedulingPolicy policy = policyAt("2026-11-09T17:30:00Z");
+
+        assertThatThrownBy(() -> policy.requireWithinBookingWindow(APPOINTMENT_DATE.plusDays(daysAhead)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Ngày khám phải nằm trong 30 ngày tính từ ngày hiện tại");
+    }
+
+    @Test
+    void shouldRejectMissingDateBeforeLoadingAvailability() {
+        assertThatThrownBy(() -> policyAt("2026-11-09T17:30:00Z").requireWithinBookingWindow(null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Ngày khám không được để trống");
+    }
+
+    @Test
+    void shouldAdvanceWindowAtClinicMidnightRatherThanUtcMidnight() {
+        LocalDate newLastDay = APPOINTMENT_DATE.plusDays(29);
+        SchedulingPolicy beforeMidnight = policyAt("2026-11-09T16:59:59Z");
+        SchedulingPolicy atMidnight = policyAt("2026-11-09T17:00:00Z");
+
+        assertThatThrownBy(() -> beforeMidnight.requireWithinBookingWindow(newLastDay))
+                .isInstanceOf(BusinessException.class);
+        atMidnight.requireWithinBookingWindow(newLastDay);
     }
 
     private SchedulingPolicy policyAt(String instant) {

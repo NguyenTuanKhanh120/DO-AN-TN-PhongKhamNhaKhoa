@@ -27,6 +27,8 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Encoders;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -242,6 +244,78 @@ class AppointmentReschedulePostgreSqlIntegrationTest {
                 AppointmentStatus.BOOKED
         ));
         assertThat(countAppointmentsAt(fixture.firstOldStartAt())).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 30, 365})
+    void shouldRejectOutOfWindowRescheduleAndRetainOriginalAppointmentAndAudit(int daysAhead) throws Exception {
+        fixture = createFixture();
+        String token = login(fixture.firstPatientEmail());
+        Instant requestedStart = toInstant(CURRENT_MONDAY.plusDays(daysAhead), LocalTime.of(8, 0));
+
+        mockMvc.perform(patch("/api/patient/appointments/{id}/reschedule", fixture.firstAppointmentId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(rescheduleBody(requestedStart, "Đổi ngày khám")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("Ngày khám phải nằm trong 30 ngày tính từ ngày hiện tại"));
+
+        assertThat(startOf(fixture.firstAppointmentId())).isEqualTo(fixture.firstOldStartAt());
+        assertThat(statusOf(fixture.firstAppointmentId())).isEqualTo("BOOKED");
+        assertThat(countAppointmentsAt(fixture.firstOldStartAt())).isEqualTo(1);
+        assertThat(countAppointmentsAt(requestedStart)).isZero();
+        assertThat(rescheduleHistoryCount(fixture.firstAppointmentId())).isZero();
+    }
+
+    @Test
+    void shouldAllowRescheduleOntoLastCalendarDay() throws Exception {
+        fixture = createFixture();
+        LocalDate lastDay = CURRENT_MONDAY.plusDays(29);
+        transactionTemplate.executeWithoutResult(status -> {
+            DoctorSchedule schedule = new DoctorSchedule();
+            schedule.setDoctor(doctorRepository.findById(fixture.doctorId()).orElseThrow());
+            schedule.setDayOfWeek((short) lastDay.getDayOfWeek().getValue());
+            schedule.setSession(ScheduleSession.MORNING);
+            schedule.setStartTime(LocalTime.of(8, 0));
+            schedule.setEndTime(LocalTime.of(11, 0));
+            doctorScheduleRepository.saveAndFlush(schedule);
+        });
+        String token = login(fixture.firstPatientEmail());
+        Instant requestedStart = toInstant(lastDay, LocalTime.of(8, 0));
+
+        mockMvc.perform(patch("/api/patient/appointments/{id}/reschedule", fixture.firstAppointmentId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(rescheduleBody(requestedStart, "Đổi sang ngày cuối calendar")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.appointmentDate").value(lastDay.toString()));
+
+        assertThat(startOf(fixture.firstAppointmentId())).isEqualTo(requestedStart);
+        assertThat(rescheduleHistoryCount(fixture.firstAppointmentId())).isEqualTo(1);
+    }
+
+    @Test
+    void shouldAllowExistingLegacyAppointmentOutsideWindowToMoveBackInside() throws Exception {
+        fixture = createFixture();
+        LocalDate legacyDate = CURRENT_MONDAY.plusDays(35);
+        transactionTemplate.executeWithoutResult(status -> {
+            Appointment appointment = appointmentRepository.findById(fixture.firstAppointmentId()).orElseThrow();
+            appointment.setAppointmentDate(legacyDate);
+            appointment.setScheduledStartAt(toInstant(legacyDate, LocalTime.of(8, 0)));
+            appointmentRepository.saveAndFlush(appointment);
+        });
+        String token = login(fixture.firstPatientEmail());
+
+        mockMvc.perform(patch("/api/patient/appointments/{id}/reschedule", fixture.firstAppointmentId())
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(rescheduleBody(fixture.targetStartAt(), "Đổi về ngày trong calendar")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.appointmentDate").value(FUTURE_MONDAY.toString()));
+
+        assertThat(startOf(fixture.firstAppointmentId())).isEqualTo(fixture.targetStartAt());
+        assertThat(rescheduleHistoryCount(fixture.firstAppointmentId())).isEqualTo(1);
     }
 
     @Test

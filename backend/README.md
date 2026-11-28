@@ -5,7 +5,7 @@ Spring Boot backend for the dental clinic management system, including the patie
 ## Implemented
 
 - Java 21, Spring Boot 3.5, Maven and PostgreSQL 18.
-- Flyway V1–V18 migrations for the 16-table active schema.
+- Flyway V1–V22 migrations for the 16-table active schema.
 - JPA entities and repositories for the first nine business tables.
 - Common API response, pagination and exception handling.
 - Patient registration and login with BCrypt, 15-minute JWT access tokens and rotating Refresh Tokens.
@@ -30,12 +30,14 @@ Spring Boot backend for the dental clinic management system, including the patie
 - Weekly schedule updates/deletes take the same Doctor lock as booking and reject changes that would invalidate future active appointments.
 - Doctor availability is derived only from weekly schedules, active doctor/service mappings, current time and existing appointments.
 - Booking, rescheduling and patient follow-up creation share a pessimistic Doctor lock and recheck weekly schedule availability before writing.
-- Public available-case calculation from weekly schedules and active appointments. The legacy `/available-slots` route name is retained, but each item represents a queue case rather than a fixed-duration slot.
+- Public and WALK_IN availability reserve doctor cases for `BOOKED`, `CHECKED_IN`, `IN_PROGRESS` and `COMPLETED` appointments. `CANCELLED` and `NO_SHOW` release the case. The legacy `/available-slots` route name is retained, but each item represents a queue case rather than a fixed-duration slot.
 - Public rolling 30-day doctor calendar calculated with one schedule query and one occupied-queue query for the requested range.
+- Online booking, patient follow-up booking, rescheduling targets and single-date availability use the same rolling window as the calendar: clinic today through today + 29 days, inclusive, in `Asia/Ho_Chi_Minh`. Direct API requests for yesterday or today + 30 days and later return `400 INVALID_REQUEST`. Existing appointments are retained; a legacy appointment outside the window can still be moved to an eligible date inside it. Same-day `05:00` cutoffs and today's WALK_IN rules continue to apply.
 - Two cases per working session: morning estimates at `08:00` and `09:30`, afternoon estimates at `14:00` and `15:30`. Estimated starts are not guaranteed examination intervals.
 - Patient online booking, self-cancellation and self-rescheduling use a single `05:00` clinic-time cutoff for the appointment date.
 - Transactional patient appointment booking with BOOK audit history.
 - PostgreSQL partial-unique-index protection for both concurrent doctor/date/session/queue conflicts and concurrent patient/date/session conflicts.
+- V22 retains completed doctor queues at database level without changing the active-only patient/session limit. Migration refuses conflicting historical queues without modifying or deleting appointments; resolve reported conflicts before retrying.
 - Role-owned patient and doctor appointment queries plus system-wide admin queries.
 - Appointment search, status/date/entity filters, pagination and clinic-timezone responses.
 - Transactional patient cancellation before the `05:00` daily cutoff with CANCEL audit history; the cancelled record remains for audit while its doctor queue and patient-session reservation are released.
@@ -65,7 +67,7 @@ Spring Boot backend for the dental clinic management system, including the patie
 - Admins can inspect each appointment's chronological audit timeline with action, actor, reason, JSONB details and timestamp.
 - Admin dashboard summary reports unique patients who arrived today, doctor totals and today's appointment status counts using the clinic timezone.
 - PostgreSQL integration tests cover the appointment lifecycle, transaction rollback and concurrent booking/rescheduling races.
-- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V18, all 16 active tables, queue/session/token constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
+- A PostgreSQL 18 schema-contract suite verifies the server major version, required extensions, Flyway V1–V22, all 16 active tables, queue/session/token constraints, Payment JSONB/state constraints, `vector(768)`, the HNSW cosine index and critical native constraints.
 - OpenAPI 3 documentation exposes typed request/response schemas, reusable error responses and JWT Bearer authorization.
 - Swagger UI and OpenAPI JSON are public in development and disabled by default in production.
 - React clients are supported through an exact-origin CORS allowlist with credentialed requests for auth cookies.
@@ -75,8 +77,10 @@ Spring Boot backend for the dental clinic management system, including the patie
 - JSON dental knowledge ingestion, SHA-256 change detection, staged vector activation and scheduled/manual synchronization without an upload API.
 - PostgreSQL pgvector cosine retrieval with top-K, similarity threshold, source/version and clinical-review metadata filters.
 - Multi-intent Vietnamese conversation understanding for symptoms, service/doctor recommendations and available-case lookup in any order.
+- Independent questions replace the active semantic context instead of inheriting old symptoms, doctor/service selections or date/session/time filters. Explicit follow-ups retain relevant context: temporal refinements keep the scheduling subject, doctor/service recommendations continue the clinical subject, and referenced price questions keep only the selected service. Common follow-ups are recognized before the generic classifier, including when Gemini is unavailable; other continuations can be classified by Gemini as `CONTEXT_CONTINUATION`. Missing information triggers clarification instead of silently using unrelated old values. Conversation history remains intact when the active context changes.
 - Server-verified service, doctor and appointment-case cards; the model cannot create or book an appointment and never receives authority over database writes.
 - SSE chatbot responses with deterministic lifecycle events, timeout/error handling and persistence only after a complete validated answer.
+- Independent circuit breakers for conversation understanding, RAG retrieval, non-streaming generation and streaming generation. A failure or recovery in one operation never opens, closes or resets another operation's breaker. Streaming failures therefore do not prevent healthy query embeddings and pgvector retrieval; the existing grounded fallback can still be used. RAG's own embedding/database failures remain protected by its own breaker.
 - Prompt-injection boundaries, source traceability, insufficient-knowledge fallback and output rejection for UUIDs, secret markers, JWTs and Google API-key shapes.
 
 The React frontend includes a lazy-loaded chatbot widget for authenticated PATIENT accounts. ADMIN, DOCTOR and STAFF do not receive the widget or chatbot API access.
@@ -118,6 +122,8 @@ Copy the names from `.env.example` into the terminal or the deployment environme
 | `GEMINI_THINKING_BUDGET` | No | Reasoning budget, defaults to `256` so concise chatbot answers retain enough output capacity |
 | `GEMINI_REQUEST_TIMEOUT` | No | Gemini request timeout, defaults to `60s` |
 | `AI_STREAMING_TIMEOUT` | No | Maximum SSE response duration, defaults to `75s` |
+| `AI_CIRCUIT_FAILURE_THRESHOLD` | No | Consecutive failures before opening each operation's breaker, defaults to `2`; provider quota/authentication failures open only the affected operation immediately |
+| `AI_CIRCUIT_OPEN_DURATION` | No | Wait before allowing one recovery probe per affected operation, defaults to `30s` |
 | `GEMINI_RETRY_MAX_ATTEMPTS` | No | Total Gemini attempts, defaults to `2` (one initial request and at most one retry) |
 | `KNOWLEDGE_BASE_DIRECTORY` | No | Directory containing the curated primary JSON dataset; defaults to `../knowledge-base` |
 | `AI_RAG_SYNC_CRON` | No | Dataset change-check schedule, defaults to every 15 minutes |
@@ -416,6 +422,8 @@ Use the ADMIN status and search-test APIs to verify active source/version, simil
 
 Successful SSE event order is `started` → one or more `token` → `metadata` → `completed`. `metadata` carries source links and only backend-verified service, doctor and appointment-case cards. Each available case contains `session`, `queueNumber`, the session window and `estimatedStartTime`/`estimatedStartAt`; it does not expose a fixed slot end time. The estimated time is not guaranteed because the actual examination can start earlier or later depending on the preceding case. An `error` event terminates a failed or timed-out stream. The chatbot never creates an Appointment; selection and final confirmation remain in the existing patient booking flow.
 
+Closing the chatbot cancels its active fetch and SSE reader even after response headers or tokens have arrived. Reopening allows a new message; callbacks from a cancelled turn cannot update the new turn or show an error. Unmount also cancels the request. Stream cancellation does not log the patient out or cancel a shared access-token refresh. The initial response/authentication handshake retains its 30-second timeout, and normal streaming keeps the backend timeout policy. Cancellation releases the browser reader/listeners; backend cancellation propagates to the provider stream and does not persist an incomplete assistant answer. User messages already saved by the backend remain subject to the existing history rules.
+
 ## React integration notes
 
 - Configure the frontend API base URL as `http://localhost:8081` in development.
@@ -423,6 +431,8 @@ Successful SSE event order is `started` → one or more `token` → `metadata` �
 - Send auth-cookie requests with credentials. Read `XSRF-TOKEN` and mirror it in `X-XSRF-TOKEN` for refresh, logout and unlock.
 - If React and the API use different subdomains, configure `AUTH_COOKIE_DOMAIN` for their shared parent domain; prefer a same-origin reverse proxy in production.
 - Only explicit user interaction should call `/api/auth/activity`; background refresh and other background requests must not keep an idle ADMIN/DOCTOR/STAFF session active.
+- React uses `/api/auth/session` (`lastActivityAt`, `idleTimeoutSeconds`) to cover and lock idle screens without waiting for another API request: ADMIN 15 minutes, DOCTOR/STAFF 20 minutes. Returning to a suspended tab also checks the deadline. The password dialog blocks background forms and portals while preserving unsaved values; PATIENT does not use idle locking.
+- On page reload or automatic token refresh, `423 SESSION_LOCKED` keeps the password-unlock screen at the current URL. A locked reload does not fetch protected page data or issue an Access Token until `/api/auth/unlock` succeeds. Wrong passwords keep the screen locked; expired/revoked sessions return to login. Unlock retries only queries rejected by session locking, never a failed mutation automatically.
 - Configure `CORS_ALLOWED_ORIGINS` with exact React origins. Wildcard origins are not used.
 - To upload a service image, send an ADMIN-authenticated multipart request to `/api/admin/services/images`, then use the returned `imageUrl` in the service create/update payload.
 - Treat `401` as an expired/missing session, `403` as insufficient permission and `409` as a recoverable business conflict.

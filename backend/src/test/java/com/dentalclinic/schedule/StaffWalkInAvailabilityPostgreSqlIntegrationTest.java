@@ -21,7 +21,8 @@ import com.dentalclinic.user.entity.Role;
 import com.dentalclinic.user.entity.User;
 import com.dentalclinic.user.entity.UserStatus;
 import com.dentalclinic.user.repository.UserRepository;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -81,8 +82,12 @@ class StaffWalkInAvailabilityPostgreSqlIntegrationTest {
     @Autowired
     private AppointmentRepository appointmentRepository;
 
-    @Test
-    void shouldExposeOnlyUnoccupiedCasesForTodayAfterOnlineCutoff() throws Exception {
+    @ParameterizedTest
+    @EnumSource(value = AppointmentStatus.class,
+            names = {"BOOKED", "CHECKED_IN", "IN_PROGRESS", "COMPLETED"})
+    void shouldExposeOnlyUnoccupiedCasesForTodayAfterOnlineCutoff(
+            AppointmentStatus occupyingStatus
+    ) throws Exception {
         String marker = UUID.randomUUID().toString();
         Doctor doctor = saveDoctor(saveUser(
                 "walk-in-doctor-" + marker + "@example.com",
@@ -99,8 +104,9 @@ class StaffWalkInAvailabilityPostgreSqlIntegrationTest {
                 "Bệnh nhân Walk In",
                 Role.PATIENT
         ));
-        saveAppointment(patient, mapping, ScheduleSession.MORNING, (short) 1, AppointmentStatus.BOOKED);
+        saveAppointment(patient, mapping, ScheduleSession.MORNING, (short) 1, occupyingStatus);
         saveAppointment(patient, mapping, ScheduleSession.AFTERNOON, (short) 1, AppointmentStatus.CANCELLED);
+        saveAppointment(patient, mapping, ScheduleSession.AFTERNOON, (short) 2, AppointmentStatus.NO_SHOW);
 
         mockMvc.perform(get("/api/staff/appointments/walk-in/availability")
                         .with(user("staff@example.com").roles("STAFF"))
@@ -119,7 +125,20 @@ class StaffWalkInAvailabilityPostgreSqlIntegrationTest {
                 .andExpect(jsonPath("$.data.sessions[0].cases[1].available").value(true))
                 .andExpect(jsonPath("$.data.sessions[1].session").value("AFTERNOON"))
                 .andExpect(jsonPath("$.data.sessions[1].availableCaseCount").value(2))
-                .andExpect(jsonPath("$.data.sessions[1].cases[0].available").value(true));
+                .andExpect(jsonPath("$.data.sessions[1].cases[0].available").value(true))
+                .andExpect(jsonPath("$.data.sessions[1].cases[1].available").value(true));
+
+        saveAppointment(patient, mapping, ScheduleSession.MORNING, (short) 2, AppointmentStatus.COMPLETED);
+
+        mockMvc.perform(get("/api/staff/appointments/walk-in/availability")
+                        .with(user("staff@example.com").roles("STAFF"))
+                        .param("doctorId", doctor.getId().toString())
+                        .param("serviceId", service.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sessions[0].status").value("FULL"))
+                .andExpect(jsonPath("$.data.sessions[0].availableCaseCount").value(0))
+                .andExpect(jsonPath("$.data.sessions[0].cases[0].available").value(false))
+                .andExpect(jsonPath("$.data.sessions[0].cases[1].available").value(false));
     }
 
     private User saveUser(String email, String fullName, Role role) {

@@ -15,6 +15,7 @@ export function ChatWindow({ open, onClose }: { open: boolean; onClose: () => vo
   const { showToast } = useToast();
   const { session, history, messages, clearHistory } = useChat();
   const stream = useChatStream();
+  const { cancel } = stream;
   const [confirmClear, setConfirmClear] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const displayedMessages = useMemo(() => {
@@ -30,6 +31,10 @@ export function ChatWindow({ open, onClose }: { open: boolean; onClose: () => vo
     ];
   }, [messages, stream.turn]);
   const latestMessage = displayedMessages[displayedMessages.length - 1];
+
+  useEffect(() => {
+    if (!open) cancel();
+  }, [open, cancel]);
 
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ block: "end" });

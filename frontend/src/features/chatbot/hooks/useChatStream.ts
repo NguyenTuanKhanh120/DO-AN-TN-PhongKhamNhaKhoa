@@ -21,12 +21,26 @@ export function useChatStream() {
   const [turn, setTurn] = useState<StreamingChatTurn | null>(null);
   const [error, setError] = useState<unknown>(null);
 
-  useEffect(() => () => controllerRef.current?.abort(), []);
+  useEffect(() => () => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+  }, []);
+
+  const cancel = useCallback(() => {
+    controllerRef.current?.abort();
+    controllerRef.current = null;
+    setTurn(null);
+    setError(null);
+  }, []);
 
   const sendMessage = useCallback(async (message: string): Promise<void> => {
     if (controllerRef.current) return;
     const controller = new AbortController();
     controllerRef.current = controller;
+    const isCurrent = () => controllerRef.current === controller && !controller.signal.aborted;
+    const updateTurn = (update: (current: StreamingChatTurn) => StreamingChatTurn) => {
+      if (isCurrent()) setTurn((current) => isCurrent() && current ? update(current) : current);
+    };
     setError(null);
     setTurn({
       userMessage: temporaryMessage("USER", message),
@@ -35,32 +49,34 @@ export function useChatStream() {
 
     try {
       await streamChatMessage(message, {
-        onStarted: ({ userMessageId, startedAt }) => setTurn((current) => current ? {
+        onStarted: ({ userMessageId, startedAt }) => updateTurn((current) => ({
           ...current,
           userMessage: { ...current.userMessage, id: userMessageId, createdAt: startedAt },
-        } : null),
-        onToken: ({ content }) => setTurn((current) => current ? {
+        })),
+        onToken: ({ content }) => updateTurn((current) => ({
           ...current,
           assistantMessage: {
             ...current.assistantMessage,
             content: `${current.assistantMessage.content}${content}`,
           },
-        } : null),
-        onMetadata: (metadata) => setTurn((current) => current ? {
+        })),
+        onMetadata: (metadata) => updateTurn((current) => ({
           ...current,
           assistantMessage: { ...current.assistantMessage, metadata },
-        } : null),
-        onCompleted: ({ messageId, createdAt }) => setTurn((current) => current ? {
+        })),
+        onCompleted: ({ messageId, createdAt }) => updateTurn((current) => ({
           ...current,
           assistantMessage: { ...current.assistantMessage, id: messageId, createdAt },
-        } : null),
+        })),
       }, controller.signal);
+      if (!isCurrent()) return;
       await queryClient.invalidateQueries({ queryKey: chatbotKeys.messages });
-      setTurn(null);
+      if (isCurrent()) setTurn(null);
     } catch (streamError) {
       if (controller.signal.aborted) return;
       setError(streamError);
       await queryClient.invalidateQueries({ queryKey: chatbotKeys.messages });
+      if (!isCurrent()) return;
       setTurn(null);
       throw streamError;
     } finally {
@@ -75,6 +91,7 @@ export function useChatStream() {
     error,
     isStreaming: turn !== null,
     sendMessage,
+    cancel,
     dismissError,
   };
 }

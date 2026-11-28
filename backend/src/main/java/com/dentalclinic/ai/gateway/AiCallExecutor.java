@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 
 import java.io.InterruptedIOException;
 import java.time.Duration;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -34,9 +36,7 @@ public class AiCallExecutor {
     private final int failureThreshold;
     private final Duration openDuration;
     private final ExecutorService executor;
-    private final AtomicInteger consecutiveFailures = new AtomicInteger();
-    private final AtomicLong openUntilNanos = new AtomicLong();
-    private final AtomicBoolean halfOpenProbe = new AtomicBoolean();
+    private final Map<AiCallType, CircuitState> circuits;
 
     @Autowired
     public AiCallExecutor(
@@ -73,6 +73,11 @@ public class AiCallExecutor {
         this.failureThreshold = failureThreshold;
         this.openDuration = requirePositive(openDuration, "openDuration");
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
+        EnumMap<AiCallType, CircuitState> states = new EnumMap<>(AiCallType.class);
+        for (AiCallType callType : AiCallType.values()) {
+            states.put(callType, new CircuitState());
+        }
+        this.circuits = Map.copyOf(states);
     }
 
     public <T> T execute(AiCallType callType, Supplier<T> action) {
@@ -127,12 +132,13 @@ public class AiCallExecutor {
 
     public void ensureAvailable(AiCallType callType) {
         Objects.requireNonNull(callType, "callType must not be null");
-        long openUntil = openUntilNanos.get();
+        CircuitState circuit = circuits.get(callType);
+        long openUntil = circuit.openUntilNanos.get();
         if (openUntil == 0L) {
             return;
         }
         long now = System.nanoTime();
-        if (now < openUntil || !halfOpenProbe.compareAndSet(false, true)) {
+        if (now < openUntil || !circuit.halfOpenProbe.compareAndSet(false, true)) {
             log.warn(
                     "ai_call_rejected requestId={} callType={} reason=CIRCUIT_OPEN",
                     ChatTelemetry.currentRequestId(),
@@ -149,9 +155,10 @@ public class AiCallExecutor {
 
     public void recordSuccess(AiCallType callType) {
         Objects.requireNonNull(callType, "callType must not be null");
-        boolean wasOpen = openUntilNanos.getAndSet(0L) != 0L;
-        consecutiveFailures.set(0);
-        halfOpenProbe.set(false);
+        CircuitState circuit = circuits.get(callType);
+        boolean wasOpen = circuit.openUntilNanos.getAndSet(0L) != 0L;
+        circuit.consecutiveFailures.set(0);
+        circuit.halfOpenProbe.set(false);
         if (wasOpen) {
             log.info(
                     "ai_circuit_closed requestId={} callType={}",
@@ -172,13 +179,14 @@ public class AiCallExecutor {
             recordSuccess(callType);
             return;
         }
-        int failures = consecutiveFailures.incrementAndGet();
+        CircuitState circuit = circuits.get(callType);
+        int failures = circuit.consecutiveFailures.incrementAndGet();
         boolean openImmediately = failureType
                 == AiProviderFailureClassifier.FailureType.QUOTA_EXCEEDED
                 || failureType == AiProviderFailureClassifier.FailureType.AUTHENTICATION;
-        if (openImmediately || halfOpenProbe.get() || failures >= failureThreshold) {
-            openUntilNanos.set(System.nanoTime() + openDuration.toNanos());
-            halfOpenProbe.set(false);
+        if (openImmediately || circuit.halfOpenProbe.get() || failures >= failureThreshold) {
+            circuit.openUntilNanos.set(System.nanoTime() + openDuration.toNanos());
+            circuit.halfOpenProbe.set(false);
             log.warn(
                     "ai_circuit_opened requestId={} callType={} providerStatus={} failures={} openDurationMs={}",
                     ChatTelemetry.currentRequestId(),
@@ -192,7 +200,7 @@ public class AiCallExecutor {
 
     public void recordCancellation(AiCallType callType) {
         Objects.requireNonNull(callType, "callType must not be null");
-        if (halfOpenProbe.get()) {
+        if (circuits.get(callType).halfOpenProbe.get()) {
             recordFailure(
                     callType,
                     new java.util.concurrent.CancellationException("AI recovery probe cancelled")
@@ -237,5 +245,11 @@ public class AiCallExecutor {
 
     private static BusinessException unavailable() {
         return new AiCircuitOpenException();
+    }
+
+    private static final class CircuitState {
+        private final AtomicInteger consecutiveFailures = new AtomicInteger();
+        private final AtomicLong openUntilNanos = new AtomicLong();
+        private final AtomicBoolean halfOpenProbe = new AtomicBoolean();
     }
 }

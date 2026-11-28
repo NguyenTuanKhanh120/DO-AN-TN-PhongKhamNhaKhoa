@@ -2,13 +2,17 @@ package com.dentalclinic.ai.orchestration;
 
 import com.dentalclinic.ai.conversation.model.ChatSemanticContext;
 import com.dentalclinic.ai.gateway.AiCallExecutor;
+import com.dentalclinic.ai.gateway.AiCallType;
 import com.dentalclinic.ai.knowledge.exception.KnowledgeBaseException;
 import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalRequest;
 import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalResult;
 import com.dentalclinic.ai.knowledge.service.KnowledgeRetrievalService;
 import com.dentalclinic.ai.orchestration.model.RagQueryResult;
 import com.dentalclinic.ai.orchestration.service.RagQueryExecutor;
+import com.google.genai.errors.ClientException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
@@ -18,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,7 +34,7 @@ class RagQueryExecutorTest {
             Duration.ofSeconds(1),
             Duration.ofSeconds(1),
             100,
-            Duration.ofSeconds(1)
+            Duration.ofSeconds(30)
     );
     private final RagQueryExecutor executor = new RagQueryExecutor(
             retrievalService,
@@ -88,5 +93,30 @@ class RagQueryExecutorTest {
 
         assertThat(result.available()).isFalse();
         assertThat(result.evidence()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = AiCallType.class, names = {"UNDERSTANDING", "GENERATION", "STREAMING"})
+    void shouldRetrieveEvidenceWhileAnotherOperationCircuitIsOpen(AiCallType failingOperation) {
+        aiCallExecutor.recordFailure(failingOperation, new ClientException(429, "RESOURCE_EXHAUSTED", "quota exceeded"));
+        KnowledgeRetrievalResult evidence = mock(KnowledgeRetrievalResult.class);
+        when(retrievalService.retrieve(any(KnowledgeRetrievalRequest.class))).thenReturn(List.of(evidence));
+
+        RagQueryResult result = executor.execute("Tôi bị đau răng", ChatSemanticContext.empty(), true);
+
+        assertThat(result.available()).isTrue();
+        assertThat(result.evidence()).containsExactly(evidence);
+        verify(retrievalService).retrieve(any(KnowledgeRetrievalRequest.class));
+    }
+
+    @Test
+    void shouldStopRagAfterItsOwnQuotaFailureWithoutBlockingGeneration() {
+        when(retrievalService.retrieve(any(KnowledgeRetrievalRequest.class)))
+                .thenThrow(new ClientException(429, "RESOURCE_EXHAUSTED", "embedding quota exceeded"));
+
+        assertThat(executor.execute("Tôi bị đau răng", ChatSemanticContext.empty(), true).available()).isFalse();
+        assertThat(aiCallExecutor.execute(AiCallType.GENERATION, () -> "answer")).isEqualTo("answer");
+        assertThat(executor.execute("Tôi bị ê buốt răng", ChatSemanticContext.empty(), true).available()).isFalse();
+        verify(retrievalService, times(1)).retrieve(any(KnowledgeRetrievalRequest.class));
     }
 }

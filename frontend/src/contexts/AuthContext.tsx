@@ -2,11 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useQueryClient } from "@tanstack/react-query";
 import type { AuthResponse, Role } from "@/types/domain";
 import { refreshAccessToken } from "@/services/api/client";
+import { isSessionLockedError, toApiError } from "@/services/api/errors";
 import { onSessionEvent } from "@/services/api/session-events";
 import { tokenStore } from "@/services/api/token-store";
 import * as authService from "@/features/auth/services/auth-service";
 
-export type AuthState = "checking" | "authenticated" | "unauthenticated";
+export type AuthState = "checking" | "authenticated" | "locked" | "unauthenticated";
 
 export interface AuthUser {
   id: string;
@@ -35,12 +36,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [state, setState] = useState<AuthState>("checking");
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLocked, setIsLocked] = useState(false);
+  const isLocked = state === "locked";
 
   const clearAuth = useCallback(() => {
     tokenStore.clear();
     setUser(null);
-    setIsLocked(false);
     setState("unauthenticated");
     queryClient.clear();
   }, [queryClient]);
@@ -50,8 +50,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const nextUser = toUser(auth);
     setUser(nextUser);
     setState("authenticated");
-    setIsLocked(false);
     return nextUser;
+  }, []);
+
+  const lockAuth = useCallback(() => {
+    tokenStore.clear();
+    setState("locked");
   }, []);
 
   useEffect(() => {
@@ -60,22 +64,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((auth) => {
         if (active) acceptAuth(auth);
       })
-      .catch(() => {
-        if (active) clearAuth();
+      .catch((error) => {
+        if (!active) return;
+        if (isSessionLockedError(error)) lockAuth();
+        else clearAuth();
       });
     return () => {
       active = false;
     };
-  }, [acceptAuth, clearAuth]);
+  }, [acceptAuth, clearAuth, lockAuth]);
 
   useEffect(() => {
-    const removeLock = onSessionEvent("locked", () => setIsLocked(true));
+    const removeLock = onSessionEvent("locked", lockAuth);
     const removeUnauthorized = onSessionEvent("unauthorized", clearAuth);
     return () => {
       removeLock();
       removeUnauthorized();
     };
-  }, [clearAuth]);
+  }, [clearAuth, lockAuth]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const auth = await authService.login({ email, password });
@@ -98,9 +104,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearAuth]);
 
   const unlockSession = useCallback(async (password: string) => {
-    const auth = await authService.unlock(password);
-    acceptAuth(auth);
-  }, [acceptAuth]);
+    try {
+      const auth = await authService.unlock(password);
+      acceptAuth(auth);
+      await queryClient.invalidateQueries({
+        predicate: (query) => isSessionLockedError(query.state.error ?? query.state.fetchFailureReason),
+      });
+    } catch (error) {
+      const apiError = toApiError(error);
+      if ((apiError.status === 401 && apiError.code !== "INVALID_CREDENTIALS") || apiError.code === "ACCOUNT_INACTIVE") {
+        clearAuth();
+      }
+      throw apiError;
+    }
+  }, [acceptAuth, clearAuth, queryClient]);
 
   const value = useMemo<AuthContextValue>(() => ({
     state,

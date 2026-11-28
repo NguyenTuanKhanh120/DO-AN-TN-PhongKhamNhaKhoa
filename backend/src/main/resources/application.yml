@@ -100,6 +100,7 @@ app:
       rag-retrieval: ${AI_CALL_RAG_TIMEOUT:3s}
       generation: ${AI_CALL_GENERATION_TIMEOUT:5s}
     circuit-breaker:
+      # Each AiCallType has independent failure counts, open time and recovery probes.
       failure-threshold: ${AI_CIRCUIT_FAILURE_THRESHOLD:2}
       open-duration: ${AI_CIRCUIT_OPEN_DURATION:30s}
     retry:

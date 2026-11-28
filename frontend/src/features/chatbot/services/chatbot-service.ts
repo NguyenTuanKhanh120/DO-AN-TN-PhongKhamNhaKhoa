@@ -88,20 +88,14 @@ async function openStream(
   signal: AbortSignal,
   retried = false,
 ): Promise<ReadableStream<Uint8Array>> {
+  signal.throwIfAborted();
   const token = tokenStore.get();
-  const requestController = new AbortController();
-  const abortRequest = () => requestController.abort(signal.reason);
-  signal.addEventListener("abort", abortRequest, { once: true });
-  const timeout = window.setTimeout(
-    () => requestController.abort(new DOMException("Timeout", "TimeoutError")),
-    INITIAL_RESPONSE_TIMEOUT_MS,
-  );
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl.replace(/\/+$/, "")}/api/chat/messages/stream`, {
       method: "POST",
       credentials: "include",
-      signal: requestController.signal,
+      signal,
       headers: {
         Accept: "text/event-stream",
         "Content-Type": "application/json",
@@ -116,10 +110,8 @@ async function openStream(
       SYSTEM_ERROR_MESSAGE,
       "NETWORK_ERROR",
     );
-  } finally {
-    window.clearTimeout(timeout);
-    signal.removeEventListener("abort", abortRequest);
   }
+  signal.throwIfAborted();
 
   if (response.status === 423) {
     emitSessionEvent("locked");
@@ -127,9 +119,11 @@ async function openStream(
   }
 
   if (response.status === 401 && !retried) {
+    void response.body?.cancel().catch(() => undefined);
     try {
-      await refreshAccessToken();
+      await refreshForStream(signal);
     } catch (error) {
+      signal.throwIfAborted();
       tokenStore.clear();
       emitSessionEvent("unauthorized");
       if (error instanceof Error) throw error;
@@ -143,6 +137,25 @@ async function openStream(
     throw new ChatStreamError("Trình duyệt không nhận được luồng phản hồi từ trợ lý AI");
   }
   return response.body;
+}
+
+function refreshForStream(signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    // Refresh is shared by other requests; cancel only this stream's wait for it.
+    refreshAccessToken().then(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, (error: unknown) => {
+      signal.removeEventListener("abort", onAbort);
+      reject(error);
+    });
+  });
 }
 
 function dispatchEvent(event: ParsedSseEvent, handlers: ChatStreamHandlers): boolean {
@@ -189,12 +202,32 @@ export async function streamChatMessage(
   handlers: ChatStreamHandlers,
   signal: AbortSignal,
 ): Promise<void> {
-  const stream = await openStream(message, signal);
-  let completed = false;
-  await consumeSseStream(stream, (event) => {
-    completed = dispatchEvent(event, handlers) || completed;
-  });
-  if (!completed && !signal.aborted) {
-    throw new ChatStreamError("Luồng phản hồi kết thúc trước khi hoàn tất");
+  signal.throwIfAborted();
+  const requestController = new AbortController();
+  const abortRequest = () => requestController.abort(signal.reason);
+  signal.addEventListener("abort", abortRequest, { once: true });
+  const timeout = window.setTimeout(
+    () => requestController.abort(new DOMException("Timeout", "TimeoutError")),
+    INITIAL_RESPONSE_TIMEOUT_MS,
+  );
+  try {
+    const stream = await openStream(message, requestController.signal);
+    window.clearTimeout(timeout);
+    let completed = false;
+    await consumeSseStream(stream, (event) => {
+      completed = dispatchEvent(event, handlers) || completed;
+    }, requestController.signal);
+    if (!completed) throw new ChatStreamError("Luồng phản hồi kết thúc trước khi hoàn tất");
+  } catch (error) {
+    signal.throwIfAborted();
+    if (requestController.signal.reason instanceof DOMException
+      && requestController.signal.reason.name === "TimeoutError") {
+      throw new ChatStreamError(SYSTEM_ERROR_MESSAGE, "NETWORK_ERROR");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    signal.removeEventListener("abort", abortRequest);
+    requestController.abort();
   }
 }

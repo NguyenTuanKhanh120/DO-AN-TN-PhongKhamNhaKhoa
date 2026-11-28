@@ -1,6 +1,7 @@
 package com.dentalclinic.appointment.dto;
 
 import com.dentalclinic.schedule.entity.ScheduleSession;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -11,6 +12,7 @@ import java.time.LocalDate;
 
 public record RescheduleAppointmentRequest(
         @NotNull(message = "Ngày khám mới không được để trống")
+        @Schema(description = "Ngày khám mới theo Asia/Ho_Chi_Minh, từ hôm nay đến hôm nay + 29 ngày; vẫn áp dụng cutoff đổi lịch 05:00")
         LocalDate appointmentDate,
 
         @NotNull(message = "Buổi khám mới không được để trống")

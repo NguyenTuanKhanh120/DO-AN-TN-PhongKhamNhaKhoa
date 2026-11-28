@@ -47,3 +47,8 @@ export function toApiError(error: unknown): ApiError {
 export function getApiErrorMessage(error: unknown): string {
   return toApiError(error).message;
 }
+
+export function isSessionLockedError(error: unknown): boolean {
+  const apiError = toApiError(error);
+  return apiError.status === 423 && apiError.code === "SESSION_LOCKED";
+}

@@ -392,7 +392,7 @@ class AppointmentStartExaminationPostgreSqlIntegrationTest {
         Appointment booked = saveAppointment(
                 patient,
                 firstMapping,
-                Instant.parse("2026-10-12T04:00:00Z"),
+                Instant.parse("2026-10-09T01:00:00Z"),
                 AppointmentStatus.COMPLETED,
                 null,
                 null

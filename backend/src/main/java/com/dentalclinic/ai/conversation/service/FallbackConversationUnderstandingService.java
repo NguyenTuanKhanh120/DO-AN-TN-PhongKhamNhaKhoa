@@ -44,6 +44,30 @@ public class FallbackConversationUnderstandingService {
             "\\b(?:rang|nuou|loi|ham|mieng|nha khoa|dau|nhuc|sung|e buot|"
                     + "chay mau|hoi mieng|kho mieng)\\b"
     );
+    private static final Pattern FOLLOW_UP_REMAINDER_PATTERN = Pattern.compile(
+            "^(?:(?:vay|the|con|co|tim|chon|goi|y|cho|toi|giup|minh|biet|nua|khong|thi|sao|"
+                    + "ngay|buoi|sang|chieu|mai|hom|nay|kia|tuan|sau|cuoi|thu|hai|ba|tu|nam|bay|"
+                    + "chu|nhat|thang|sap|trong|vao|luc|lich|ca|kham|nao|duoc|nhe|a|"
+                    + "\\d+(?:[/-]\\d+)*)(?:\\s+|$))*$"
+    );
+    private static final Pattern DOCTOR_FOLLOW_UP_PATTERN = Pattern.compile(
+            "^(?:(?:vay|the|con) )?(?:bac si nao(?: phu hop| kham| dieu tri)?|bac si phu hop|"
+                    + "nen gap bac si(?: nao)?|nen kham bac si(?: nao)?|goi y bac si)"
+                    + "(?: (?:voi|cho|toi|truong|hop|nay|do|giup|minh|nhe|a|khong|phu|hop))*$"
+    );
+    private static final Pattern SERVICE_FOLLOW_UP_PATTERN = Pattern.compile(
+            "^(?:(?:vay|the|con) )?(?:dich vu nao(?: phu hop)?|goi y dich vu|nen lam dich vu|can lam dich vu)"
+                    + "(?: (?:voi|cho|toi|truong|hop|nay|do|giup|minh|nhe|a|khong|phu|hop))*$"
+    );
+    private static final Pattern PRICE_REFERENCE_PATTERN = Pattern.compile(
+            "^(?:(?:vay|the|con) )?(?:(?:dich vu|goi|cai) (?:do|nay) "
+                    + "(?:gia|chi phi|bao nhieu|bao tien|het bao nhieu)|"
+                    + "(?:gia|chi phi) (?:cua )?dich vu (?:do|nay))"
+                    + "(?: (?:la|bao|nhieu|tien|vay|a|nhe|cho|toi|biet|giup|minh|hien|tai|co|gia|khong))*$"
+    );
+    private static final Pattern ADDED_SYMPTOMS_PATTERN = Pattern.compile(
+            "^(?:ngoai ra|toi con|con bi|them trieu chung)\\b.*"
+    );
     private static final Pattern EXPLICIT_DATE_PATTERN = Pattern.compile(
             "\\b(?:ngay\\s+)?(?:\\d{4}-\\d{1,2}-\\d{1,2}|"
                     + "\\d{1,2}[/-]\\d{1,2}(?:[/-]\\d{4})?)\\b"
@@ -100,23 +124,13 @@ public class FallbackConversationUnderstandingService {
     }
 
     public ChatUnderstanding analyze(String message, ChatSemanticContext previousContext) {
+        Optional<ChatUnderstanding> followUp = analyzeFollowUp(message, previousContext);
+        if (followUp.isPresent()) {
+            return followUp.orElseThrow();
+        }
         String normalized = normalize(message);
-        ChatSemanticContext previous = previousContext == null
-                ? ChatSemanticContext.empty()
-                : previousContext;
         Optional<ChatDateRange> dateRange = resolveDateRange(normalized);
         ChatSessionPreference session = sessionPreference(normalized);
-
-        ChatFollowUpType followUpType = followUpType(normalized, previous, dateRange, session);
-        if (followUpType != ChatFollowUpType.NONE) {
-            return understanding(
-                    List.of(ChatIntent.OUT_OF_SCOPE),
-                    List.of(),
-                    dateRange.orElse(null),
-                    session,
-                    followUpType
-            );
-        }
 
         List<String> symptoms = detectSymptoms(normalized);
         LinkedHashSet<ChatIntent> intents = new LinkedHashSet<>();
@@ -158,26 +172,53 @@ public class FallbackConversationUnderstandingService {
         );
     }
 
-    private ChatFollowUpType followUpType(
-            String normalized,
-            ChatSemanticContext previous,
-            Optional<ChatDateRange> dateRange,
-            ChatSessionPreference session
-    ) {
-        if (previous.lastIntents().isEmpty()) {
-            return ChatFollowUpType.NONE;
+    public Optional<ChatUnderstanding> analyzeFollowUp(String message, ChatSemanticContext previous) {
+        if (previous == null || previous.lastIntents().isEmpty()) {
+            return Optional.empty();
         }
-        if (containsPhrase(normalized, "bac si khac")) {
-            return ChatFollowUpType.ALTERNATIVE_DOCTOR;
+        String normalized = normalize(message);
+        Optional<ChatDateRange> dateRange = resolveDateRange(normalized);
+        ChatSessionPreference session = sessionPreference(normalized);
+        if (referenceOnly(normalized, "bac si khac")) {
+            return Optional.of(understanding(List.of(ChatIntent.OUT_OF_SCOPE), List.of(),
+                    dateRange.orElse(null), session, ChatFollowUpType.ALTERNATIVE_DOCTOR));
         }
-        if (containsPhrase(normalized, "dich vu khac")) {
-            return ChatFollowUpType.ALTERNATIVE_SERVICE;
+        if (referenceOnly(normalized, "dich vu khac")) {
+            return Optional.of(understanding(List.of(ChatIntent.OUT_OF_SCOPE), List.of(),
+                    dateRange.orElse(null), session, ChatFollowUpType.ALTERNATIVE_SERVICE));
         }
         if ((dateRange.isPresent() || session != null)
-                && (containsPhrase(normalized, "thi sao") || wordCount(normalized) <= 5)) {
-            return ChatFollowUpType.TEMPORAL_REFINEMENT;
+                && FOLLOW_UP_REMAINDER_PATTERN.matcher(normalized).matches()) {
+            return Optional.of(understanding(List.of(ChatIntent.OUT_OF_SCOPE), List.of(),
+                    dateRange.orElse(null), session, ChatFollowUpType.TEMPORAL_REFINEMENT));
         }
-        return ChatFollowUpType.NONE;
+        if (DOCTOR_FOLLOW_UP_PATTERN.matcher(normalized).matches()
+                && (!previous.symptoms().isEmpty() || previous.selectedService() != null)) {
+            return Optional.of(understanding(List.of(ChatIntent.DOCTOR_RECOMMENDATION), List.of(),
+                    null, null, ChatFollowUpType.CONTEXT_CONTINUATION));
+        }
+        if (SERVICE_FOLLOW_UP_PATTERN.matcher(normalized).matches() && !previous.symptoms().isEmpty()) {
+            return Optional.of(understanding(List.of(ChatIntent.SERVICE_RECOMMENDATION), List.of(),
+                    null, null, ChatFollowUpType.CONTEXT_CONTINUATION));
+        }
+        if (PRICE_REFERENCE_PATTERN.matcher(normalized).matches() && previous.selectedService() != null) {
+            return Optional.of(understanding(List.of(ChatIntent.SERVICE_CATALOG), List.of(),
+                    null, null, ChatFollowUpType.CONTEXT_CONTINUATION));
+        }
+        List<String> symptoms = detectSymptoms(normalized);
+        if (!previous.symptoms().isEmpty() && !symptoms.isEmpty()
+                && ADDED_SYMPTOMS_PATTERN.matcher(normalized).matches()
+                && !SERVICE_CATALOG_PATTERN.matcher(normalized).find()
+                && !AVAILABILITY_PATTERN.matcher(normalized).find()) {
+            return Optional.of(understanding(List.of(ChatIntent.SYMPTOM_CONSULTATION), symptoms,
+                    null, null, ChatFollowUpType.CONTEXT_CONTINUATION));
+        }
+        return Optional.empty();
+    }
+
+    private boolean referenceOnly(String message, String reference) {
+        return containsPhrase(message, reference)
+                && FOLLOW_UP_REMAINDER_PATTERN.matcher(message.replace(reference, " ").strip()).matches();
     }
 
     private ChatUnderstanding understanding(
@@ -251,10 +292,6 @@ public class FallbackConversationUnderstandingService {
             }
         }
         return List.copyOf(symptoms);
-    }
-
-    private int wordCount(String normalized) {
-        return normalized.isBlank() ? 0 : normalized.split("\\s+").length;
     }
 
     private boolean containsPhrase(String normalized, String phrase) {

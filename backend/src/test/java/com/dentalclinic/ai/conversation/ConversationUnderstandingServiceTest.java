@@ -176,7 +176,7 @@ class ConversationUnderstandingServiceTest {
                 ```
                 """);
 
-        var result = service(Optional.of(gateway)).analyze("Tuần sau thì sao?", previous);
+        var result = service(Optional.of(gateway)).analyze("Tôi muốn chuyển sang tuần sau, bạn xem giúp nhé?", previous);
 
         assertThat(result.entities().date()).isNull();
         assertThat(result.entities().dateFrom()).isEqualTo(LocalDate.of(2026, 11, 2));
@@ -325,6 +325,53 @@ class ConversationUnderstandingServiceTest {
 
         assertThat(result.intents()).containsExactly(ChatIntent.SYMPTOM_CONSULTATION);
         assertThat(result.entities().symptoms()).contains("đau răng");
+    }
+
+    @Test
+    void shouldResolveTemporalFollowUpBeforeGenericDeterministicClassifier() {
+        ChatSemanticContext previous = new ChatSemanticContext(
+                List.of(ChatIntent.DOCTOR_AVAILABLE_SLOTS), List.of(),
+                new ChatEntityReference(null, "Bác sĩ Demo"), null,
+                ChatDateRange.single(LocalDate.of(2026, 10, 29)), null, null
+        );
+
+        var result = service(Optional.of(gateway)).analyze("Chiều mai còn ca không?", previous);
+
+        assertThat(result.followUpType()).isEqualTo(ChatFollowUpType.TEMPORAL_REFINEMENT);
+        assertThat(result.entities().date()).isEqualTo(LocalDate.of(2026, 10, 30));
+        assertThat(result.entities().sessionPreference()).isEqualTo(ChatSessionPreference.AFTERNOON);
+        verifyNoInteractions(gateway, deterministicUnderstandingService);
+    }
+
+    @Test
+    void shouldContinueDoctorRecommendationWithoutWaitingForGemini() {
+        ChatSemanticContext previous = new ChatSemanticContext(
+                List.of(ChatIntent.SYMPTOM_CONSULTATION), List.of("đau răng"), null, null, null, null, null
+        );
+
+        var result = service(Optional.of(gateway)).analyze("Bác sĩ nào phù hợp?", previous);
+
+        assertThat(result.intents()).containsExactly(ChatIntent.DOCTOR_RECOMMENDATION);
+        assertThat(result.followUpType()).isEqualTo(ChatFollowUpType.CONTEXT_CONTINUATION);
+        verifyNoInteractions(gateway);
+    }
+
+    @Test
+    void shouldAcceptModelRecognizedContinuationWithoutInventingCurrentEntities() {
+        ChatSemanticContext previous = new ChatSemanticContext(
+                List.of(ChatIntent.SERVICE_CATALOG), List.of(), null,
+                new ChatEntityReference(null, "Cạo vôi răng"), null, null, null
+        );
+        when(gateway.generate(anyString(), anyString())).thenReturn("""
+                {"intents":["SERVICE_CATALOG"], "symptoms":[], "followUpType":"CONTEXT_CONTINUATION"}
+                """);
+
+        var result = service(Optional.of(gateway)).analyze(
+                "Bạn cho tôi hỏi dịch vụ vừa nhắc có giá thế nào?", previous
+        );
+
+        assertThat(result.followUpType()).isEqualTo(ChatFollowUpType.CONTEXT_CONTINUATION);
+        assertThat(result.entities()).isEqualTo(ChatEntities.empty());
     }
 
     private ConversationUnderstandingService service(Optional<AiChatGateway> optionalGateway) {

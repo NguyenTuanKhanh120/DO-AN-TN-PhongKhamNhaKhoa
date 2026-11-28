@@ -7,9 +7,13 @@ import com.dentalclinic.ai.conversation.model.ChatSemanticContext;
 import com.dentalclinic.ai.conversation.model.ChatSessionPreference;
 import com.dentalclinic.ai.gateway.AiStreamingChatGateway;
 import com.dentalclinic.ai.gateway.AiCallExecutor;
+import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalRequest;
+import com.dentalclinic.ai.knowledge.model.KnowledgeRetrievalResult;
+import com.dentalclinic.ai.knowledge.service.KnowledgeRetrievalService;
 import com.dentalclinic.ai.orchestration.model.ChatGroundingResult;
 import com.dentalclinic.ai.orchestration.model.ChatPrompt;
 import com.dentalclinic.ai.orchestration.service.ChatResponseValidator;
+import com.dentalclinic.ai.orchestration.service.RagQueryExecutor;
 import com.dentalclinic.ai.slot.model.ChatSlotSuggestion;
 import com.dentalclinic.chat.dto.ChatMessageResponse;
 import com.dentalclinic.chat.dto.ChatStreamErrorEvent;
@@ -41,6 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -203,6 +208,48 @@ class ChatStreamingServiceTest {
     }
 
     @Test
+    void shouldKeepRagAndFallbackAvailableWhileStreamingCircuitIsOpen() {
+        AiCallExecutor calls = new AiCallExecutor(
+                Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofSeconds(1), 100, Duration.ofSeconds(30)
+        );
+        KnowledgeRetrievalService retrievalService = mock(KnowledgeRetrievalService.class);
+        KnowledgeRetrievalResult evidence = mock(KnowledgeRetrievalResult.class);
+        when(retrievalService.retrieve(any(KnowledgeRetrievalRequest.class))).thenReturn(List.of(evidence));
+        RagQueryExecutor rag = new RagQueryExecutor(retrievalService, calls);
+        String fallback = "Thông tin tham khảo từ kho kiến thức nha khoa: cần đến phòng khám để được kiểm tra trực tiếp.";
+        PreparedChatTurn prepared = generatedTurn(fallback);
+        when(orchestrator.prepareTurn(userId, request)).thenAnswer(invocation -> {
+            var result = rag.execute(request.message(), context(), true);
+            assertThat(result.available()).isTrue();
+            assertThat(result.evidence()).containsExactly(evidence);
+            return prepared;
+        });
+        when(gateway.stream("system", "user")).thenReturn(Flux.error(
+                new ClientException(429, "RESOURCE_EXHAUSTED", "quota exceeded")
+        ));
+        when(orchestrator.completeTurn(prepared, fallback)).thenReturn(completedResponse(prepared, fallback));
+        ChatStreamingService service = new ChatStreamingService(
+                orchestrator,
+                new ChatResponseValidator(),
+                Optional.of(gateway),
+                calls,
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(1)
+        );
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            var events = service.streamMessage(userId, request).collectList().block(Duration.ofSeconds(2));
+            assertThat(eventNames(events)).containsExactly("started", "token", "metadata", "completed");
+            assertThat(events.get(1).data()).isEqualTo(new ChatStreamTokenEvent(fallback));
+        }
+
+        verify(retrievalService, times(2)).retrieve(any(KnowledgeRetrievalRequest.class));
+        verify(gateway, times(1)).stream("system", "user");
+        verify(orchestrator, times(2)).completeTurn(prepared, fallback);
+        verify(orchestrator, never()).discardTurn(prepared);
+    }
+
+    @Test
     void shouldTimeoutSilentProviderWithoutPersistingAssistantMessage() {
         PreparedChatTurn prepared = generatedTurn();
         when(orchestrator.prepareTurn(userId, request)).thenReturn(prepared);
@@ -253,11 +300,12 @@ class ChatStreamingServiceTest {
     @Test
     void shouldCancelProviderAndAvoidPersistenceWhenClientDisconnects() {
         PreparedChatTurn prepared = generatedTurn();
+        Runnable providerCancelled = mock(Runnable.class);
         when(orchestrator.prepareTurn(userId, request)).thenReturn(prepared);
         when(gateway.stream("system", "user")).thenReturn(Flux.concat(
                 Flux.just("Một phần"),
-                Flux.never()
-        ));
+                Flux.<String>never()
+        ).doOnCancel(providerCancelled));
 
         List<ServerSentEvent<Object>> received = service(Duration.ofSeconds(5))
                 .streamMessage(userId, request)
@@ -266,6 +314,7 @@ class ChatStreamingServiceTest {
                 .block(Duration.ofSeconds(2));
 
         assertThat(eventNames(received)).containsExactly("started", "token");
+        verify(providerCancelled).run();
         verify(orchestrator, never()).completeTurn(any(), any());
     }
 

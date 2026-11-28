@@ -388,11 +388,11 @@ class MedicalRecordPostgreSqlIntegrationTest {
         Appointment completed = saveAppointment(
                 patient,
                 firstMapping,
-                Instant.parse("2026-10-12T05:00:00Z"),
+                Instant.parse("2026-10-10T01:00:00Z"),
                 AppointmentStatus.COMPLETED
         );
-        completed.setActualStartAt(Instant.parse("2026-10-12T05:00:00Z"));
-        completed.setActualEndAt(Instant.parse("2026-10-12T05:45:00Z"));
+        completed.setActualStartAt(Instant.parse("2026-10-10T01:00:00Z"));
+        completed.setActualEndAt(Instant.parse("2026-10-10T01:45:00Z"));
         appointmentRepository.saveAndFlush(completed);
         Appointment otherDoctor = saveAppointment(
                 otherDoctorPatient,

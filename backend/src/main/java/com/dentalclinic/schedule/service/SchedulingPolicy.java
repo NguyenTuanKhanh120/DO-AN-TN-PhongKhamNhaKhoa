@@ -18,6 +18,7 @@ public class SchedulingPolicy {
     public static final int SATURDAY = 6;
     public static final int MIN_QUEUE_NUMBER = 1;
     public static final int MAX_QUEUE_NUMBER = 2;
+    public static final int BOOKING_WINDOW_DAYS = 30;
 
     private static final LocalTime MORNING_START = LocalTime.of(8, 0);
     private static final LocalTime MORNING_END = LocalTime.of(11, 0);
@@ -128,6 +129,20 @@ public class SchedulingPolicy {
 
     public boolean isBeforePatientDailyCutoff(LocalDate appointmentDate) {
         return clinicTimeProvider.now().isBefore(patientDailyCutoffAt(appointmentDate));
+    }
+
+    public void requireWithinBookingWindow(LocalDate appointmentDate) {
+        if (appointmentDate == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Ngày khám không được để trống");
+        }
+        LocalDate today = clinicTimeProvider.today();
+        if (appointmentDate.isBefore(today)
+                || appointmentDate.isAfter(today.plusDays(BOOKING_WINDOW_DAYS - 1L))) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_REQUEST,
+                    "Ngày khám phải nằm trong 30 ngày tính từ ngày hiện tại"
+            );
+        }
     }
 
     private ScheduleSession requireSession(ScheduleSession session) {

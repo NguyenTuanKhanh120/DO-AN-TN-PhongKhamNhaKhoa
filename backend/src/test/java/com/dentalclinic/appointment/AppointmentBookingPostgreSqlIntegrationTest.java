@@ -24,6 +24,8 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Encoders;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -63,6 +65,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -253,6 +256,59 @@ class AppointmentBookingPostgreSqlIntegrationTest {
 
         assertThat(countAppointmentsAt(scheduledStart)).isEqualTo(1);
         assertThat(countBookHistories()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 30, 365})
+    void shouldRejectBookingOutsideCalendarWindowWithoutAppointmentOrHistory(int daysAhead) throws Exception {
+        fixture = createFixture();
+        String token = login(fixture.firstPatientEmail());
+        Instant requestedStart = toInstant(MONDAY.plusDays(daysAhead), LocalTime.of(8, 0));
+
+        mockMvc.perform(post("/api/patient/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingBody(requestedStart)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("Ngày khám phải nằm trong 30 ngày tính từ ngày hiện tại"));
+
+        assertThat(jdbcTemplate.queryForObject("select count(*) from appointments where doctor_id = ?",
+                Integer.class, fixture.doctorId())).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from appointment_histories where changed_by = ?",
+                Integer.class, fixture.firstPatientUserId())).isZero();
+    }
+
+    @Test
+    void shouldBookCasePublishedOnLastDayOfCalendarWindow() throws Exception {
+        fixture = createFixture();
+        LocalDate lastDay = MONDAY.plusDays(29);
+        transactionTemplate.executeWithoutResult(status -> {
+            DoctorSchedule schedule = new DoctorSchedule();
+            schedule.setDoctor(doctorRepository.findById(fixture.doctorId()).orElseThrow());
+            schedule.setDayOfWeek((short) lastDay.getDayOfWeek().getValue());
+            schedule.setSession(ScheduleSession.MORNING);
+            schedule.setStartTime(LocalTime.of(8, 0));
+            schedule.setEndTime(LocalTime.of(11, 0));
+            doctorScheduleRepository.saveAndFlush(schedule);
+        });
+        mockMvc.perform(get("/api/doctors/{doctorId}/calendar", fixture.doctorId())
+                        .param("serviceId", fixture.serviceId().toString())
+                        .param("fromDate", lastDay.toString()).param("toDate", lastDay.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.days[0].date").value(lastDay.toString()))
+                .andExpect(jsonPath("$.data.days[0].sessions[0].availableSlotCount").value(2));
+
+        String token = login(fixture.firstPatientEmail());
+        Instant requestedStart = toInstant(lastDay, LocalTime.of(8, 0));
+        mockMvc.perform(post("/api/patient/appointments")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bookingBody(requestedStart)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.appointmentDate").value(lastDay.toString()));
+
+        assertThat(countAppointmentsAt(requestedStart)).isEqualTo(1);
     }
 
     @Test

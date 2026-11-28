@@ -1,7 +1,7 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
 import type { ApiResponse } from "@/types/api";
 import type { AuthResponse } from "@/types/domain";
-import { ApiError, toApiError } from "./errors";
+import { ApiError, isSessionLockedError, toApiError } from "./errors";
 import { emitSessionEvent } from "./session-events";
 import { tokenStore } from "./token-store";
 
@@ -94,7 +94,7 @@ apiClient.interceptors.response.use(
         return apiClient.request(config);
       } catch (refreshError) {
         tokenStore.clear();
-        emitSessionEvent("unauthorized");
+        emitSessionEvent(isSessionLockedError(refreshError) ? "locked" : "unauthorized");
         return Promise.reject(toApiError(refreshError));
       }
     }

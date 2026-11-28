@@ -63,14 +63,6 @@ public record ChatEntities(
         return date == null && (dateFrom == null) != (dateTo == null);
     }
 
-    public boolean hasTemporalRefinement() {
-        return date != null
-                || dateFrom != null
-                || dateTo != null
-                || sessionPreference != null
-                || timePreference != null;
-    }
-
     private static List<String> normalizeList(List<String> values) {
         if (values == null || values.isEmpty()) {
             return List.of();

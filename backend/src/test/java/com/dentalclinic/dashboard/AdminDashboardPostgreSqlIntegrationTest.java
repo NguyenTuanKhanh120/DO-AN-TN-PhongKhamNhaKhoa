@@ -182,8 +182,14 @@ class AdminDashboardPostgreSqlIntegrationTest {
                 Role.DOCTOR
         );
         Doctor doctor = saveDoctor(doctorUser, "PHASE24-" + marker);
+        Doctor completedDoctor = saveDoctor(saveUser(
+                "phase24-completed-doctor-" + marker + "@example.com",
+                "Bác sĩ đã hoàn thành khám Phase 24",
+                Role.DOCTOR
+        ), "PHASE24-COMPLETED-" + marker);
         DentalService service = saveService("Dịch vụ Phase 24 " + marker);
         DoctorService mapping = saveMapping(doctor, service);
+        DoctorService completedMapping = saveMapping(completedDoctor, service);
 
         saveAppointment(patient, mapping, TODAY_START, AppointmentStatus.BOOKED);
         saveAppointment(
@@ -194,8 +200,8 @@ class AdminDashboardPostgreSqlIntegrationTest {
         );
         saveAppointment(
                 patient,
-                mapping,
-                Instant.parse("2026-10-11T21:00:00Z"),
+                completedMapping,
+                Instant.parse("2026-10-12T01:00:00Z"),
                 AppointmentStatus.COMPLETED
         );
         saveAppointment(
@@ -206,8 +212,8 @@ class AdminDashboardPostgreSqlIntegrationTest {
         );
         saveAppointment(
                 patient,
-                mapping,
-                Instant.parse("2026-10-12T01:00:00Z"),
+                completedMapping,
+                Instant.parse("2026-10-12T02:30:00Z"),
                 AppointmentStatus.COMPLETED
         );
         saveAppointment(
@@ -239,7 +245,7 @@ class AdminDashboardPostgreSqlIntegrationTest {
         return new Fixture(
                 admin.getEmail(),
                 baselinePatientsVisitedToday + 2,
-                baselineDoctors + 1,
+                baselineDoctors + 2,
                 baselineTodayAppointments + 7,
                 baselineCompletedToday + 2,
                 baselineCancelledToday + 1,

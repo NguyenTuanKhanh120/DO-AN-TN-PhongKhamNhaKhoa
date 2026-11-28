@@ -31,36 +31,22 @@ public class ChatContextResolver {
                 : previous;
         ChatEntities entities = understanding.entities();
         List<ChatIntent> effectiveIntents = effectiveIntents(safePrevious, understanding);
-        boolean standaloneDoctorAvailability = isStandaloneDoctorAvailability(
-                understanding,
-                effectiveIntents
-        );
-        ChatEntityReference selectedService = shouldResetSelectedService(
-                understanding,
-                effectiveIntents,
-                standaloneDoctorAvailability
-        )
-                ? null
-                : mergeReference(
-                        safePrevious.selectedService(),
-                        entities.serviceId(),
-                        entities.serviceName()
-                );
+        ChatSemanticContext retained = retainedContext(safePrevious, understanding);
         ChatSemanticContext merged = new ChatSemanticContext(
                 effectiveIntents,
-                mergeSymptoms(safePrevious.symptoms(), entities.symptoms()),
+                mergeSymptoms(retained.symptoms(), entities.symptoms()),
                 mergeReference(
-                        safePrevious.selectedDoctor(),
+                        retained.selectedDoctor(),
                         entities.doctorId(),
                         entities.doctorName()
                 ),
-                selectedService,
-                entities.completeDateRange().orElse(safePrevious.dateRange()),
+                mergeReference(retained.selectedService(), entities.serviceId(), entities.serviceName()),
+                entities.hasPartialDateRange() ? null : entities.completeDateRange().orElse(retained.dateRange()),
                 entities.sessionPreference() == null
-                        ? (standaloneDoctorAvailability ? null : safePrevious.sessionPreference())
+                        ? retained.sessionPreference()
                         : entities.sessionPreference(),
                 entities.timePreference() == null
-                        ? (standaloneDoctorAvailability ? null : safePrevious.timePreference())
+                        ? retained.timePreference()
                         : entities.timePreference()
         );
 
@@ -78,31 +64,36 @@ public class ChatContextResolver {
         );
     }
 
-    private boolean shouldResetSelectedService(
-            ChatUnderstanding understanding,
-            List<ChatIntent> effectiveIntents,
-            boolean standaloneDoctorAvailability
+    private ChatSemanticContext retainedContext(
+            ChatSemanticContext previous,
+            ChatUnderstanding understanding
     ) {
-        ChatEntities entities = understanding.entities();
-        if (understanding.followUpType() != ChatFollowUpType.NONE
-                || entities.serviceId() != null
-                || entities.serviceName() != null) {
-            return false;
+        if (understanding.followUpType() == ChatFollowUpType.NONE) {
+            return ChatSemanticContext.empty();
         }
-        return standaloneDoctorAvailability
-                || effectiveIntents.equals(List.of(ChatIntent.SERVICE_CATALOG))
-                || effectiveIntents.equals(List.of(ChatIntent.SYMPTOM_CONSULTATION));
-    }
-
-    private boolean isStandaloneDoctorAvailability(
-            ChatUnderstanding understanding,
-            List<ChatIntent> effectiveIntents
-    ) {
-        ChatEntities entities = understanding.entities();
-        return understanding.followUpType() == ChatFollowUpType.NONE
-                && effectiveIntents.equals(List.of(ChatIntent.DOCTOR_AVAILABLE_SLOTS))
-                && (entities.doctorId() != null || entities.doctorName() != null)
-                && entities.completeDateRange().isPresent();
+        if (understanding.followUpType() == ChatFollowUpType.CONTEXT_CONTINUATION) {
+            List<ChatIntent> intents = understanding.intents();
+            boolean catalog = intents.contains(ChatIntent.SERVICE_CATALOG);
+            boolean clinical = intents.contains(ChatIntent.SYMPTOM_CONSULTATION)
+                    || intents.contains(ChatIntent.DOCTOR_RECOMMENDATION)
+                    || intents.contains(ChatIntent.SERVICE_RECOMMENDATION);
+            boolean availability = intents.contains(ChatIntent.AVAILABLE_SLOTS)
+                    || intents.contains(ChatIntent.DOCTOR_AVAILABLE_SLOTS)
+                    || intents.contains(ChatIntent.SERVICE_AVAILABLE_DOCTORS);
+            if ((catalog || clinical) && !availability) {
+                return new ChatSemanticContext(
+                        previous.lastIntents(),
+                        clinical ? previous.symptoms() : List.of(),
+                        null,
+                        catalog || intents.contains(ChatIntent.DOCTOR_RECOMMENDATION)
+                                ? previous.selectedService() : null,
+                        null,
+                        null,
+                        null
+                );
+            }
+        }
+        return previous;
     }
 
     private List<ChatIntent> effectiveIntents(
@@ -111,15 +102,10 @@ public class ChatContextResolver {
     ) {
         if (understanding.intents().equals(List.of(ChatIntent.OUT_OF_SCOPE))
                 && !previous.lastIntents().isEmpty()
-                && isFollowUpSignal(understanding)) {
+                && understanding.followUpType() != ChatFollowUpType.NONE) {
             return previous.lastIntents();
         }
         return understanding.intents();
-    }
-
-    private boolean isFollowUpSignal(ChatUnderstanding understanding) {
-        return understanding.followUpType() != ChatFollowUpType.NONE
-                || understanding.entities().hasTemporalRefinement();
     }
 
     private List<String> mergeSymptoms(List<String> previous, List<String> current) {

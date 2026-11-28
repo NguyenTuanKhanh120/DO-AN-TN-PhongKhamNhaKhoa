@@ -10,7 +10,15 @@ const ChatWidget = lazy(() => import("@/features/chatbot").then((module) => ({
 
 export default function App() {
   useSessionActivity();
-  const { state, user } = useAuth();
+  const { state, user, isLocked } = useAuth();
   const showChatbot = state === "authenticated" && user?.role === "PATIENT";
-  return <><AppRoutes />{showChatbot && <Suspense fallback={null}><ChatWidget /></Suspense>}<SessionLockOverlay /></>;
+  return (
+    <>
+      <div inert={isLocked} aria-hidden={isLocked} className={isLocked ? "invisible" : undefined}>
+        <AppRoutes />
+        {showChatbot && <Suspense fallback={null}><ChatWidget /></Suspense>}
+      </div>
+      <SessionLockOverlay />
+    </>
+  );
 }

@@ -12,7 +12,8 @@ export function ProtectedRoute({ roles, children }: { roles: Role[]; children: R
   const { state, user } = useAuth();
   const location = useLocation();
   if (state === "checking") return <CheckingSession />;
-  if (state !== "authenticated" || !user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (state === "locked" && !user) return null;
+  if ((state !== "authenticated" && state !== "locked") || !user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (!roles.includes(user.role)) return <Navigate to="/forbidden" replace />;
   return <>{children}</>;
 }
@@ -20,6 +21,7 @@ export function ProtectedRoute({ roles, children }: { roles: Role[]; children: R
 export function PublicOnlyRoute({ children }: { children: ReactNode }) {
   const { state, user } = useAuth();
   if (state === "checking") return <CheckingSession />;
+  if (state === "locked") return null;
   if (state === "authenticated" && user) return <Navigate to={roleHome[user.role]} replace />;
   return <>{children}</>;
 }

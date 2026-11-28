@@ -29,6 +29,8 @@ import com.dentalclinic.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -158,6 +160,52 @@ class StaffWalkInAppointmentPostgreSqlIntegrationTest {
                         .value("Ca khám vừa được đặt. Vui lòng chọn ca khác."));
     }
 
+    @Test
+    void shouldRejectWalkInAfterBothMorningCasesHaveCompleted() throws Exception {
+        Fixture fixture = fixture();
+        Patient previousPatient = savePatient("Bệnh nhân đã khám xong");
+        saveAppointment(previousPatient, fixture.mapping(), (short) 1, AppointmentStatus.COMPLETED);
+        saveAppointment(previousPatient, fixture.mapping(), (short) 2, AppointmentStatus.COMPLETED);
+        long appointmentCount = appointmentRepository.count();
+        long historyCount = appointmentHistoryRepository.count();
+
+        for (int queueNumber = 1; queueNumber <= 2; queueNumber++) {
+            mockMvc.perform(post("/api/staff/appointments/walk-in")
+                            .with(user(UserPrincipal.from(fixture.staff())))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestBody(fixture, queueNumber)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("RESOURCE_CONFLICT"));
+        }
+
+        assertThat(appointmentRepository.count()).isEqualTo(appointmentCount);
+        assertThat(appointmentHistoryRepository.count()).isEqualTo(historyCount);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = AppointmentStatus.class, names = {"CANCELLED", "NO_SHOW"})
+    void shouldReuseReleasedQueueWithoutDeletingPreviousAppointment(
+            AppointmentStatus releasedStatus
+    ) throws Exception {
+        Fixture fixture = fixture();
+        saveAppointment(fixture.patient(), fixture.mapping(), (short) 2, releasedStatus);
+        long appointmentCount = appointmentRepository.count();
+
+        mockMvc.perform(post("/api/staff/appointments/walk-in")
+                        .with(user(UserPrincipal.from(fixture.staff())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody(fixture, 2)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("BOOKED"));
+
+        assertThat(appointmentRepository.count()).isEqualTo(appointmentCount + 1);
+        assertThat(appointmentRepository.findAll())
+                .filteredOn(appointment -> appointment.getDoctorService().getDoctor().getId()
+                        .equals(fixture.doctor().getId()))
+                .extracting(Appointment::getStatus)
+                .containsExactlyInAnyOrder(releasedStatus, AppointmentStatus.BOOKED);
+    }
+
     private Fixture fixture() {
         String marker = UUID.randomUUID().toString();
         User staff = saveUser(
@@ -239,6 +287,15 @@ class StaffWalkInAppointmentPostgreSqlIntegrationTest {
             DoctorService mapping,
             short queueNumber
     ) {
+        saveAppointment(patient, mapping, queueNumber, AppointmentStatus.BOOKED);
+    }
+
+    private void saveAppointment(
+            Patient patient,
+            DoctorService mapping,
+            short queueNumber,
+            AppointmentStatus status
+    ) {
         LocalTime estimatedStart = queueNumber == 1
                 ? LocalTime.of(8, 0)
                 : LocalTime.of(9, 30);
@@ -249,7 +306,7 @@ class StaffWalkInAppointmentPostgreSqlIntegrationTest {
         appointment.setSession(ScheduleSession.MORNING);
         appointment.setQueueNumber(queueNumber);
         appointment.setScheduledStartAt(TODAY.atTime(estimatedStart).atZone(CLINIC_ZONE).toInstant());
-        appointment.setStatus(AppointmentStatus.BOOKED);
+        appointment.setStatus(status);
         appointment.setBookingSource(BookingSource.ONLINE);
         appointmentRepository.saveAndFlush(appointment);
     }

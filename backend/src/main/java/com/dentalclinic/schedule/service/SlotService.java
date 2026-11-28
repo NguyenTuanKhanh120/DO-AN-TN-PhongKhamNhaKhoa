@@ -52,11 +52,11 @@ import java.util.stream.IntStream;
 @Service
 public class SlotService {
 
-    private static final int MAX_CALENDAR_DAYS = 30;
-    private static final List<AppointmentStatus> ACTIVE_APPOINTMENT_STATUSES = List.of(
+    private static final List<AppointmentStatus> DOCTOR_QUEUE_OCCUPYING_STATUSES = List.of(
             AppointmentStatus.BOOKED,
             AppointmentStatus.CHECKED_IN,
-            AppointmentStatus.IN_PROGRESS
+            AppointmentStatus.IN_PROGRESS,
+            AppointmentStatus.COMPLETED
     );
     private static final List<ScheduleSession> CALENDAR_SESSIONS = List.of(
             ScheduleSession.MORNING,
@@ -346,6 +346,7 @@ public class SlotService {
     }
 
     private SlotContext loadSlotContext(UUID doctorId, UUID serviceId, LocalDate date) {
+        schedulingPolicy.requireWithinBookingWindow(date);
         DoctorService doctorService = requireDoctorService(doctorId, serviceId);
 
         short dayOfWeek = (short) date.getDayOfWeek().getValue();
@@ -382,7 +383,7 @@ public class SlotService {
 
     private CalendarRange resolveCalendarRange(LocalDate requestedFrom, LocalDate requestedTo) {
         LocalDate today = clinicTimeProvider.today();
-        LocalDate maximumDate = today.plusDays(MAX_CALENDAR_DAYS - 1L);
+        LocalDate maximumDate = today.plusDays(SchedulingPolicy.BOOKING_WINDOW_DAYS - 1L);
         LocalDate fromDate = requestedFrom == null ? today : requestedFrom;
         LocalDate toDate = requestedTo == null ? maximumDate : requestedTo;
 
@@ -401,7 +402,7 @@ public class SlotService {
                     "Lịch chỉ hỗ trợ xem trong 30 ngày tính từ ngày hiện tại"
             );
         }
-        if (ChronoUnit.DAYS.between(fromDate, toDate) + 1 > MAX_CALENDAR_DAYS) {
+        if (ChronoUnit.DAYS.between(fromDate, toDate) + 1 > SchedulingPolicy.BOOKING_WINDOW_DAYS) {
             throw new BusinessException(
                     ErrorCode.INVALID_REQUEST,
                     "Khoảng ngày truy vấn không được vượt quá 30 ngày"
@@ -654,11 +655,11 @@ public class SlotService {
             UUID excludedAppointmentId
     ) {
         List<AppointmentQueueOccupancy> occupancies = appointmentRepository
-                .findActiveQueueOccupancies(
+                .findQueueOccupancies(
                         doctorId,
                         fromDate,
                         toDate,
-                        ACTIVE_APPOINTMENT_STATUSES
+                        DOCTOR_QUEUE_OCCUPYING_STATUSES
                 );
         Map<QueueKey, Set<Integer>> grouped = new HashMap<>();
         for (AppointmentQueueOccupancy occupancy : occupancies) {

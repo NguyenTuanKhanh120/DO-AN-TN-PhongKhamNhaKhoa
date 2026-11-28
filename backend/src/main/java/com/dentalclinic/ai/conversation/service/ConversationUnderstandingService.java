@@ -72,7 +72,13 @@ public class ConversationUnderstandingService {
             }
 
             sessionPreference chỉ nhận MORNING hoặc AFTERNOON.
-            followUpType chỉ nhận NONE, TEMPORAL_REFINEMENT, ALTERNATIVE_DOCTOR hoặc ALTERNATIVE_SERVICE.
+            followUpType chỉ nhận NONE, CONTEXT_CONTINUATION, TEMPORAL_REFINEMENT,
+            ALTERNATIVE_DOCTOR hoặc ALTERNATIVE_SERVICE.
+            NONE là câu hỏi độc lập: bắt đầu chủ đề mới, không kế thừa bác sĩ, dịch vụ, ngày, buổi hay triệu chứng cũ.
+            CONTEXT_CONTINUATION dùng khi người dùng tham chiếu nội dung vừa nói, bổ sung triệu chứng,
+            trả lời câu hỏi làm rõ, hoặc hỏi "bác sĩ nào phù hợp?", "dịch vụ đó giá bao nhiêu?".
+            TEMPORAL_REFINEMENT chỉ dùng cho câu nối về thời gian như "chiều mai thì sao?";
+            một câu hỏi đầy đủ có ngày/buổi không tự động là câu hỏi nối tiếp.
             Với ngày tương đối, giữ nguyên cụm từ tiếng Việt như "ngày mai", "tuần sau" để Backend resolve.
             Chỉ trích xuất entity được nói rõ trong tin nhắn hiện tại. Không sao chép entity cũ từ context.
             Chỉ trả doctorId hoặc serviceId khi UUID xuất hiện nguyên văn trong tin nhắn hiện tại.
@@ -118,6 +124,19 @@ public class ConversationUnderstandingService {
         ChatSemanticContext safeContext = previousContext == null
                 ? ChatSemanticContext.empty()
                 : previousContext;
+        Optional<ChatUnderstanding> followUp = fallbackUnderstandingService.analyzeFollowUp(
+                normalizedMessage, safeContext
+        );
+        if (followUp.isPresent()) {
+            ChatUnderstanding result = followUp.orElseThrow();
+            log.info(
+                    "chat_classification_completed requestId={} mode=CONTEXT_FOLLOW_UP durationMs={} intents={}",
+                    requestId,
+                    ChatTelemetry.elapsedMillis(startedNanos),
+                    result.intents()
+            );
+            return result;
+        }
         Optional<ChatUnderstanding> deterministic =
                 deterministicUnderstandingService.analyze(normalizedMessage);
         if (deterministic.isPresent()) {

@@ -1,5 +1,6 @@
 package com.dentalclinic.appointment.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -17,6 +18,7 @@ public record BookAppointmentRequest(
         UUID serviceId,
 
         @NotNull(message = "Ngày khám không được để trống")
+        @Schema(description = "Ngày khám theo Asia/Ho_Chi_Minh, từ hôm nay đến hôm nay + 29 ngày; lịch hôm nay phải đặt trước 05:00")
         LocalDate appointmentDate,
 
         @NotNull(message = "Buổi khám không được để trống")

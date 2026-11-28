@@ -138,18 +138,18 @@ public interface AppointmentRepository extends JpaRepository<Appointment, UUID>,
                    appointment.queueNumber as queueNumber
             from Appointment appointment
             where appointment.doctorService.doctor.id = :doctorId
-              and appointment.status in :activeStatuses
+              and appointment.status in :occupyingStatuses
               and appointment.appointmentDate between :fromDate and :toDate
             order by appointment.appointmentDate asc,
                      appointment.session asc,
                      appointment.queueNumber asc,
                      appointment.id asc
             """)
-    List<AppointmentQueueOccupancy> findActiveQueueOccupancies(
+    List<AppointmentQueueOccupancy> findQueueOccupancies(
             @Param("doctorId") UUID doctorId,
             @Param("fromDate") LocalDate fromDate,
             @Param("toDate") LocalDate toDate,
-            @Param("activeStatuses") List<AppointmentStatus> activeStatuses
+            @Param("occupyingStatuses") List<AppointmentStatus> occupyingStatuses
     );
 
     @Query("""

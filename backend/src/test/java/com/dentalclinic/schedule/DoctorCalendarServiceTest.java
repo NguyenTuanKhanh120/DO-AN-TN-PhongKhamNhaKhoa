@@ -116,11 +116,11 @@ class DoctorCalendarServiceTest {
         when(doctorScheduleRepository.findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(
                 doctor.getId()
         )).thenReturn(schedules);
-        when(appointmentRepository.findActiveQueueOccupancies(
+        when(appointmentRepository.findQueueOccupancies(
                 doctor.getId(),
                 MONDAY,
                 MONDAY.plusDays(29),
-                activeStatuses()
+                occupyingStatuses()
         )).thenReturn(occupancies);
 
         DoctorCalendarResponse response = slotService.getCalendar(
@@ -172,11 +172,11 @@ class DoctorCalendarServiceTest {
 
         verify(doctorScheduleRepository, times(1))
                 .findAllByDoctor_IdOrderByDayOfWeekAscSessionAscStartTimeAsc(doctor.getId());
-        verify(appointmentRepository, times(1)).findActiveQueueOccupancies(
+        verify(appointmentRepository, times(1)).findQueueOccupancies(
                 doctor.getId(),
                 MONDAY,
                 MONDAY.plusDays(29),
-                activeStatuses()
+                occupyingStatuses()
         );
     }
 
@@ -216,11 +216,11 @@ class DoctorCalendarServiceTest {
                 schedule(doctor, (short) 1, ScheduleSession.MORNING, "08:00", "11:00"),
                 schedule(doctor, (short) 1, ScheduleSession.AFTERNOON, "14:00", "17:00")
         ));
-        when(appointmentRepository.findActiveQueueOccupancies(
+        when(appointmentRepository.findQueueOccupancies(
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                activeStatuses()
+                occupyingStatuses()
         )).thenReturn(List.of());
 
         DoctorCalendarResponse response = slotService.getCalendar(
@@ -248,11 +248,11 @@ class DoctorCalendarServiceTest {
         )).thenReturn(List.of(
                 schedule(doctor, (short) 1, ScheduleSession.MORNING, "08:00", "11:00")
         ));
-        when(appointmentRepository.findActiveQueueOccupancies(
+        when(appointmentRepository.findQueueOccupancies(
                 doctor.getId(),
                 MONDAY,
                 MONDAY,
-                activeStatuses()
+                occupyingStatuses()
         )).thenReturn(List.of());
 
         DoctorCalendarResponse response = slotService.getDoctorCalendar(
@@ -278,11 +278,12 @@ class DoctorCalendarServiceTest {
         return schedules;
     }
 
-    private List<AppointmentStatus> activeStatuses() {
+    private List<AppointmentStatus> occupyingStatuses() {
         return List.of(
                 AppointmentStatus.BOOKED,
                 AppointmentStatus.CHECKED_IN,
-                AppointmentStatus.IN_PROGRESS
+                AppointmentStatus.IN_PROGRESS,
+                AppointmentStatus.COMPLETED
         );
     }
 

@@ -2,15 +2,19 @@ package com.dentalclinic.persistence;
 
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.jdbc.JdbcTest;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.io.IOException;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.nio.charset.StandardCharsets;
@@ -363,6 +367,10 @@ class PostgreSql18SchemaContractIntegrationTest {
                 "select success from flyway_schema_history where version = '18'",
                 Boolean.class
         );
+        Boolean completedDoctorQueueMigrationSucceeded = jdbcTemplate.queryForObject(
+                "select success from flyway_schema_history where version = '22'",
+                Boolean.class
+        );
         List<Map<String, Object>> queueColumns = jdbcTemplate.queryForList(
                 """
                         select column_name, data_type, udt_name, is_nullable
@@ -393,7 +401,7 @@ class PostgreSql18SchemaContractIntegrationTest {
                         where schemaname = 'public'
                           and indexname in (
                               'ux_appointments_doctor_start_active_legacy',
-                              'ux_appointments_doctor_queue_active',
+                              'ux_appointments_doctor_queue_occupied',
                               'ux_appointments_patient_session_active'
                           )
                         order by indexname
@@ -412,6 +420,7 @@ class PostgreSql18SchemaContractIntegrationTest {
 
         assertThat(appointmentQueueMigrationSucceeded).isTrue();
         assertThat(appointmentQueueContractMigrationSucceeded).isTrue();
+        assertThat(completedDoctorQueueMigrationSucceeded).isTrue();
         assertThat(queueColumns)
                 .extracting(
                         row -> row.get("column_name"),
@@ -432,7 +441,7 @@ class PostgreSql18SchemaContractIntegrationTest {
                 );
         assertThat(queueConstraints).containsExactly("ck_appointments_queue_number");
         assertThat(queueIndexes).containsExactly(
-                "ux_appointments_doctor_queue_active",
+                "ux_appointments_doctor_queue_occupied",
                 "ux_appointments_patient_session_active"
         );
         assertThat(oldDoctorStartIndexCount).isZero();
@@ -823,6 +832,67 @@ class PostgreSql18SchemaContractIntegrationTest {
     }
 
     @Test
+    void shouldRetainCompletedQueueDuringMigrationWithoutChangingHistoricalAppointments()
+            throws Exception {
+        createTemporaryLegacyAppointmentsTable();
+        UUID doctorId = UUID.randomUUID();
+        UUID patientId = UUID.randomUUID();
+        insertTemporaryLegacyAppointment(patientId, doctorId, "2031-01-06 08:00:00+07", "COMPLETED");
+        insertTemporaryLegacyAppointment(patientId, doctorId, "2031-01-06 08:00:00+07", "CANCELLED");
+        insertTemporaryLegacyAppointment(patientId, doctorId, "2031-01-06 09:30:00+07", "NO_SHOW");
+        assertThat(executeAppointmentQueueMigration()).isNull();
+        List<Map<String, Object>> before = jdbcTemplate.queryForList(
+                "select * from appointments order by id"
+        );
+
+        assertThat(executeCompletedDoctorQueueMigration()).isNull();
+
+        assertThat(jdbcTemplate.queryForList("select * from appointments order by id"))
+                .isEqualTo(before);
+        String indexDefinition = jdbcTemplate.queryForObject(
+                """
+                        select indexdef from pg_indexes
+                        where schemaname like 'pg_temp_%'
+                          and indexname = 'ux_appointments_doctor_queue_occupied'
+                        """,
+                String.class
+        );
+        assertThat(indexDefinition).contains("UNIQUE", "COMPLETED");
+    }
+
+    @Test
+    void shouldRefuseCompletedQueueMigrationAndPreserveConflictingHistoricalRows()
+            throws Exception {
+        createTemporaryLegacyAppointmentsTable();
+        UUID doctorId = UUID.randomUUID();
+        UUID patientId = UUID.randomUUID();
+        insertTemporaryLegacyAppointment(patientId, doctorId, "2031-01-06 08:00:00+07", "COMPLETED");
+        insertTemporaryLegacyAppointment(patientId, doctorId, "2031-01-06 09:00:00+07", "COMPLETED");
+        assertThat(executeAppointmentQueueMigration()).isNull();
+        jdbcTemplate.update("update appointments set queue_number = 1");
+        List<Map<String, Object>> before = jdbcTemplate.queryForList(
+                "select * from appointments order by id"
+        );
+        String migrationSql = new ClassPathResource(
+                "db/migration/V22__retain_completed_doctor_queues.sql"
+        ).getContentAsString(StandardCharsets.UTF_8);
+
+        Throwable failure = jdbcTemplate.execute((ConnectionCallback<Throwable>) connection -> {
+            var savepoint = connection.setSavepoint();
+            Throwable migrationFailure = catchThrowable(() -> jdbcTemplate.execute(migrationSql));
+            if (migrationFailure != null) {
+                connection.rollback(savepoint);
+            }
+            connection.releaseSavepoint(savepoint);
+            return migrationFailure;
+        });
+
+        assertMigrationRefusal(failure, "Refusing to retain completed doctor queues because 1");
+        assertThat(jdbcTemplate.queryForList("select * from appointments order by id"))
+                .isEqualTo(before);
+    }
+
+    @Test
     void shouldRefuseScheduleStandardizationWhenActiveFutureAppointmentIsOutsidePolicy()
             throws Exception {
         createTemporaryLegacyAppointmentsTable();
@@ -970,17 +1040,18 @@ class PostgreSql18SchemaContractIntegrationTest {
                 Timestamp.from(APPOINTMENT_START)
         );
         assertThat(appointmentsAtSlot).isEqualTo(2);
+        UUID otherPatientId = insertPatient("cancelled-queue-" + fixture.marker());
 
         assertConstraintViolation(
                 () -> insertAppointment(
-                        fixture.patientId(),
+                        otherPatientId,
                         fixture.doctorId(),
                         fixture.serviceId(),
                         APPOINTMENT_START,
                         "CHECKED_IN"
                 ),
                 "23505",
-                "ux_appointments_doctor_queue_active"
+                "ux_appointments_doctor_queue_occupied"
         );
     }
 
@@ -1059,8 +1130,45 @@ class PostgreSql18SchemaContractIntegrationTest {
                         1
                 ),
                 "23505",
-                "ux_appointments_doctor_queue_active"
+                "ux_appointments_doctor_queue_occupied"
         );
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"BOOKED", "CHECKED_IN", "IN_PROGRESS", "COMPLETED"})
+    void shouldPreventReusingCompletedDoctorQueueAtDatabaseLevel(String status) {
+        Fixture fixture = createFixture();
+        UUID otherPatientId = insertPatient("completed-queue-" + fixture.marker());
+        insertAppointment(
+                fixture.patientId(), fixture.doctorId(), fixture.serviceId(),
+                APPOINTMENT_START, "COMPLETED"
+        );
+
+        assertConstraintViolation(
+                () -> insertAppointment(
+                        otherPatientId, fixture.doctorId(), fixture.serviceId(),
+                        APPOINTMENT_START, status
+                ),
+                "23505",
+                "ux_appointments_doctor_queue_occupied"
+        );
+    }
+
+    @Test
+    void shouldKeepPatientSessionLimitActiveOnlyAfterCompletion() {
+        Fixture fixture = createFixture();
+        UUID otherDoctorId = insertDoctor("completed-patient-" + fixture.marker(), fixture.serviceId());
+        insertAppointment(
+                fixture.patientId(), fixture.doctorId(), fixture.serviceId(),
+                APPOINTMENT_START, "COMPLETED"
+        );
+
+        UUID newAppointmentId = insertAppointment(
+                fixture.patientId(), otherDoctorId, fixture.serviceId(),
+                APPOINTMENT_START, "BOOKED"
+        );
+
+        assertThat(newAppointmentId).isNotNull();
     }
 
     @Test
@@ -1555,6 +1663,13 @@ class PostgreSql18SchemaContractIntegrationTest {
     private Throwable executeAppointmentQueueContractMigration() throws Exception {
         String migrationSql = new ClassPathResource(
                 "db/migration/V18__enforce_appointment_queue_contract.sql"
+        ).getContentAsString(StandardCharsets.UTF_8);
+        return catchThrowable(() -> jdbcTemplate.execute(migrationSql));
+    }
+
+    private Throwable executeCompletedDoctorQueueMigration() throws IOException {
+        String migrationSql = new ClassPathResource(
+                "db/migration/V22__retain_completed_doctor_queues.sql"
         ).getContentAsString(StandardCharsets.UTF_8);
         return catchThrowable(() -> jdbcTemplate.execute(migrationSql));
     }
